@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   INITIAL_EMPRESA_CONFIG,
   INITIAL_OBRAS,
@@ -11,6 +11,12 @@ import {
   INITIAL_SUBCONTRATAS_PRESUPUESTOS,
   INITIAL_USERS
 } from '../data/initialData';
+import realtimeSync from '../services/realtimeSyncService';
+import {
+  VISITA_TEMPLATES,
+  processSiteVisitExpediente,
+  applyVoiceCommandToQuote
+} from '../services/siteVisitAIService';
 
 const AppContext = createContext();
 
@@ -26,7 +32,8 @@ const STORAGE_KEYS = {
   SUBCONTRATAS_PRES: 'obracon_sub_pres_v1',
   AUDIT_LOGS: 'obracon_audit_logs_v1',
   USERS: 'obracon_users_v1',
-  AUTH_USER: 'obracon_current_auth_user_v1'
+  AUTH_USER: 'obracon_current_auth_user_v1',
+  SITE_VISITS: 'obracon_site_visits_v1'
 };
 
 function loadStored(key, fallback) {
@@ -53,6 +60,14 @@ export function AppProvider({ children }) {
     { id: 'log-1', timestamp: '2026-10-16 10:15:22', usuario: 'Manuel (Gerente)', accion: 'EMISION_FACTURA_VERIFACTU', recurso: 'FAC-2026-024', ip: '88.12.45.192', hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }
   ]));
 
+  // Expedientes de Visita de Obra Multimodal
+  const [siteVisits, setSiteVisits] = useState(() => loadStored(STORAGE_KEYS.SITE_VISITS, VISITA_TEMPLATES));
+
+  // Realtime & Offline Network State
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
+  const [offlineQueueLength, setOfflineQueueLength] = useState(() => realtimeSync.offlineQueue.length);
+  const [activeRealtimeAlert, setActiveRealtimeAlert] = useState(null);
+
   // Users & Authentication State
   const [users, setUsers] = useState(() => loadStored(STORAGE_KEYS.USERS, INITIAL_USERS));
   const [currentUser, setCurrentUser] = useState(() => loadStored(STORAGE_KEYS.AUTH_USER, null));
@@ -76,6 +91,7 @@ export function AppProvider({ children }) {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRATAS_PRES, JSON.stringify(subcontratasPresupuestos)); }, [subcontratasPresupuestos]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs)); }, [auditLogs]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }, [users]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SITE_VISITS, JSON.stringify(siteVisits)); }, [siteVisits]);
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(currentUser));
@@ -83,6 +99,95 @@ export function AppProvider({ children }) {
       localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
     }
   }, [currentUser]);
+
+  // Realtime Bidirectional Event Bus Subscriptions
+  useEffect(() => {
+    const unsubProgress = realtimeSync.subscribe('WORKER_PROGRESS_UPDATED', (payload) => {
+      const { obraId, faseId, newProgress, obreroNombre } = payload;
+      setObras(prevObras => prevObras.map(o => {
+        if (o.id === obraId) {
+          const progNum = Math.min(100, Math.max(0, newProgress));
+          const isCompleted = progNum === 100;
+          const updatedFases = (o.fases || []).map(f => {
+            if (f.id === faseId) {
+              return {
+                ...f,
+                progreso: progNum,
+                estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente'
+              };
+            }
+            return f;
+          });
+          const totalProg = updatedFases.reduce((s, f) => s + f.progreso, 0);
+          const newGlobalProg = Math.round(totalProg / (updatedFases.length || 1));
+          return { ...o, fases: updatedFases, progreso: newGlobalProg };
+        }
+        return o;
+      }));
+
+      setActiveRealtimeAlert({
+        type: 'progress',
+        msg: `⚡ [Realtime] ${obreroNombre || 'Operario'} actualizó avance al ${newProgress}%`,
+        timestamp: Date.now()
+      });
+      setTimeout(() => setActiveRealtimeAlert(null), 5000);
+    });
+
+    const unsubEvidence = realtimeSync.subscribe('WORKER_EVIDENCE_UPLOADED', (payload) => {
+      const { obraId, entry } = payload;
+      setObras(prev => prev.map(o => o.id === obraId ? { ...o, diario: [entry, ...(o.diario || [])] } : o));
+      setActiveRealtimeAlert({
+        type: 'evidence',
+        msg: `📸 [Realtime] Nueva foto/parte diario recibido desde obra: "${entry.resumen?.substring(0, 45)}..."`,
+        timestamp: Date.now()
+      });
+      setTimeout(() => setActiveRealtimeAlert(null), 5000);
+    });
+
+    const unsubTask = realtimeSync.subscribe('ADMIN_TASK_DISPATCHED', (payload) => {
+      const { obraId, task } = payload;
+      setObras(prev => prev.map(o => o.id === obraId ? { ...o, fases: [...(o.fases || []), task] } : o));
+      setActiveRealtimeAlert({
+        type: 'task',
+        msg: `🛠️ [Realtime] Nueva tarea asignada por Dirección de Obra: "${task.nombre}"`,
+        timestamp: Date.now()
+      });
+      setTimeout(() => setActiveRealtimeAlert(null), 5000);
+    });
+
+    const unsubAlert = realtimeSync.subscribe('ADMIN_ALERT_DISPATCHED', (payload) => {
+      const { alert } = payload;
+      setActiveRealtimeAlert({
+        type: 'admin_alert',
+        msg: `⚠️ [Aviso Técnico] ${alert.titulo}: ${alert.descripcion}`,
+        timestamp: Date.now()
+      });
+      setTimeout(() => setActiveRealtimeAlert(null), 6000);
+    });
+
+    const unsubNetwork = realtimeSync.subscribe('NETWORK_STATUS_CHANGED', ({ isOnline: online }) => {
+      setIsOnline(online);
+      showNotification(online ? 'Conexión a internet restablecida' : 'Sin conexión: Modo Offline Activo', online ? 'success' : 'error');
+    });
+
+    const unsubQueue = realtimeSync.subscribe('OFFLINE_QUEUE_UPDATED', ({ queueLength }) => {
+      setOfflineQueueLength(queueLength);
+    });
+
+    const unsubFlush = realtimeSync.subscribe('OFFLINE_QUEUE_FLUSHED', ({ processedCount }) => {
+      showNotification(`¡Sincronización completada! ${processedCount} acciones volcadas a la oficina.`);
+    });
+
+    return () => {
+      unsubProgress();
+      unsubEvidence();
+      unsubTask();
+      unsubAlert();
+      unsubNetwork();
+      unsubQueue();
+      unsubFlush();
+    };
+  }, []);
 
   const updateEmpresaConfig = (updates) => {
     setEmpresaConfig(prev => ({ ...prev, ...updates }));
@@ -500,6 +605,161 @@ export function AppProvider({ children }) {
     }));
   };
 
+  // ==========================================
+  // REALTIME BIDIRECTIONAL BROADCAST METHODS
+  // ==========================================
+  const broadcastWorkerProgress = (obraId, faseId, newProgress, obreroNombre) => {
+    const progNum = Math.min(100, Math.max(0, newProgress));
+    const isCompleted = progNum === 100;
+
+    setObras(prevObras => prevObras.map(o => {
+      if (o.id === obraId) {
+        const updatedFases = (o.fases || []).map(f => {
+          if (f.id === faseId) {
+            return {
+              ...f,
+              progreso: progNum,
+              estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente'
+            };
+          }
+          return f;
+        });
+        const totalProg = updatedFases.reduce((s, f) => s + f.progreso, 0);
+        const newGlobalProg = Math.round(totalProg / (updatedFases.length || 1));
+        return { ...o, fases: updatedFases, progreso: newGlobalProg };
+      }
+      return o;
+    }));
+
+    realtimeSync.broadcast('WORKER_PROGRESS_UPDATED', {
+      obraId,
+      faseId,
+      newProgress: progNum,
+      obreroNombre: obreroNombre || currentUser?.fullName || 'Operario'
+    });
+
+    addAuditLog('AVANCE_FASE_OBRERO', `Obra: ${obraId} - Fase: ${faseId} al ${progNum}%`);
+  };
+
+  const broadcastWorkerEvidence = (obraId, entry) => {
+    const newEntry = {
+      ...entry,
+      id: `d-${Date.now()}`,
+      fecha: entry.fecha || new Date().toISOString().split('T')[0]
+    };
+
+    setObras(prev => prev.map(o => o.id === obraId ? { ...o, diario: [newEntry, ...(o.diario || [])] } : o));
+
+    realtimeSync.broadcast('WORKER_EVIDENCE_UPLOADED', {
+      obraId,
+      entry: newEntry
+    });
+
+    addAuditLog('EVIDENCIA_FOTOGRAFICA_OBRERO', `Obra: ${obraId} - Autor: ${newEntry.autor}`);
+  };
+
+  const broadcastAdminTask = (obraId, taskData) => {
+    const newTask = {
+      ...taskData,
+      id: `fase-${Date.now()}`,
+      progreso: 0,
+      estado: 'pendiente'
+    };
+
+    setObras(prev => prev.map(o => o.id === obraId ? { ...o, fases: [...(o.fases || []), newTask] } : o));
+
+    realtimeSync.broadcast('ADMIN_TASK_DISPATCHED', {
+      obraId,
+      task: newTask
+    });
+
+    addAuditLog('TAREA_ADMIN_DISPATCHED', `Obra: ${obraId} - Tarea: ${newTask.nombre}`);
+    showNotification(`Tarea "${newTask.nombre}" asignada y notificada en tiempo real al operario.`);
+  };
+
+  const broadcastAdminAlert = (obraId, alertData) => {
+    const newAlert = {
+      ...alertData,
+      id: `alert-${Date.now()}`,
+      timestamp: new Date().toISOString()
+    };
+
+    realtimeSync.broadcast('ADMIN_ALERT_DISPATCHED', {
+      obraId,
+      alert: newAlert
+    });
+
+    addAuditLog('ALERTA_TECNICA_DISPATCHED', `Aviso: ${newAlert.titulo}`);
+    showNotification(`Aviso técnico enviado al canal móvil de los operarios.`);
+  };
+
+  // ==========================================
+  // MULTIMODAL SITE VISIT & AI QUOTE PIPELINE
+  // ==========================================
+  const addSiteVisit = (visitData) => {
+    const newVisit = {
+      ...visitData,
+      id: `visita-${Date.now()}`,
+      fecha: new Date().toISOString().split('T')[0],
+      capturas: visitData.capturas || []
+    };
+    setSiteVisits(prev => [newVisit, ...prev]);
+    showNotification(`Expediente de visita "${newVisit.titulo}" registrado.`);
+    return newVisit;
+  };
+
+  const generateQuoteFromSiteVisit = async (visitOrId, onProgress) => {
+    const visit = typeof visitOrId === 'string'
+      ? siteVisits.find(v => v.id === visitOrId) || VISITA_TEMPLATES[0]
+      : visitOrId;
+
+    const generatedQuote = await processSiteVisitExpediente(
+      visit,
+      basePrecios,
+      empresaConfig.aiConfig || {},
+      onProgress
+    );
+
+    setPresupuestos(prev => [generatedQuote, ...prev]);
+    addAuditLog('PRESUPUESTO_IA_GENERADO', `Presupuesto ${generatedQuote.numero} para ${generatedQuote.cliente}`);
+    showNotification(`¡Borrador técnico ${generatedQuote.numero} generado por IA! Listo para revisión.`);
+    return generatedQuote;
+  };
+
+  const refineQuoteWithVoiceCommand = async (quoteId, commandText) => {
+    const targetQuote = presupuestos.find(p => p.id === quoteId);
+    if (!targetQuote) return null;
+
+    const updatedQuote = await applyVoiceCommandToQuote(targetQuote, commandText, empresaConfig.aiConfig);
+    setPresupuestos(prev => prev.map(p => p.id === quoteId ? updatedQuote : p));
+    addAuditLog('REFINADO_VOZ_IA', `Presupuesto: ${targetQuote.numero} - Comando: "${commandText}"`);
+    showNotification(`✨ Ajuste por voz aplicado: ${updatedQuote._lastChangelog || 'Presupuesto recalculado.'}`);
+    return updatedQuote;
+  };
+
+  const approveAndSendQuote = (quoteId, clientContactDetails) => {
+    const targetQuote = presupuestos.find(p => p.id === quoteId);
+    if (!targetQuote) return null;
+
+    const updatedQuote = {
+      ...targetQuote,
+      estado: 'enviado_cliente',
+      aprobadoPorDirector: true,
+      fechaAprobacion: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      envioCliente: {
+        fecha: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        canal: clientContactDetails?.canal || 'WhatsApp & Email',
+        destinatario: clientContactDetails?.destinatario || targetQuote.telefono || targetQuote.email,
+        enlaceFirma: `https://obramaster.app/presupuestos/${targetQuote.id}/firmar-digital`
+      }
+    };
+
+    setPresupuestos(prev => prev.map(p => p.id === quoteId ? updatedQuote : p));
+    addAuditLog('PRESUPUESTO_APROBADO_Y_ENVIADO', `Presupuesto ${targetQuote.numero} enviado a ${targetQuote.cliente}`);
+    showNotification(`¡Presupuesto ${targetQuote.numero} aprobado y enviado al cliente con trazabilidad!`);
+    return updatedQuote;
+  };
+
   // Presupuesto Actions
   const addPresupuesto = (presData) => {
     const newPres = {
@@ -810,7 +1070,23 @@ export function AppProvider({ children }) {
       generateRandomPassword,
       // AI Engine Config
       updateAiConfig,
-      testAiConnection
+      testAiConnection,
+      // Realtime Bidirectional & Offline-First
+      isOnline,
+      offlineQueueLength,
+      activeRealtimeAlert,
+      setActiveRealtimeAlert,
+      broadcastWorkerProgress,
+      broadcastWorkerEvidence,
+      broadcastAdminTask,
+      broadcastAdminAlert,
+      // Site Visits & AI Multimodal Quoting
+      siteVisits,
+      setSiteVisits,
+      addSiteVisit,
+      generateQuoteFromSiteVisit,
+      refineQuoteWithVoiceCommand,
+      approveAndSendQuote
     }}>
       {children}
     </AppContext.Provider>

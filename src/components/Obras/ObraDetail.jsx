@@ -48,7 +48,9 @@ export default function ObraDetail({ obraId, onBack }) {
     deleteObraBasePrecioItem,
     setActiveTab,
     setSelectedPresupuestoId,
-    setPdfModalData
+    setPdfModalData,
+    broadcastAdminTask,
+    broadcastAdminAlert
   } = useApp();
 
   const obra = obras.find(o => o.id === obraId);
@@ -73,6 +75,20 @@ export default function ObraDetail({ obraId, onBack }) {
     unidad: 'sacos',
     costeEstimado: 0,
     proveedor: 'Obramat'
+  });
+
+  // Realtime Admin Task & Alert Modal States
+  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+  const [newTaskForm, setNewTaskForm] = useState({
+    nombre: '',
+    responsable: obreros[0]?.nombre || 'Operario',
+    dias: 4
+  });
+
+  const [showNewAlertModal, setShowNewAlertModal] = useState(false);
+  const [alertForm, setAlertForm] = useState({
+    titulo: 'Instrucción Técnica / Seguridad',
+    descripcion: ''
   });
 
   if (!obra) {
@@ -211,6 +227,22 @@ export default function ObraDetail({ obraId, onBack }) {
     });
   };
 
+  const handleSaveNewTask = (e) => {
+    e.preventDefault();
+    if (!newTaskForm.nombre) return;
+    broadcastAdminTask(obra.id, newTaskForm);
+    setShowNewTaskModal(false);
+    setNewTaskForm({ nombre: '', responsable: obreros[0]?.nombre || 'Operario', dias: 4 });
+  };
+
+  const handleSaveNewAlert = (e) => {
+    e.preventDefault();
+    if (!alertForm.descripcion) return;
+    broadcastAdminAlert(obra.id, alertForm);
+    setShowNewAlertModal(false);
+    setAlertForm({ titulo: 'Instrucción Técnica / Seguridad', descripcion: '' });
+  };
+
   return (
     <div className="space-y-6">
       
@@ -337,12 +369,35 @@ export default function ObraDetail({ obraId, onBack }) {
       {/* TAB 1: FASES Y PLANIFICACIÓN */}
       {detailTab === 'fases' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-amber-400" />
-              <span>Etapas Constructivas de la Obra</span>
-            </h3>
-            <span className="text-xs text-slate-400">Haz clic en una fase para marcarla como completada</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-amber-400" />
+                <span>Etapas Constructivas de la Obra</span>
+              </h3>
+              <span className="text-xs text-slate-400">Haz clic en una fase para marcar avance o asigna nuevas tareas en tiempo real</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNewAlertModal(true)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                title="Enviar aviso o instrucción técnica a los operarios"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Aviso Técnico</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowNewTaskModal(true)}
+                className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Asignar Tarea (Realtime)</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
@@ -1144,6 +1199,142 @@ export default function ObraDetail({ obraId, onBack }) {
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl"
                 >
                   Guardar Partida
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Asignar Nueva Tarea (Realtime Dispatch) */}
+      {showNewTaskModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <Plus className="w-4 h-4 text-amber-400" />
+                <span>Asignar Tarea a Operario en Tiempo Real</span>
+              </h3>
+              <button type="button" onClick={() => setShowNewTaskModal(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+
+            <p className="text-slate-400 text-[11px]">
+              Al crear la tarea, se emitirá una señal instantánea por canal WebSocket al teléfono del operario asignado con aviso sonoro y táctil.
+            </p>
+
+            <form onSubmit={handleSaveNewTask} className="space-y-3">
+              <div>
+                <label className="text-slate-300 block mb-1 font-bold">Descripción de la Tarea / Fase:</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Montaje de mecanismos eléctricos en salón..."
+                  value={newTaskForm.nombre}
+                  onChange={(e) => setNewTaskForm({ ...newTaskForm, nombre: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 block mb-1 font-bold">Operario Responsable:</label>
+                  <select
+                    value={newTaskForm.responsable}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, responsable: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-medium focus:outline-none focus:border-amber-400"
+                  >
+                    {obreros.map(o => (
+                      <option key={o.id} value={o.nombre}>{o.nombre} ({o.puesto.split('/')[0]})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-300 block mb-1 font-bold">Días estimados:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={newTaskForm.dias}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, dias: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-mono text-center font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowNewTaskModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 text-slate-950 font-black rounded-xl shadow"
+                >
+                  Asignar y Notificar Móvil
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Enviar Aviso Técnico / Instrucción */}
+      {showNewAlertModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/40 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span>Enviar Instrucción Técnica o Advertencia</span>
+              </h3>
+              <button type="button" onClick={() => setShowNewAlertModal(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+
+            <p className="text-slate-400 text-[11px]">
+              Envía un plano urgente, advertencia de seguridad o cambio de directriz que aparecerá en pantalla completa en los móviles del equipo.
+            </p>
+
+            <form onSubmit={handleSaveNewAlert} className="space-y-3">
+              <div>
+                <label className="text-slate-300 block mb-1 font-bold">Título del Aviso:</label>
+                <input
+                  type="text"
+                  required
+                  value={alertForm.titulo}
+                  onChange={(e) => setAlertForm({ ...alertForm, titulo: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 block mb-1 font-bold">Instrucción Detallada:</label>
+                <textarea
+                  rows="3"
+                  required
+                  placeholder="Ej: No picar en tabique del baño hasta verificar paso de bajante general según plano anexo..."
+                  value={alertForm.descripcion}
+                  onChange={(e) => setAlertForm({ ...alertForm, descripcion: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowNewAlertModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl shadow"
+                >
+                  Emitir Alerta a Operarios
                 </button>
               </div>
             </form>

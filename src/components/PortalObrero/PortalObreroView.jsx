@@ -36,7 +36,11 @@ export default function PortalObreroView() {
     showNotification,
     currentUser,
     logout,
-    setActiveTab
+    setActiveTab,
+    broadcastWorkerProgress,
+    broadcastWorkerEvidence,
+    isOnline,
+    offlineQueueLength
   } = useApp();
 
   const isObreroLoggedIn = currentUser?.role === 'obrero';
@@ -64,6 +68,11 @@ export default function PortalObreroView() {
   const [fichadoEntrada, setFichadoEntrada] = useState(true);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [showHorasModal, setShowHorasModal] = useState(false);
+
+  // Hours and Stock logging
+  const [horasTrabajadas, setHorasTrabajadas] = useState(8);
+  const [stockConsumido, setStockConsumido] = useState('');
 
   // Photo upload state
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState('https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80');
@@ -82,30 +91,11 @@ export default function PortalObreroView() {
   );
 
   const handleUpdateFaseProgress = (obraId, faseId, newProgress) => {
-    const targetObra = obras.find(o => o.id === obraId);
-    if (!targetObra) return;
-
     const progNum = Math.min(100, Math.max(0, newProgress));
     const isCompleted = progNum === 100;
 
-    const updatedFases = (targetObra.fases || []).map(f => {
-      if (f.id === faseId) {
-        return {
-          ...f,
-          progreso: progNum,
-          estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente'
-        };
-      }
-      return f;
-    });
-
-    const totalProg = updatedFases.reduce((s, f) => s + f.progreso, 0);
-    const newGlobalProg = Math.round(totalProg / updatedFases.length);
-
-    updateObra(obraId, {
-      fases: updatedFases,
-      progreso: newGlobalProg
-    });
+    // Use bidirectional realtime broadcast!
+    broadcastWorkerProgress(obraId, faseId, progNum, currentObrero.nombre);
 
     if (isCompleted) {
       confetti({
@@ -113,7 +103,7 @@ export default function PortalObreroView() {
         spread: 50,
         origin: { y: 0.7 }
       });
-      showNotification(`¡Fase completada al 100%! El avance global de la obra sube a ${newGlobalProg}%.`);
+      showNotification(`¡Fase completada al 100%! Notificada en tiempo real a la oficina.`);
     } else {
       showNotification(`Avance de fase actualizado al ${progNum}%.`);
     }
@@ -123,19 +113,41 @@ export default function PortalObreroView() {
     e.preventDefault();
     if (!activeObraId) return;
 
-    addDiarioEntry(activeObraId, {
+    const entry = {
       autor: `${currentObrero.nombre} (${currentObrero.puesto})`,
       clima: 'En obra',
       obrerosPresentes: [currentObrero.nombre],
       resumen: photoNote || 'Avance fotográfico de tareas completadas hoy en la obra.',
       incidencias: '',
       fotos: [uploadedPhotoUrl]
-    });
+    };
+
+    // Use bidirectional realtime broadcast!
+    broadcastWorkerEvidence(activeObraId, entry);
 
     setShowPhotoModal(false);
     setPhotoNote('');
     confetti({ particleCount: 30, spread: 40 });
-    showNotification('Foto y parte diario enviados al constructor.');
+    showNotification('Foto y parte diario enviados a la oficina en tiempo real.');
+  };
+
+  const handleSendHorasYStock = (e) => {
+    e.preventDefault();
+    if (!activeObraId) return;
+
+    const entry = {
+      autor: `${currentObrero.nombre} (${currentObrero.puesto})`,
+      clima: 'Turno en obra',
+      obrerosPresentes: [currentObrero.nombre],
+      resumen: `Parte de jornada: Imputadas ${horasTrabajadas}h de trabajo.${stockConsumido ? ` Material consumido: ${stockConsumido}` : ''}`,
+      incidencias: '',
+      fotos: []
+    };
+
+    broadcastWorkerEvidence(activeObraId, entry);
+    setShowHorasModal(false);
+    setStockConsumido('');
+    showNotification(`Horas (${horasTrabajadas}h) y consumos registrados y notificados a oficina.`);
   };
 
   const handleSendVoiceNote = (e) => {
@@ -302,28 +314,55 @@ export default function PortalObreroView() {
               </button>
             </div>
 
+            {/* Realtime Connectivity Status Banner */}
+            <div className="flex items-center justify-between px-1 text-[11px]">
+              {isOnline ? (
+                <span className="flex items-center gap-1.5 text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Sincronizado en Tiempo Real
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  Modo Offline ({offlineQueueLength} pendientes)
+                </span>
+              )}
+              <span className="text-[10px] text-slate-500 font-mono">Central Obra Conectada</span>
+            </div>
+
             {/* Quick Actions in Jobsite */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => setShowPhotoModal(true)}
-                className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
+                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
               >
                 <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition">
                   <Camera className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-white text-xs block">Subir Foto Avance</span>
-                <span className="text-[10px] text-slate-400 block">Fotografía del trabajo hecho</span>
+                <span className="font-bold text-white text-[11px] block truncate">Foto Avance</span>
+                <span className="text-[9px] text-slate-400 block truncate">Evidencia de fase</span>
               </button>
 
               <button
                 onClick={() => setShowVoiceModal(true)}
-                className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
+                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
               >
                 <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition">
                   <Mic className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-white text-xs block">Nota de Voz / Falta Material</span>
-                <span className="text-[10px] text-slate-400 block">Aviso urgente al encargado</span>
+                <span className="font-bold text-white text-[11px] block truncate">Nota de Voz</span>
+                <span className="text-[9px] text-slate-400 block truncate">Aviso por audio</span>
+              </button>
+
+              <button
+                onClick={() => setShowHorasModal(true)}
+                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
+              >
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-white text-[11px] block truncate">Horas & Stock</span>
+                <span className="text-[9px] text-slate-400 block truncate">Imputar turno</span>
               </button>
             </div>
 
@@ -557,6 +596,67 @@ export default function PortalObreroView() {
                   className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg shadow"
                 >
                   Enviar Audio
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Imputar Horas & Consumo de Stock */}
+      {showHorasModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4">
+            <h3 className="font-bold text-white text-sm flex items-center gap-2">
+              <Clock className="w-4 h-4 text-emerald-400" />
+              <span>Imputar Horas y Consumo de Stock</span>
+            </h3>
+
+            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs text-slate-400">
+              Registra la jornada de hoy y los materiales consumidos del stock de la obra para sincronizar con oficina al instante.
+            </div>
+
+            <form onSubmit={handleSendHorasYStock} className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-400 block mb-1">Horas dedicadas hoy:</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="14"
+                    step="0.5"
+                    value={horasTrabajadas}
+                    onChange={(e) => setHorasTrabajadas(Number(e.target.value))}
+                    className="w-24 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-mono font-bold text-center"
+                  />
+                  <span className="text-slate-400 font-semibold">horas ordinarias</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Material o stock consumido:</label>
+                <textarea
+                  rows="2"
+                  value={stockConsumido}
+                  onChange={(e) => setStockConsumido(e.target.value)}
+                  placeholder="Ej: 5 sacos mortero gris, 1 rollo cinta pintor, 2 codos multicapa..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-400"
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowHorasModal(false)}
+                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg shadow"
+                >
+                  Guardar y Sincronizar
                 </button>
               </div>
             </form>

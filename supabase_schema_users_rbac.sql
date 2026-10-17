@@ -231,3 +231,138 @@ INSERT INTO public.ai_integration_settings (
   true,
   timezone('utc'::text, now())
 ) ON CONFLICT DO NOTHING;
+
+-- =========================================================================
+-- 9. TABLA DE CONTROL DE OBRAS Y PROYECTOS (REALTIME REACTIVO)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code VARCHAR(50) UNIQUE NOT NULL,
+  title VARCHAR(150) NOT NULL,
+  client_id UUID,
+  client_name VARCHAR(150) NOT NULL,
+  client_phone VARCHAR(50),
+  client_email VARCHAR(100),
+  address TEXT NOT NULL,
+  status VARCHAR(50) DEFAULT 'en_curso' CHECK (status IN ('estudio', 'presupuestado', 'en_curso', 'paralizada', 'finalizada')),
+  progress_percentage NUMERIC(5,2) DEFAULT 0.00,
+  direct_cost NUMERIC(12,2) DEFAULT 0.00,
+  expected_margin_pct NUMERIC(5,2) DEFAULT 30.00,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- Trigger updated_at para projects
+DROP TRIGGER IF EXISTS trigger_projects_updated_at ON public.projects;
+CREATE TRIGGER trigger_projects_updated_at
+BEFORE UPDATE ON public.projects
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- =========================================================================
+-- 10. EXPEDIENTES DE VISITA DE OBRA MULTIMODAL (AI CAPTURES)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.site_visit_captures (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE,
+  media_type VARCHAR(50) NOT NULL CHECK (media_type IN ('audio', 'photo_state', 'handwritten_note', 'plan', 'laser_sketch')),
+  title VARCHAR(150),
+  file_url TEXT NOT NULL,
+  transcription_or_ocr TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  captured_by UUID REFERENCES public.users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- =========================================================================
+-- 11. TABLA DE PRESUPUESTOS INTERACTIVOS REFINADOS POR IA
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.quotes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+  quote_number VARCHAR(50) UNIQUE NOT NULL,
+  version INT DEFAULT 1,
+  status VARCHAR(50) DEFAULT 'borrador_ia' CHECK (status IN ('borrador_ia', 'en_revision_director', 'aprobado_director', 'enviado_cliente', 'aceptado', 'facturado')),
+  client_name VARCHAR(150) NOT NULL,
+  client_phone VARCHAR(50),
+  client_email VARCHAR(100),
+  property_address TEXT NOT NULL,
+  quality_tier VARCHAR(50) DEFAULT 'Media-Alta',
+  subtotal NUMERIC(12,2) DEFAULT 0.00,
+  tax_rate NUMERIC(4,2) DEFAULT 10.00, -- 10% vivienda o 21% general
+  tax_amount NUMERIC(12,2) DEFAULT 0.00,
+  total NUMERIC(12,2) DEFAULT 0.00,
+  commercial_margin_pct NUMERIC(5,2) DEFAULT 30.00,
+  ai_generation_summary TEXT,
+  refinement_changelog JSONB DEFAULT '[]'::jsonb,
+  approved_by_director BOOLEAN DEFAULT false,
+  director_signature_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- Trigger updated_at para quotes
+DROP TRIGGER IF EXISTS trigger_quotes_updated_at ON public.quotes;
+CREATE TRIGGER trigger_quotes_updated_at
+BEFORE UPDATE ON public.quotes
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- =========================================================================
+-- 12. TABLA DE CAPÍTULOS Y PARTIDAS DESGLOSADAS
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.quote_chapters (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quote_id UUID REFERENCES public.quotes(id) ON DELETE CASCADE,
+  chapter_code VARCHAR(20) NOT NULL, -- '01', '02', '03'
+  chapter_name VARCHAR(150) NOT NULL,
+  subtotal NUMERIC(12,2) DEFAULT 0.00,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.quote_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  chapter_id UUID REFERENCES public.quote_chapters(id) ON DELETE CASCADE,
+  item_code VARCHAR(50) NOT NULL,
+  concept TEXT NOT NULL,
+  unit VARCHAR(20) DEFAULT 'm²',
+  quantity NUMERIC(10,2) DEFAULT 1.00,
+  subcontractor_unit_cost NUMERIC(10,2) DEFAULT 0.00,
+  margin_pct NUMERIC(5,2) DEFAULT 30.00,
+  unit_price NUMERIC(10,2) DEFAULT 0.00,
+  total_price NUMERIC(12,2) DEFAULT 0.00,
+  is_ai_modified BOOLEAN DEFAULT false,
+  origin VARCHAR(50) DEFAULT 'base_oficial'
+);
+
+-- =========================================================================
+-- 13. HABILITACIÓN DE PUBLICACIÓN REALTIME PARA EVENTOS BIDIRECCIONALES
+-- =========================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+END $$;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.projects;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.site_visit_captures;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.quotes;
+
+-- RLS para proyectos, capturas y presupuestos
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_visit_captures ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.quotes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.quote_chapters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.quote_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_full_quotes ON public.quotes FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY admin_full_captures ON public.site_visit_captures FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY worker_read_assigned_projects ON public.projects FOR SELECT USING (true);
+

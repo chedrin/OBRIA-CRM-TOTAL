@@ -20,6 +20,8 @@ import {
   Mic
 } from 'lucide-react';
 import PresupuestoGeneratorAI from './PresupuestoGeneratorAI';
+import VisitaObraModal from './VisitaObraModal';
+import ConsolaRevisionPresupuesto from './ConsolaRevisionPresupuesto';
 
 export default function PresupuestosList() {
   const {
@@ -32,13 +34,24 @@ export default function PresupuestosList() {
     showNotification
   } = useApp();
 
-  const [viewMode, setViewMode] = useState('list'); // list o new_ai
+  const [viewMode, setViewMode] = useState('list'); // list, new_ai, revision_consola
+  const [selectedQuoteId, setSelectedQuoteId] = useState(null);
+  const [showVisitaModal, setShowVisitaModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(null); // presupuesto object
   const [convertPorcentaje, setConvertPorcentaje] = useState(40);
   const [convertTipo, setConvertTipo] = useState('Certificación 1 (Anticipo 40% Inicio Obra)');
 
   if (viewMode === 'new_ai') {
     return <PresupuestoGeneratorAI onCancel={() => setViewMode('list')} onCreated={() => setViewMode('list')} />;
+  }
+
+  if (viewMode === 'revision_consola' && selectedQuoteId) {
+    return (
+      <ConsolaRevisionPresupuesto
+        quoteId={selectedQuoteId}
+        onBack={() => setViewMode('list')}
+      />
+    );
   }
 
   const handleOpenConvertModal = (pres) => {
@@ -109,13 +122,24 @@ export default function PresupuestosList() {
           </p>
         </div>
 
-        <button
-          onClick={() => setViewMode('new_ai')}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
-        >
-          <Sparkles className="w-4 h-4" />
-          <span>Nuevo Presupuesto con IA</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowVisitaModal(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-500 hover:to-indigo-400 text-white font-extrabold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-blue-500/20 active:scale-95"
+          >
+            <Camera className="w-4 h-4" />
+            <Mic className="w-4 h-4" />
+            <span>Nueva Visita con IA</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('new_ai')}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Generador Rápido</span>
+          </button>
+        </div>
       </div>
 
       {/* Hero Banner for AI Generator */}
@@ -234,6 +258,18 @@ export default function PresupuestosList() {
                     </button>
                   )}
 
+                  {/* Consola de Revision IA */}
+                  <button
+                    onClick={() => {
+                      setSelectedQuoteId(pres.id);
+                      setViewMode('revision_consola');
+                    }}
+                    className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Consola de Revisión IA</span>
+                  </button>
+
                   {/* View PDF */}
                   <button
                     onClick={() => setPdfModalData({ type: 'presupuesto', data: pres })}
@@ -343,6 +379,16 @@ export default function PresupuestosList() {
           </div>
         </div>
       )}
+
+      {/* Modal Visita de Obra Multimodal */}
+      <VisitaObraModal
+        isOpen={showVisitaModal}
+        onClose={() => setShowVisitaModal(false)}
+        onQuoteCreated={(newQuote) => {
+          setSelectedQuoteId(newQuote.id);
+          setViewMode('revision_consola');
+        }}
+      />
 
     </div>
   );

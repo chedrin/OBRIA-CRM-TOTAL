@@ -26,7 +26,7 @@ function getInitialRoute() {
 }
 
 function MainLayout() {
-  const { activeTab, setActiveTab, notification, currentUser, logout } = useApp();
+  const { activeTab, setActiveTab, notification, currentUser, logout, activeRealtimeAlert } = useApp();
   const [route, setRoute] = useState(getInitialRoute);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
 
@@ -94,6 +94,14 @@ function MainLayout() {
             <PortalObreroView />
           </main>
 
+          {/* Realtime Broadcast Banner */}
+          {activeRealtimeAlert && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-slate-900/95 backdrop-blur-md border border-amber-500 text-white px-5 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ring-4 ring-amber-500/20 max-w-md">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
+              <span className="text-xs sm:text-sm font-black text-amber-300 truncate">{activeRealtimeAlert.msg}</span>
+            </div>
+          )}
+
           {/* Toast Notification */}
           {notification && (
             <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 bg-slate-900 border border-amber-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in duration-300">
@@ -120,6 +128,14 @@ function MainLayout() {
         <footer className="text-center py-4 text-[11px] text-slate-600">
           ObraMaster Móvil v2.4 · Sesión activa como {currentUser.fullName}
         </footer>
+
+        {/* Realtime Broadcast Banner */}
+        {activeRealtimeAlert && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-slate-900/95 backdrop-blur-md border border-amber-500 text-white px-5 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ring-4 ring-amber-500/20 max-w-md">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
+            <span className="text-xs sm:text-sm font-black text-amber-300 truncate">{activeRealtimeAlert.msg}</span>
+          </div>
+        )}
 
         {/* Toast Notification */}
         {notification && (
@@ -207,6 +223,14 @@ function MainLayout() {
           </div>
         </div>
       </footer>
+
+      {/* Realtime Broadcast Banner */}
+      {activeRealtimeAlert && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-slate-900/95 backdrop-blur-md border border-amber-500 text-white px-5 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ring-4 ring-amber-500/20 max-w-md">
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
+          <span className="text-xs sm:text-sm font-black text-amber-300 truncate">{activeRealtimeAlert.msg}</span>
+        </div>
+      )}
 
       {/* Toast Notification */}
       {notification && (
