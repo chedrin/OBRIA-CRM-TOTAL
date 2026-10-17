@@ -22,6 +22,7 @@ import {
 import PresupuestoGeneratorAI from './PresupuestoGeneratorAI';
 import VisitaObraModal from './VisitaObraModal';
 import ConsolaRevisionPresupuesto from './ConsolaRevisionPresupuesto';
+import { generateExecutionPlanFromBudget } from '../../services/obraBudgetSyncService';
 
 export default function PresupuestosList() {
   const {
@@ -71,16 +72,8 @@ export default function PresupuestosList() {
     // Marcar presupuesto como aceptado por el cliente
     updatePresupuesto(pres.id, { estado: 'aceptado' });
 
-    // Generar fases automáticamente a partir de los capítulos
-    const capitulosUnicos = Array.from(new Set((pres.partidas || []).map(p => p.capitulo || 'General')));
-    const fasesFromPresupuesto = capitulosUnicos.map((cap, idx) => ({
-      id: `fase-auto-${Date.now()}-${idx}`,
-      nombre: `Fase ${idx + 1}: ${cap}`,
-      progreso: 0,
-      estado: 'pendiente',
-      dias: cap.includes('Demolicion') ? 4 : cap.includes('Fontaneria') || cap.includes('Electricidad') ? 8 : 10,
-      responsable: 'Por asignar'
-    }));
+    // Generar plan canónico de fases y tareas de ejecución a partir del presupuesto firmado (Single Source of Truth)
+    const fasesFromPresupuesto = generateExecutionPlanFromBudget(pres);
 
     // Crear la Obra automáticamente asociada al presupuesto aceptado
     addObra({

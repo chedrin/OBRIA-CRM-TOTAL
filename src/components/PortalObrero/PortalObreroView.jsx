@@ -21,10 +21,14 @@ import {
   Image as ImageIcon,
   LogOut,
   ArrowLeft,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  Check,
+  FileText
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import PwaInstallPrompt from './PwaInstallPrompt';
+import TaskProgressSelector from './TaskProgressSelector';
 
 export default function PortalObreroView() {
   const {
@@ -83,6 +87,16 @@ export default function PortalObreroView() {
 
   const currentObra = obras.find(o => o.id === activeObraId) || obras[0];
 
+  // Estado para desplegar fases y ver sus partidas presupuestadas
+  const [expandedFases, setExpandedFases] = useState({});
+
+  const toggleFaseExpand = (faseId) => {
+    setExpandedFases(prev => ({
+      ...prev,
+      [faseId]: !prev[faseId]
+    }));
+  };
+
   // Assigned works to this worker
   const assignedObras = obras.filter(o =>
     (o.operariosIds || []).includes(currentObrero.id) ||
@@ -106,6 +120,20 @@ export default function PortalObreroView() {
       showNotification(`¡Fase completada al 100%! Notificada en tiempo real a la oficina.`);
     } else {
       showNotification(`Avance de fase actualizado al ${progNum}%.`);
+    }
+  };
+
+  const handleUpdateTaskProgress = (obraId, faseId, taskId, newProgress) => {
+    const progNum = Math.min(100, Math.max(0, newProgress));
+    const isCompleted = progNum === 100;
+
+    // Sincronización en tiempo real a nivel de tarea de partida con recálculo ponderado
+    broadcastWorkerProgress(obraId, faseId, progNum, currentObrero.nombre, taskId);
+
+    if (isCompleted) {
+      showNotification(`¡Partida completada al 100%! Sincronizada con la central.`);
+    } else {
+      showNotification(`Partida actualizada al ${progNum}%.`);
     }
   };
 
@@ -422,74 +450,145 @@ export default function PortalObreroView() {
                 <span className="text-[10px] text-slate-400">Pulsa para avanzar</span>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {(currentObra?.fases || []).map((fase, idx) => {
                   const isCompleted = fase.progreso === 100;
                   const isResponsible = fase.responsable?.toLowerCase().includes(currentObrero.nombre.split(' ')[0].toLowerCase());
+                  const hasTasks = Array.isArray(fase.tareas) && fase.tareas.length > 0;
+                  const isExpanded = expandedFases[fase.id] ?? (!isCompleted || isResponsible);
 
                   return (
                     <div
                       key={fase.id}
-                      className={`p-3.5 rounded-xl border transition space-y-2.5 ${
+                      className={`rounded-2xl border transition overflow-hidden ${
                         isCompleted
-                          ? 'bg-emerald-950/20 border-emerald-500/30'
+                          ? 'bg-slate-950/80 border-emerald-500/30'
                           : isResponsible
-                          ? 'bg-slate-950 border-amber-500/50 ring-1 ring-amber-500/20 shadow-md'
-                          : 'bg-slate-950/70 border-slate-800'
+                          ? 'bg-slate-950 border-amber-500/60 ring-1 ring-amber-500/20 shadow-md'
+                          : 'bg-slate-950/90 border-slate-800'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-2.5">
-                          <button
-                            onClick={() => handleUpdateFaseProgress(currentObra.id, fase.id, isCompleted ? 0 : 100)}
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 transition ${
+                      {/* Phase Header */}
+                      <div className="p-3.5 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 transition ${
                               isCompleted
-                                ? 'bg-emerald-500 text-slate-950'
-                                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                            }`}
-                          >
-                            {isCompleted ? '✓' : idx + 1}
-                          </button>
-                          <div>
-                            <h5 className={`text-xs font-bold ${isCompleted ? 'text-emerald-400 line-through' : 'text-white'}`}>
-                              {fase.nombre}
-                            </h5>
-                            <p className="text-[10px] text-slate-400">
-                              Asignado: <strong className={isResponsible ? 'text-amber-400' : 'text-slate-300'}>{fase.responsable}</strong>
-                              {isResponsible && ' (¡Es tu tarea!)'}
-                            </p>
+                                ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/30'
+                                : 'bg-slate-800 text-slate-300'
+                            }`}>
+                              {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : idx + 1}
+                            </div>
+                            <div className="min-w-0">
+                              <h5 className={`text-xs font-bold truncate ${isCompleted ? 'text-emerald-400 line-through' : 'text-white'}`}>
+                                {fase.nombre}
+                              </h5>
+                              <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                                <span>
+                                  Asignado: <strong className={isResponsible ? 'text-amber-400' : 'text-slate-300'}>{fase.responsable}</strong>
+                                </span>
+                                {fase.weight_percentage && (
+                                  <span className="text-amber-400/80 font-mono font-semibold">
+                                    · {fase.weight_percentage}% de obra
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`text-xs font-mono font-black ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}`}>
+                              {fase.progreso}%
+                            </span>
+                            {hasTasks && (
+                              <button
+                                type="button"
+                                onClick={() => toggleFaseExpand(fase.id)}
+                                className="w-6 h-6 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition"
+                              >
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                              </button>
+                            )}
                           </div>
                         </div>
 
-                        <span className={`text-xs font-mono font-bold ${isCompleted ? 'text-emerald-400' : 'text-slate-300'}`}>
-                          {fase.progreso}%
-                        </span>
-                      </div>
-
-                      {/* Progress bar and quick increment buttons */}
-                      <div className="space-y-1.5 pt-1">
-                        <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        {/* Phase Progress Bar */}
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all duration-300 ${isCompleted ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                            className={`h-full rounded-full transition-all duration-300 ${isCompleted ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'}`}
                             style={{ width: `${fase.progreso}%` }}
                           ></div>
                         </div>
-
-                        {!isCompleted && (
-                          <div className="flex items-center gap-1.5 pt-1">
-                            <span className="text-[10px] text-slate-500">Marcar avance:</span>
-                            {[50, 75, 100].map(pct => (
-                              <button
-                                key={pct}
-                                onClick={() => handleUpdateFaseProgress(currentObra.id, fase.id, pct)}
-                                className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition"
-                              >
-                                {pct === 100 ? 'Terminada ✓' : `${pct}%`}
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
+
+                      {/* Tasks List (Partidas del Presupuesto Firmado) */}
+                      {hasTasks && isExpanded && (
+                        <div className="bg-slate-900/50 border-t border-slate-800/80 p-3 space-y-3">
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
+                            <span className="font-semibold uppercase tracking-wider flex items-center gap-1">
+                              <FileText className="w-3 h-3 text-amber-400" />
+                              <span>Partidas del Presupuesto ({fase.tareas.length})</span>
+                            </span>
+                            <span>Selector de avance táctil</span>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            {fase.tareas.map((tarea) => {
+                              const isTaskDone = tarea.progreso === 100;
+                              return (
+                                <div
+                                  key={tarea.id}
+                                  className={`p-2.5 rounded-xl border space-y-2 transition ${
+                                    isTaskDone
+                                      ? 'bg-slate-950/60 border-emerald-500/20'
+                                      : 'bg-slate-950 border-slate-800'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[9px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded">
+                                          {tarea.codigo}
+                                        </span>
+                                        {tarea.unidad && (
+                                          <span className="text-[9px] text-slate-400 font-mono">
+                                            {tarea.cantidad} {tarea.unidad}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <h6 className={`text-[11px] font-semibold mt-1 leading-snug ${isTaskDone ? 'text-slate-300 line-through' : 'text-white'}`}>
+                                        {tarea.titulo}
+                                      </h6>
+                                    </div>
+                                    <span className="text-[10px] font-mono font-bold text-slate-400 shrink-0">
+                                      {tarea.importeTotal ? `${tarea.importeTotal.toLocaleString('es-ES')} €` : ''}
+                                    </span>
+                                  </div>
+
+                                  {/* Tactile Progress Selector */}
+                                  <TaskProgressSelector
+                                    currentProgress={tarea.progreso}
+                                    onProgressChange={(pct) => handleUpdateTaskProgress(currentObra.id, fase.id, tarea.id, pct)}
+                                    onRequestEvidencePhoto={() => setShowPhotoModal(true)}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* If phase has no subtasks, show tactile selector directly on phase */}
+                      {!hasTasks && (
+                        <div className="bg-slate-900/50 border-t border-slate-800/80 p-3">
+                          <TaskProgressSelector
+                            currentProgress={fase.progreso}
+                            onProgressChange={(pct) => handleUpdateFaseProgress(currentObra.id, fase.id, pct)}
+                            onRequestEvidencePhoto={() => setShowPhotoModal(true)}
+                          />
+                        </div>
+                      )}
+
                     </div>
                   );
                 })}

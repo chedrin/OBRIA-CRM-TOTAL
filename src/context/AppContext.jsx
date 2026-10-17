@@ -19,6 +19,12 @@ import {
   processSiteVisitExpediente,
   applyVoiceCommandToQuote
 } from '../services/siteVisitAIService';
+import {
+  generateExecutionPlanFromBudget,
+  calculateGlobalProjectProgress,
+  calculatePhaseWeightedProgress,
+  repairAndSyncObrasWithBudgets
+} from '../services/obraBudgetSyncService';
 
 const AppContext = createContext();
 
@@ -52,10 +58,14 @@ function loadStored(key, fallback) {
 
 export function AppProvider({ children }) {
   const [empresaConfig, setEmpresaConfig] = useState(() => loadStored(STORAGE_KEYS.EMPRESA, INITIAL_EMPRESA_CONFIG));
-  const [obras, setObras] = useState(() => loadStored(STORAGE_KEYS.OBRAS, INITIAL_OBRAS));
   const [obreros, setObreros] = useState(() => loadStored(STORAGE_KEYS.OBREROS, INITIAL_OBREROS));
   const [basePrecios, setBasePrecios] = useState(() => loadStored(STORAGE_KEYS.BASE_PRECIOS, INITIAL_BASE_PRECIOS));
   const [presupuestos, setPresupuestos] = useState(() => loadStored(STORAGE_KEYS.PRESUPUESTOS, INITIAL_PRESUPUESTOS));
+  const [obras, setObras] = useState(() => {
+    const rawObras = loadStored(STORAGE_KEYS.OBRAS, INITIAL_OBRAS);
+    const rawPres = loadStored(STORAGE_KEYS.PRESUPUESTOS, INITIAL_PRESUPUESTOS);
+    return repairAndSyncObrasWithBudgets(rawObras, rawPres);
+  });
   const [facturas, setFacturas] = useState(() => loadStored(STORAGE_KEYS.FACTURAS, INITIAL_FACTURAS));
   const [facturasProveedores, setFacturasProveedores] = useState(() => loadStored(STORAGE_KEYS.FACTURAS_PROV, INITIAL_FACTURAS_PROVEEDORES));
   const [mensajesInbox, setMensajesInbox] = useState(() => loadStored(STORAGE_KEYS.MENSAJES, INITIAL_MENSAJES_INBOX));
@@ -113,23 +123,52 @@ export function AppProvider({ children }) {
   // Realtime Bidirectional Event Bus Subscriptions
   useEffect(() => {
     const unsubProgress = realtimeSync.subscribe('WORKER_PROGRESS_UPDATED', (payload) => {
-      const { obraId, faseId, newProgress, obreroNombre } = payload;
+      const { obraId, faseId, taskId, newProgress, obreroNombre, taskTitle } = payload;
       setObras(prevObras => prevObras.map(o => {
         if (o.id === obraId) {
           const progNum = Math.min(100, Math.max(0, newProgress));
           const isCompleted = progNum === 100;
+          let computedFaseProg = progNum;
+
           const updatedFases = (o.fases || []).map(f => {
             if (f.id === faseId) {
+              let updatedTareas = f.tareas ? [...f.tareas] : [];
+              if (taskId && updatedTareas.length > 0) {
+                updatedTareas = updatedTareas.map(t => {
+                  if (t.id === taskId || t.quote_line_id === taskId || t.partidaId === taskId) {
+                    return {
+                      ...t,
+                      progreso: progNum,
+                      estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente',
+                      completedAt: isCompleted ? new Date().toISOString() : null
+                    };
+                  }
+                  return t;
+                });
+                computedFaseProg = calculatePhaseWeightedProgress(updatedTareas, f.importeTotal);
+              } else {
+                computedFaseProg = progNum;
+                if (updatedTareas.length > 0) {
+                  updatedTareas = updatedTareas.map(t => ({
+                    ...t,
+                    progreso: progNum,
+                    estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente',
+                    completedAt: isCompleted ? new Date().toISOString() : null
+                  }));
+                }
+              }
+              const isFaseComp = computedFaseProg === 100;
               return {
                 ...f,
-                progreso: progNum,
-                estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente'
+                tareas: updatedTareas,
+                progreso: computedFaseProg,
+                estado: isFaseComp ? 'completada' : computedFaseProg > 0 ? 'en_curso' : 'pendiente'
               };
             }
             return f;
           });
-          const totalProg = updatedFases.reduce((s, f) => s + f.progreso, 0);
-          const newGlobalProg = Math.round(totalProg / (updatedFases.length || 1));
+
+          const newGlobalProg = calculateGlobalProjectProgress(updatedFases);
           return { ...o, fases: updatedFases, progreso: newGlobalProg };
         }
         return o;
@@ -137,7 +176,7 @@ export function AppProvider({ children }) {
 
       setActiveRealtimeAlert({
         type: 'progress',
-        msg: `⚡ [Realtime] ${obreroNombre || 'Operario'} actualizó avance al ${newProgress}%`,
+        msg: `⚡ [Realtime] ${obreroNombre || 'Operario'} actualizó ${taskTitle ? `"${taskTitle.substring(0, 25)}..."` : 'avance'} al ${newProgress}%`,
         timestamp: Date.now()
       });
       setTimeout(() => setActiveRealtimeAlert(null), 5000);
@@ -618,25 +657,59 @@ export function AppProvider({ children }) {
   // ==========================================
   // REALTIME BIDIRECTIONAL BROADCAST METHODS
   // ==========================================
-  const broadcastWorkerProgress = (obraId, faseId, newProgress, obreroNombre) => {
+  const broadcastWorkerProgress = (obraId, faseId, newProgress, obreroNombre, taskId = null) => {
     const progNum = Math.min(100, Math.max(0, newProgress));
     const isCompleted = progNum === 100;
+
+    let computedGlobalProg = 0;
+    let computedFaseProg = progNum;
+    let targetTaskTitle = '';
 
     setObras(prevObras => prevObras.map(o => {
       if (o.id === obraId) {
         const updatedFases = (o.fases || []).map(f => {
           if (f.id === faseId) {
+            let updatedTareas = f.tareas ? [...f.tareas] : [];
+            
+            if (taskId && updatedTareas.length > 0) {
+              updatedTareas = updatedTareas.map(t => {
+                if (t.id === taskId || t.quote_line_id === taskId || t.partidaId === taskId) {
+                  targetTaskTitle = t.titulo;
+                  return {
+                    ...t,
+                    progreso: progNum,
+                    estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente',
+                    completedAt: isCompleted ? new Date().toISOString() : null
+                  };
+                }
+                return t;
+              });
+              computedFaseProg = calculatePhaseWeightedProgress(updatedTareas, f.importeTotal);
+            } else {
+              computedFaseProg = progNum;
+              if (updatedTareas.length > 0) {
+                updatedTareas = updatedTareas.map(t => ({
+                  ...t,
+                  progreso: progNum,
+                  estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente',
+                  completedAt: isCompleted ? new Date().toISOString() : null
+                }));
+              }
+            }
+
+            const isFaseCompleted = computedFaseProg === 100;
             return {
               ...f,
-              progreso: progNum,
-              estado: isCompleted ? 'completada' : progNum > 0 ? 'en_curso' : 'pendiente'
+              tareas: updatedTareas,
+              progreso: computedFaseProg,
+              estado: isFaseCompleted ? 'completada' : computedFaseProg > 0 ? 'en_curso' : 'pendiente'
             };
           }
           return f;
         });
-        const totalProg = updatedFases.reduce((s, f) => s + f.progreso, 0);
-        const newGlobalProg = Math.round(totalProg / (updatedFases.length || 1));
-        return { ...o, fases: updatedFases, progreso: newGlobalProg };
+
+        computedGlobalProg = calculateGlobalProjectProgress(updatedFases);
+        return { ...o, fases: updatedFases, progreso: computedGlobalProg };
       }
       return o;
     }));
@@ -644,11 +717,15 @@ export function AppProvider({ children }) {
     realtimeSync.broadcast('WORKER_PROGRESS_UPDATED', {
       obraId,
       faseId,
+      taskId,
       newProgress: progNum,
+      faseProgress: computedFaseProg,
+      globalProgress: computedGlobalProg,
+      taskTitle: targetTaskTitle,
       obreroNombre: obreroNombre || currentUser?.fullName || 'Operario'
     });
 
-    addAuditLog('AVANCE_FASE_OBRERO', `Obra: ${obraId} - Fase: ${faseId} al ${progNum}%`);
+    addAuditLog('AVANCE_PARTIDA_OBRERO', `Obra: ${obraId} - ${targetTaskTitle ? `Partida: "${targetTaskTitle.substring(0, 30)}..."` : `Fase: ${faseId}`} al ${progNum}% (Obra Global: ${computedGlobalProg}%)`);
   };
 
   const broadcastWorkerEvidence = (obraId, entry) => {
@@ -786,8 +863,38 @@ export function AppProvider({ children }) {
   };
 
   const updatePresupuesto = (id, updates) => {
-    setPresupuestos(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
-    showNotification('Presupuesto actualizado');
+    setPresupuestos(prev => prev.map(p => {
+      if (p.id === id) {
+        const newPres = { ...p, ...updates };
+
+        // Si el presupuesto pasa a estado 'aceptado' o 'firmado', sincronizar 1:1 con la obra (Single Source of Truth)
+        if (updates.estado === 'aceptado' || updates.estado === 'firmado') {
+          const canonicalFases = generateExecutionPlanFromBudget(newPres);
+          const canonicalProgreso = calculateGlobalProjectProgress(canonicalFases);
+
+          setObras(prevObras => prevObras.map(o => {
+            if (o.id === newPres.obraId || o.presupuestoId === newPres.id) {
+              return {
+                ...o,
+                presupuestoId: newPres.id,
+                presupuestoTotal: newPres.totalConIva || newPres.baseImponible,
+                fases: canonicalFases,
+                progreso: canonicalProgreso,
+                _syncSourceOfTruth: {
+                  presupuestoNumero: newPres.numero,
+                  syncedAt: new Date().toISOString()
+                }
+              };
+            }
+            return o;
+          }));
+        }
+
+        return newPres;
+      }
+      return p;
+    }));
+    showNotification('Presupuesto actualizado y sincronizado');
   };
 
   // Presupuesto to Factura conversion in 1-click

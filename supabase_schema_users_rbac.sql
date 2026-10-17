@@ -355,6 +355,100 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.projects;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.site_visit_captures;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.quotes;
 
+-- =========================================================================
+-- 13-B. FASES Y TAREAS VINCULADAS ESTRICTAMENTE AL PRESUPUESTO FIRMADO
+-- =========================================================================
+
+-- 1. Fases de ejecución vinculadas directamente al presupuesto
+CREATE TABLE IF NOT EXISTS public.project_phases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  quote_id UUID REFERENCES public.quotes(id), -- Presupuesto de origen (Single Source of Truth)
+  name VARCHAR(150) NOT NULL,
+  order_index INT DEFAULT 1,
+  weight_percentage NUMERIC(5,2) DEFAULT 0.00, -- Peso sobre el total de la obra
+  progress_percentage INT DEFAULT 0 CHECK (progress_percentage BETWEEN 0 AND 100),
+  status VARCHAR(30) DEFAULT 'pendiente', -- 'pendiente', 'en_curso', 'completada'
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 2. Tareas/Partidas vinculadas a la fase y a la línea de presupuesto
+CREATE TABLE IF NOT EXISTS public.project_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phase_id UUID NOT NULL REFERENCES public.project_phases(id) ON DELETE CASCADE,
+  quote_line_id UUID REFERENCES public.quote_items(id), -- Partida original firmada
+  title VARCHAR(200) NOT NULL,
+  assigned_to UUID REFERENCES public.users(id),
+  progress_percentage INT DEFAULT 0 CHECK (progress_percentage IN (0, 25, 50, 75, 100)),
+  status VARCHAR(30) DEFAULT 'pendiente', -- 'pendiente', 'en_curso', 'completada'
+  completed_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 3. Trigger / Función para recalcular automáticamente el avance de fase y obra
+CREATE OR REPLACE FUNCTION update_project_progress()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_phase_id UUID;
+  v_project_id UUID;
+  v_phase_avg NUMERIC(5,2);
+  v_project_avg NUMERIC(5,2);
+BEGIN
+  v_phase_id := NEW.phase_id;
+  
+  -- Recalcular progreso de la Fase según la media de sus tareas
+  SELECT COALESCE(AVG(progress_percentage), 0)
+  INTO v_phase_avg
+  FROM public.project_tasks
+  WHERE phase_id = v_phase_id;
+
+  UPDATE public.project_phases
+  SET 
+    progress_percentage = ROUND(v_phase_avg),
+    status = CASE 
+      WHEN ROUND(v_phase_avg) = 100 THEN 'completada'
+      WHEN ROUND(v_phase_avg) > 0 THEN 'en_curso'
+      ELSE 'pendiente'
+    END,
+    updated_at = NOW()
+  WHERE id = v_phase_id
+  RETURNING project_id INTO v_project_id;
+
+  -- Recalcular progreso general de la Obra según la media ponderada de sus fases
+  SELECT COALESCE(AVG(progress_percentage), 0)
+  INTO v_project_avg
+  FROM public.project_phases
+  WHERE project_id = v_project_id;
+
+  UPDATE public.projects
+  SET 
+    progress_percentage = ROUND(v_project_avg, 2),
+    updated_at = NOW()
+  WHERE id = v_project_id;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_task_progress_update ON public.project_tasks;
+CREATE TRIGGER trg_task_progress_update
+AFTER UPDATE OF progress_percentage ON public.project_tasks
+FOR EACH ROW
+EXECUTE FUNCTION update_project_progress();
+
+-- RLS y Realtime
+ALTER TABLE public.project_phases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.project_tasks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_full_project_phases ON public.project_phases FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY worker_read_update_phases ON public.project_phases FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY admin_full_project_tasks ON public.project_tasks FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY worker_read_update_tasks ON public.project_tasks FOR ALL USING (auth.role() = 'authenticated');
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.project_tasks;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.project_phases;
+
 -- RLS para proyectos, capturas y presupuestos
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_visit_captures ENABLE ROW LEVEL SECURITY;

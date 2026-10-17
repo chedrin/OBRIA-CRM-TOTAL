@@ -65,21 +65,130 @@ export const INITIAL_OBRAS = [
     estado: 'en_curso', // en_curso, presupuestada, finalizada, pausada
     fechaInicio: '2026-09-01',
     fechaFinEstimada: '2026-11-20',
-    progreso: 68,
-    presupuestoTotal: 48500,
-    costeRealActual: 28900,
+    progreso: 72,
+    presupuestoTotal: 22240.79,
+    costeRealActual: 14200,
     margenEsperadoPct: 35,
-    margenRealPct: 40.4,
-    notas: 'Ático de 95m² con terraza. Se demuele distribución antigua para crear espacio abierto salón-cocina.',
+    margenRealPct: 36.8,
+    notas: 'Ático de 95m² con terraza. Se demuele distribución antigua para crear espacio abierto salón-cocina según presupuesto firmado PRES-2026-001.',
     fases: [
-      { id: 'f-1', nombre: 'Demoliciones y Desescombro', progreso: 100, estado: 'completada', dias: 6, responsable: 'Mario Silva' },
-      { id: 'f-2', nombre: 'Fontanería, Saneamiento y Climatización', progreso: 100, estado: 'completada', dias: 10, responsable: 'ClimaTec Subcontrata' },
-      { id: 'f-3', nombre: 'Albañilería y Falsos Techos Pladur', progreso: 85, estado: 'en_curso', dias: 14, responsable: 'Ionut Radu' },
-      { id: 'f-4', nombre: 'Alicatados y Solados Porcelánicos', progreso: 60, estado: 'en_curso', dias: 12, responsable: 'Pedro Gómez' },
-      { id: 'f-5', nombre: 'Electricidad e Iluminación LED', progreso: 70, estado: 'en_curso', dias: 8, responsable: 'ElectroSur Subcontrata' },
-      { id: 'f-6', nombre: 'Carpintería de Madera y Puertas Lacadas', progreso: 10, estado: 'pendiente', dias: 5, responsable: 'Carpintería Robles' },
-      { id: 'f-7', nombre: 'Pintura Plástica Lisa y Remates', progreso: 0, estado: 'pendiente', dias: 6, responsable: 'DecorPint Subcontrata' },
-      { id: 'f-8', nombre: 'Limpieza Final y Entrega', progreso: 0, estado: 'pendiente', dias: 2, responsable: 'Cuadrilla propia' }
+      {
+        id: 'f-1',
+        quote_id: 'pres-1',
+        capitulo: 'Demoliciones',
+        nombre: 'Fase 1: Demoliciones y Gestión de Residuos',
+        orden: 1,
+        importeTotal: 2748.15,
+        weight_percentage: 14.30,
+        progreso: 100,
+        estado: 'completada',
+        dias: 6,
+        responsable: 'Mario Silva',
+        tareas: [
+          { id: 't-1', quote_line_id: 'p-1', partidaId: 'p-1', codigo: 'DEM-01', titulo: 'Demolición de tabiquería interior para creación de concepto abierto (salón-cocina)', unidad: 'm²', cantidad: 45, precioVenta: 16.88, importeTotal: 759.60, progreso: 100, estado: 'completada', asignadoA: 'Mario Silva' },
+          { id: 't-2', quote_line_id: 'p-2', partidaId: 'p-2', codigo: 'DEM-02', titulo: 'Picado de azulejos y solados en 2 baños y cocina', unidad: 'm²', cantidad: 85, precioVenta: 13.23, importeTotal: 1124.55, progreso: 100, estado: 'completada', asignadoA: 'Mario Silva' },
+          { id: 't-3', quote_line_id: 'p-3', partidaId: 'p-3', codigo: 'DEM-04', titulo: 'Contenedores de escombro y gestión ambiental en vertedero', unidad: 'ud', cantidad: 4, precioVenta: 216.00, importeTotal: 864.00, progreso: 100, estado: 'completada', asignadoA: 'Mario Silva' }
+        ]
+      },
+      {
+        id: 'f-2',
+        quote_id: 'pres-1',
+        capitulo: 'Albañilería y Pladur',
+        nombre: 'Fase 2: Albañilería y Pladur',
+        orden: 2,
+        importeTotal: 4719.00,
+        weight_percentage: 24.55,
+        progreso: 88,
+        estado: 'en_curso',
+        dias: 14,
+        responsable: 'Ionut Radu',
+        tareas: [
+          { id: 't-4', quote_line_id: 'p-4', partidaId: 'p-4', codigo: 'ALB-01', titulo: 'Tabiquería seca Pladur con aislamiento acústico en dormitorios y baños', unidad: 'm²', cantidad: 60, precioVenta: 37.05, importeTotal: 2223.00, progreso: 75, estado: 'en_curso', asignadoA: 'Ionut Radu' },
+          { id: 't-5', quote_line_id: 'p-5', partidaId: 'p-5', codigo: 'ALB-02', titulo: 'Falso techo continuo con foseados perimetrales LED', unidad: 'm²', cantidad: 80, precioVenta: 31.20, importeTotal: 2496.00, progreso: 100, estado: 'completada', asignadoA: 'Ionut Radu' }
+        ]
+      },
+      {
+        id: 'f-3',
+        quote_id: 'pres-1',
+        capitulo: 'Fontanería y Clima',
+        nombre: 'Fase 3: Fontanería y Clima',
+        orden: 3,
+        importeTotal: 1449.50,
+        weight_percentage: 7.54,
+        progreso: 100,
+        estado: 'completada',
+        dias: 10,
+        responsable: 'ClimaTec Subcontrata',
+        tareas: [
+          { id: 't-6', quote_line_id: 'p-6', partidaId: 'p-6', codigo: 'FON-01', titulo: 'Instalación completa de fontanería multicapa en cocina y 2 baños', unidad: 'ud', cantidad: 14, precioVenta: 81.25, importeTotal: 1137.50, progreso: 100, estado: 'completada', asignadoA: 'ClimaTec Subcontrata' },
+          { id: 't-7', quote_line_id: 'p-7', partidaId: 'p-7', codigo: 'FON-03', titulo: 'Instalación de 2 platos de ducha de resina pizarra con mamparas de diseño', unidad: 'ud', cantidad: 2, precioVenta: 156.00, importeTotal: 312.00, progreso: 100, estado: 'completada', asignadoA: 'ClimaTec Subcontrata' }
+        ]
+      },
+      {
+        id: 'f-4',
+        quote_id: 'pres-1',
+        capitulo: 'Electricidad',
+        nombre: 'Fase 4: Electricidad e Iluminación REBT',
+        orden: 4,
+        importeTotal: 2260.00,
+        weight_percentage: 11.76,
+        progreso: 70,
+        estado: 'en_curso',
+        dias: 8,
+        responsable: 'ElectroSur Subcontrata',
+        tareas: [
+          { id: 't-8', quote_line_id: 'p-8', partidaId: 'p-8', codigo: 'ELE-01', titulo: 'Renovación completa de instalación eléctrica según REBT con mecanismos Niessen', unidad: 'ud', cantidad: 42, precioVenta: 42.50, importeTotal: 1785.00, progreso: 75, estado: 'en_curso', asignadoA: 'ElectroSur Subcontrata' },
+          { id: 't-9', quote_line_id: 'p-9', partidaId: 'p-9', codigo: 'ELE-03', titulo: 'Cuadro general eléctrico trifásico y boletín oficial de industria (CIE)', unidad: 'ud', cantidad: 1, precioVenta: 475.00, importeTotal: 475.00, progreso: 50, estado: 'en_curso', asignadoA: 'ElectroSur Subcontrata' }
+        ]
+      },
+      {
+        id: 'f-5',
+        quote_id: 'pres-1',
+        capitulo: 'Revestimientos',
+        nombre: 'Fase 5: Revestimientos y Alicatados',
+        orden: 5,
+        importeTotal: 2535.00,
+        weight_percentage: 13.19,
+        progreso: 50,
+        estado: 'en_curso',
+        dias: 12,
+        responsable: 'Pedro Gómez',
+        tareas: [
+          { id: 't-10', quote_line_id: 'p-10', partidaId: 'p-10', codigo: 'ALI-01', titulo: 'Alicatado porcelánico rectificado en baños hasta el techo', unidad: 'm²', cantidad: 75, precioVenta: 33.80, importeTotal: 2535.00, progreso: 50, estado: 'en_curso', asignadoA: 'Pedro Gómez' }
+        ]
+      },
+      {
+        id: 'f-6',
+        quote_id: 'pres-1',
+        capitulo: 'Carpintería y Suelos',
+        nombre: 'Fase 6: Carpintería y Suelos',
+        orden: 6,
+        importeTotal: 2231.25,
+        weight_percentage: 11.61,
+        progreso: 25,
+        estado: 'en_curso',
+        dias: 5,
+        responsable: 'Carpintería Robles',
+        tareas: [
+          { id: 't-11', quote_line_id: 'p-11', partidaId: 'p-11', codigo: 'CAR-02', titulo: 'Suministro e instalación de tarima laminada AC5 hidrófuga en toda la vivienda', unidad: 'm²', cantidad: 85, precioVenta: 26.25, importeTotal: 2231.25, progreso: 25, estado: 'en_curso', asignadoA: 'Carpintería Robles' }
+        ]
+      },
+      {
+        id: 'f-7',
+        quote_id: 'pres-1',
+        capitulo: 'Pintura',
+        nombre: 'Fase 7: Pintura y Acabados',
+        orden: 7,
+        importeTotal: 3276.00,
+        weight_percentage: 17.05,
+        progreso: 0,
+        estado: 'pendiente',
+        dias: 6,
+        responsable: 'DecorPint Subcontrata',
+        tareas: [
+          { id: 't-12', quote_line_id: 'p-12', partidaId: 'p-12', codigo: 'PIN-01', titulo: 'Alisado de gotelé completo en techos y paredes con pintura plástica lavable', unidad: 'm²', cantidad: 210, precioVenta: 15.60, importeTotal: 3276.00, progreso: 0, estado: 'pendiente', asignadoA: 'DecorPint Subcontrata' }
+        ]
+      }
     ],
     diario: [
       {
@@ -131,18 +240,61 @@ export const INITIAL_OBRAS = [
     estado: 'en_curso',
     fechaInicio: '2026-09-25',
     fechaFinEstimada: '2026-10-31',
-    progreso: 42,
-    presupuestoTotal: 26800,
+    progreso: 48,
+    presupuestoTotal: 15950.00,
     costeRealActual: 12300,
     margenEsperadoPct: 32,
     margenRealPct: 34.5,
-    notas: 'Cambio de fontanería completa por multicapa con colectores independientes. Instalación de isla en cocina.',
+    notas: 'Cambio de fontanería completa por multicapa con colectores independientes. Instalación de isla en cocina según presupuesto firmado PRES-2026-002.',
     fases: [
-      { id: 'f-201', nombre: 'Demolición muebles y azulejos', progreso: 100, estado: 'completada', dias: 4, responsable: 'Mario Silva' },
-      { id: 'f-202', nombre: 'Fontanería y desagües PVC', progreso: 90, estado: 'en_curso', dias: 6, responsable: 'ClimaTec' },
-      { id: 'f-203', nombre: 'Nuevos circuitos eléctricos cocina y baño', progreso: 75, estado: 'en_curso', dias: 5, responsable: 'ElectroSur' },
-      { id: 'f-204', nombre: 'Alicatados y solados', progreso: 15, estado: 'en_curso', dias: 8, responsable: 'Pedro Gómez' },
-      { id: 'f-205', nombre: 'Montaje de muebles y encimera cuarzo', progreso: 0, estado: 'pendiente', dias: 4, responsable: 'Subcontrata Cocinas' }
+      {
+        id: 'f-201',
+        quote_id: 'pres-2',
+        capitulo: 'Demoliciones',
+        nombre: 'Fase 1: Demoliciones',
+        orden: 1,
+        importeTotal: 859.95,
+        weight_percentage: 23.28,
+        progreso: 100,
+        estado: 'completada',
+        dias: 4,
+        responsable: 'Mario Silva',
+        tareas: [
+          { id: 't-201', quote_line_id: 'p-201', partidaId: 'p-201', codigo: 'DEM-02', titulo: 'Picado y desescombro de cocina y baños', unidad: 'm²', cantidad: 65, precioVenta: 13.23, importeTotal: 859.95, progreso: 100, estado: 'completada', asignadoA: 'Mario Silva' }
+        ]
+      },
+      {
+        id: 'f-202',
+        quote_id: 'pres-2',
+        capitulo: 'Fontanería',
+        nombre: 'Fase 2: Fontanería e Instalaciones',
+        orden: 2,
+        importeTotal: 975.00,
+        weight_percentage: 26.39,
+        progreso: 75,
+        estado: 'en_curso',
+        dias: 6,
+        responsable: 'ClimaTec Subcontrata',
+        tareas: [
+          { id: 't-202', quote_line_id: 'p-202', partidaId: 'p-202', codigo: 'FON-01', titulo: 'Puntos de agua y desagües para cocina con isla y 2 baños', unidad: 'ud', cantidad: 12, precioVenta: 81.25, importeTotal: 975.00, progreso: 75, estado: 'en_curso', asignadoA: 'ClimaTec Subcontrata' }
+        ]
+      },
+      {
+        id: 'f-203',
+        quote_id: 'pres-2',
+        capitulo: 'Alicatados',
+        nombre: 'Fase 3: Alicatados y Revestimientos',
+        orden: 3,
+        importeTotal: 1859.00,
+        weight_percentage: 50.33,
+        progreso: 25,
+        estado: 'en_curso',
+        dias: 8,
+        responsable: 'Pedro Gómez',
+        tareas: [
+          { id: 't-203', quote_line_id: 'p-203', partidaId: 'p-203', codigo: 'ALI-01', titulo: 'Alicatado porcelánico imitación mármol calacatta', unidad: 'm²', cantidad: 55, precioVenta: 33.80, importeTotal: 1859.00, progreso: 25, estado: 'en_curso', asignadoA: 'Pedro Gómez' }
+        ]
+      }
     ],
     diario: [
       {
