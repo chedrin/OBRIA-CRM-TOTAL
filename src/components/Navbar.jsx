@@ -11,7 +11,8 @@ import {
   Percent,
   RefreshCw,
   Bell,
-  Sparkles
+  Sparkles,
+  Smartphone
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -37,6 +38,7 @@ export default function Navbar() {
     { id: 'gestoria', label: 'Gestoría & Trimestres', icon: FileSpreadsheet },
     { id: 'obreros', label: 'Obreros & Calificación', icon: Users },
     { id: 'subcontratas', label: 'Subcontratas & Precios', icon: Percent, badge: pendingSubPresCount, badgeColor: 'bg-indigo-500' },
+    { id: 'portal_obrero', label: 'App Móvil Obrero', icon: Smartphone, badgeColor: 'bg-emerald-500' },
   ];
 
   return (
