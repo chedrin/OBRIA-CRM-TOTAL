@@ -63,6 +63,67 @@ export default function SubcontratasList() {
   const [searchPrecios, setSearchPrecios] = useState('');
   const [filterGremio, setFilterGremio] = useState('todos');
 
+  // New Official Price Item Modal
+  const [showAddMasterModal, setShowAddMasterModal] = useState(false);
+  const [newMasterItem, setNewMasterItem] = useState({
+    codigo: '',
+    capitulo: 'Albañilería',
+    gremio: 'Albañilería',
+    concepto: '',
+    unidad: 'm²',
+    costeSubcontrata: 15.00,
+    margenPct: 30
+  });
+
+  // Inline editing state for Base de Precios
+  const handleUpdateMasterItemField = (id, field, value) => {
+    setBasePrecios(prev => prev.map(item => {
+      if (item.id === id) {
+        const updated = { ...item, [field]: value };
+        // Recalculate PVP if cost or margin changes
+        const coste = Number(field === 'costeSubcontrata' ? value : updated.costeSubcontrata || 0);
+        const margen = Number(field === 'margenPct' ? value : updated.margenPct || 0);
+        updated.precioVenta = Number((coste * (1 + margen / 100)).toFixed(2));
+        return updated;
+      }
+      return item;
+    }));
+  };
+
+  const handleAddMasterItem = (e) => {
+    e.preventDefault();
+    if (!newMasterItem.codigo || !newMasterItem.concepto) return;
+    const coste = Number(newMasterItem.costeSubcontrata || 0);
+    const margen = Number(newMasterItem.margenPct || 30);
+    const pvp = Number((coste * (1 + margen / 100)).toFixed(2));
+
+    const newItem = {
+      id: `bp-master-${Date.now()}`,
+      ...newMasterItem,
+      costeSubcontrata: coste,
+      margenPct: margen,
+      precioVenta: pvp
+    };
+
+    setBasePrecios(prev => [newItem, ...prev]);
+    setShowAddMasterModal(false);
+    setNewMasterItem({
+      codigo: '',
+      capitulo: 'Albañilería',
+      gremio: 'Albañilería',
+      concepto: '',
+      unidad: 'm²',
+      costeSubcontrata: 15.00,
+      margenPct: 30
+    });
+    showNotification('Nueva partida añadida a la Base de Precios Oficial de la Empresa');
+  };
+
+  const handleDeleteMasterItem = (id) => {
+    setBasePrecios(prev => prev.filter(item => item.id !== id));
+    showNotification('Partida eliminada de la Base de Precios');
+  };
+
   // Interactive Margin Customization for selected subquote
   const [customMargins, setCustomMargins] = useState({});
   const [globalMarginInput, setGlobalMarginInput] = useState(25);
@@ -387,40 +448,119 @@ export default function SubcontratasList() {
             </div>
           </div>
 
-          {/* Catalog Table */}
+          {/* Action button to add master item */}
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-slate-400">Edita directamente cualquier campo en la tabla para actualizar precios oficiales en toda la app.</span>
+            <button
+              onClick={() => setShowAddMasterModal(true)}
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>Añadir Partida Maestro</span>
+            </button>
+          </div>
+
+          {/* Editable Catalog Table */}
           <div className="border border-slate-800 rounded-xl overflow-hidden">
             <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider sticky top-0 z-10 border-b border-slate-800">
                   <tr>
                     <th className="py-2.5 px-3">Código</th>
-                    <th className="py-2.5 px-3">Capítulo</th>
+                    <th className="py-2.5 px-3">Capítulo / Gremio</th>
                     <th className="py-2.5 px-3">Concepto Detallado</th>
                     <th className="py-2.5 px-3 text-center">Unidad</th>
                     <th className="py-2.5 px-3 text-right">Coste Subcontrata</th>
-                    <th className="py-2.5 px-3 text-center">Margen Comercial</th>
+                    <th className="py-2.5 px-3 text-center">Margen %</th>
                     <th className="py-2.5 px-3 text-right">PVP Cliente</th>
+                    <th className="py-2.5 px-2 text-center"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-slate-300">
                   {filteredBasePrecios.map((bp) => (
-                    <tr key={bp.id} className="hover:bg-slate-800/40">
-                      <td className="py-2.5 px-3 font-mono font-bold text-amber-400 whitespace-nowrap">{bp.codigo}</td>
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[10px] font-semibold">
-                          {bp.capitulo}
-                        </span>
+                    <tr key={bp.id} className="hover:bg-slate-800/40 transition">
+                      {/* Code */}
+                      <td className="py-2 px-3 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={bp.codigo}
+                          onChange={(e) => handleUpdateMasterItemField(bp.id, 'codigo', e.target.value)}
+                          className="w-20 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-amber-400 font-mono font-bold"
+                        />
                       </td>
-                      <td className="py-2.5 px-3 font-medium text-white">{bp.concepto}</td>
-                      <td className="py-2.5 px-3 text-center text-slate-400 font-mono whitespace-nowrap">{bp.unidad}</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-300 whitespace-nowrap">{bp.costeSubcontrata.toFixed(2)} €</td>
-                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                        <span className="bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded text-[11px]">
-                          +{bp.margenPct}%
-                        </span>
+
+                      {/* Chapter / Gremio */}
+                      <td className="py-2 px-3 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={bp.capitulo}
+                          onChange={(e) => handleUpdateMasterItemField(bp.id, 'capitulo', e.target.value)}
+                          className="w-28 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-slate-200 font-semibold"
+                        />
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-black text-amber-400 text-sm whitespace-nowrap">
-                        {bp.precioVenta.toFixed(2)} €
+
+                      {/* Concept Description */}
+                      <td className="py-2 px-3">
+                        <input
+                          type="text"
+                          value={bp.concepto}
+                          onChange={(e) => handleUpdateMasterItemField(bp.id, 'concepto', e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-medium focus:border-amber-400 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* Unit */}
+                      <td className="py-2 px-3 text-center whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={bp.unidad}
+                          onChange={(e) => handleUpdateMasterItemField(bp.id, 'unidad', e.target.value)}
+                          className="w-12 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-center text-xs text-slate-300 font-mono"
+                        />
+                      </td>
+
+                      {/* Cost */}
+                      <td className="py-2 px-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={bp.costeSubcontrata}
+                            onChange={(e) => handleUpdateMasterItemField(bp.id, 'costeSubcontrata', e.target.value)}
+                            className="w-20 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-right text-xs text-slate-200 font-mono"
+                          />
+                          <span className="text-slate-400">€</span>
+                        </div>
+                      </td>
+
+                      {/* Margin % */}
+                      <td className="py-2 px-3 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1">
+                          <input
+                            type="number"
+                            step="1"
+                            value={bp.margenPct}
+                            onChange={(e) => handleUpdateMasterItemField(bp.id, 'margenPct', e.target.value)}
+                            className="w-14 bg-slate-800 border border-amber-500/40 rounded px-1 py-0.5 text-center text-xs text-emerald-400 font-bold"
+                          />
+                          <span className="text-slate-400">%</span>
+                        </div>
+                      </td>
+
+                      {/* PVP */}
+                      <td className="py-2 px-3 text-right font-mono font-black text-amber-400 text-sm whitespace-nowrap">
+                        {Number(bp.precioVenta || 0).toFixed(2)} €
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-2 px-2 text-center">
+                        <button
+                          onClick={() => handleDeleteMasterItem(bp.id)}
+                          className="p-1 bg-slate-800 hover:bg-rose-900/40 text-rose-400 rounded transition"
+                          title="Eliminar partida maestro"
+                        >
+                          ✕
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -429,6 +569,121 @@ export default function SubcontratasList() {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* Modal Añadir Partida Maestro */}
+      {showAddMasterModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Database className="w-5 h-5 text-amber-400" />
+                <span>Nueva Partida en Base de Precios Oficial</span>
+              </h3>
+              <button onClick={() => setShowAddMasterModal(false)} className="text-slate-400 hover:text-white font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleAddMasterItem} className="space-y-3 text-xs sm:text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Código de Partida *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: ALB-05"
+                    value={newMasterItem.codigo}
+                    onChange={(e) => setNewMasterItem({ ...newMasterItem, codigo: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Unidad (m², ud, ml)</label>
+                  <input
+                    type="text"
+                    required
+                    value={newMasterItem.unidad}
+                    onChange={(e) => setNewMasterItem({ ...newMasterItem, unidad: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Concepto / Descripción Oficial *</label>
+                <textarea
+                  rows="2"
+                  required
+                  placeholder="Escribe la descripción completa de la unidad de obra..."
+                  value={newMasterItem.concepto}
+                  onChange={(e) => setNewMasterItem({ ...newMasterItem, concepto: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                ></textarea>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Capítulo</label>
+                  <input
+                    type="text"
+                    value={newMasterItem.capitulo}
+                    onChange={(e) => setNewMasterItem({ ...newMasterItem, capitulo: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Gremio</label>
+                  <input
+                    type="text"
+                    value={newMasterItem.gremio}
+                    onChange={(e) => setNewMasterItem({ ...newMasterItem, gremio: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <div>
+                  <label className="text-slate-400 block mb-1 text-[11px]">Coste Base Subcontrata (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={newMasterItem.costeSubcontrata}
+                    onChange={(e) => setNewMasterItem({ ...newMasterItem, costeSubcontrata: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-emerald-400 block mb-1 text-[11px] font-bold">Margen Comercial (%)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    required
+                    value={newMasterItem.margenPct}
+                    onChange={(e) => setNewMasterItem({ ...newMasterItem, margenPct: e.target.value })}
+                    className="w-full bg-slate-800 border border-emerald-500/50 rounded-xl p-2 text-emerald-300 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddMasterModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow"
+                >
+                  Añadir al Catálogo Oficial
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
