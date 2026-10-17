@@ -88,7 +88,56 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   // Selected Preset or custom input
   const [selectedPreset, setSelectedPreset] = useState(PHOTO_PRESETS[0]);
   const [customPhotos, setCustomPhotos] = useState([]);
+  const [customPhotoUrl, setCustomPhotoUrl] = useState('');
   const [audioTranscript, setAudioTranscript] = useState(PHOTO_PRESETS[0].defaultAudio);
+
+  // AI Training & Redaction Examples State
+  const [showExamplesModal, setShowExamplesModal] = useState(false);
+  const [userRedactionExamples, setUserRedactionExamples] = useState([
+    { id: 'ex-1', titulo: 'Estilo de Redacción Propio - Alicatado y Sanitario', texto: 'Alicatado con porcelánico rectificado en paramentos verticales con mortero cola C2TE. Incluye picado previo, nivelado con crucetas autonivelantes y rejuntado antihumedad. No se incluyen sanitarios de alta gama no presupuestados.' },
+    { id: 'ex-2', titulo: 'Estilo de Redacción Propio - Electricidad y Cajas', texto: 'Suministro e instalación de puntos de luz conmutados con tubo corrugado ignífugo M-20, cable libre de halógenos 1.5mm² y mecanismos serie media Niessen. Incluye boletín oficial CIE de industria.' }
+  ]);
+  const [newExampleTitle, setNewExampleTitle] = useState('');
+  const [newExampleText, setNewExampleText] = useState('');
+
+  const handleAddExample = (e) => {
+    e.preventDefault();
+    if (!newExampleTitle || !newExampleText) return;
+    setUserRedactionExamples(prev => [
+      ...prev,
+      { id: `ex-${Date.now()}`, titulo: newExampleTitle, texto: newExampleText }
+    ]);
+    setNewExampleTitle('');
+    setNewExampleText('');
+    showNotification('Ejemplo de redacción guardado para aprendizaje de la IA');
+  };
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setCustomPhotos(prev => [...prev, {
+          id: `usr-img-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          title: file.name,
+          url: event.target.result,
+          descripcion: 'Foto subida por el usuario'
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAddPhotoUrl = () => {
+    if (!customPhotoUrl) return;
+    setCustomPhotos(prev => [...prev, {
+      id: `usr-url-${Date.now()}`,
+      title: 'Foto Adjunta',
+      url: customPhotoUrl,
+      descripcion: 'Foto de obra vía enlace'
+    }]);
+    setCustomPhotoUrl('');
+  };
   const [obraTitulo, setObraTitulo] = useState('Reforma de Baño Suite C/ Serrano');
   const [clienteNombre, setClienteNombre] = useState('Dña. Victoria Méndez');
   const [clienteNif, setClienteNif] = useState('51904231S');
@@ -179,8 +228,8 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   const costeTotalDirecto = Number(partidasList.reduce((s, p) => s + (p.costeUnitario * p.cantidad), 0).toFixed(2));
   const beneficioBruto = Number((baseImponible - costeTotalDirecto).toFixed(2));
 
-  const handleSaveAndCreateObra = () => {
-    // 1. Create the Presupuesto
+  const handleSavePresupuestoBorrador = () => {
+    // Save as Borrador (Draft) for client review, NOT auto-accepted
     const newPres = addPresupuesto({
       obraTitulo: obraTitulo,
       cliente: clienteNombre,
@@ -192,48 +241,17 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
       baseImponible: baseImponible,
       cuotaIva: cuotaIva,
       totalConIva: totalPresupuesto,
-      estado: 'aceptado',
+      estado: 'borrador', // Creado como borrador para revisión/envío al cliente
       notasLegales: 'Presupuesto generado con IA a partir de fotos del estado actual y notas de voz. Forma de pago: 40% a la aceptación y replanteo, 40% avance de instalaciones, 20% entrega de llaves. Garantía oficial de 2 años según LOE.'
     });
 
-    // 2. Automatically create the Obra with phases extracted from the presupuesto
-    const fasesFromPresupuesto = Array.from(new Set(partidasList.map(p => p.capitulo))).map((cap, idx) => ({
-      id: `fase-auto-${Date.now()}-${idx}`,
-      nombre: `Fase ${idx + 1}: ${cap}`,
-      progreso: 0,
-      estado: 'pendiente',
-      dias: cap.includes('Demolicion') ? 4 : cap.includes('Fontaneria') || cap.includes('Electricidad') ? 8 : 10,
-      responsable: cap.includes('Fontaneria') ? 'ClimaTec' : cap.includes('Electricidad') ? 'ElectroSur' : 'Pedro Gómez / Cuadrilla'
-    }));
-
-    addObra({
-      titulo: obraTitulo,
-      cliente: clienteNombre,
-      telefono: '+34 600 123 456',
-      email: 'cliente@ejemplo.es',
-      direccion: clienteDireccion,
-      tipo: selectedPreset.tipo,
-      estado: 'en_curso',
-      progreso: 0,
-      presupuestoTotal: totalPresupuesto,
-      costeRealActual: 0,
-      margenEsperadoPct: margenGlobal,
-      margenRealPct: margenGlobal,
-      presupuestoId: newPres.id,
-      notas: `Obra generada a partir de fotos y audios analizados por IA. Partidas presupuestadas: ${partidasList.length}.`,
-      fases: fasesFromPresupuesto,
-      necesidadesMateriales: [
-        { id: `mat-${Date.now()}-1`, concepto: 'Materiales base iniciales y desescombro', cantidad: 1, unidad: 'lote', costeEstimado: costeTotalDirecto * 0.3, proveedor: 'Obramat' }
-      ]
-    });
-
     confetti({
-      particleCount: 100,
-      spread: 70,
+      particleCount: 60,
+      spread: 60,
       origin: { y: 0.6 }
     });
 
-    showNotification(`¡Presupuesto ${newPres.numero} y Obra "${obraTitulo}" creados correctamente con sus fases de trabajo!`);
+    showNotification(`¡Presupuesto ${newPres.numero} guardado como borrador! Pendiente de aprobación por el cliente.`);
     if (onCreated) onCreated();
   };
 
@@ -267,40 +285,101 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         {/* LEFT COLUMN: INPUTS (5 Cols) */}
         <div className="lg:col-span-5 space-y-5">
           
-          {/* 1. Photo Selection Card */}
+          {/* 1. Photo Selection & Custom Upload Card */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
                 <Camera className="w-4 h-4 text-amber-400" />
                 <span>1. Fotos del Estado Actual</span>
               </h3>
-              <span className="text-[11px] text-slate-400">Selecciona o sube</span>
+              <span className="text-[11px] text-slate-400">Subida propia / Plantillas</span>
             </div>
 
-            {/* Presets Gallery */}
-            <div className="grid grid-cols-3 gap-2">
-              {PHOTO_PRESETS.map((preset) => {
-                const isSelected = selectedPreset.id === preset.id;
-                return (
-                  <div
-                    key={preset.id}
-                    onClick={() => handleSelectPreset(preset)}
-                    className={`cursor-pointer rounded-xl overflow-hidden border-2 transition relative group ${
-                      isSelected ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    <img src={preset.url} alt={preset.title} className="w-full h-20 object-cover" />
-                    <div className="p-1.5 bg-slate-950 text-center">
-                      <span className="text-[10px] font-bold text-white truncate block">{preset.tipo}</span>
-                    </div>
-                    {isSelected && (
-                      <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">
-                        ✓
+            {/* Custom Photo File Input & Camera Button */}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex items-center justify-center gap-2 p-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl cursor-pointer transition text-xs font-bold">
+                <Upload className="w-4 h-4" />
+                <span>Subir Fotos de Obra</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1">
+                <input
+                  type="text"
+                  placeholder="URL de foto..."
+                  value={customPhotoUrl}
+                  onChange={(e) => setCustomPhotoUrl(e.target.value)}
+                  className="w-full bg-transparent px-2 text-[11px] text-white focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddPhotoUrl}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg text-xs font-bold shrink-0"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+
+            {/* User Uploaded Photos List */}
+            {customPhotos.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] text-amber-400 font-bold block">Fotos Subidas por el Usuario ({customPhotos.length}):</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {customPhotos.map((item) => {
+                    const isSelected = selectedPreset.id === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => setSelectedPreset(item)}
+                        className={`cursor-pointer rounded-xl overflow-hidden border-2 transition relative group ${
+                          isSelected ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <img src={item.url} alt={item.title} className="w-full h-20 object-cover" />
+                        <div className="p-1 bg-slate-950 text-center">
+                          <span className="text-[9px] font-bold text-emerald-400 truncate block">{item.title}</span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Presets Gallery */}
+            <div className="space-y-1 pt-1">
+              <span className="text-[11px] text-slate-400 font-medium block">O elige una foto de muestra:</span>
+              <div className="grid grid-cols-3 gap-2">
+                {PHOTO_PRESETS.map((preset) => {
+                  const isSelected = selectedPreset.id === preset.id;
+                  return (
+                    <div
+                      key={preset.id}
+                      onClick={() => handleSelectPreset(preset)}
+                      className={`cursor-pointer rounded-xl overflow-hidden border-2 transition relative group ${
+                        isSelected ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={preset.url} alt={preset.title} className="w-full h-20 object-cover" />
+                      <div className="p-1.5 bg-slate-950 text-center">
+                        <span className="text-[10px] font-bold text-white truncate block">{preset.tipo}</span>
+                      </div>
+                      {isSelected && (
+                        <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">
+                          ✓
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Active Photo Preview */}
@@ -315,16 +394,21 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
             </div>
           </div>
 
-          {/* 2. Audio Transcript Input Card */}
+          {/* 2. Audio Transcript Input Card & AI Style Examples Button */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3 shadow-sm">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
                 <Mic className="w-4 h-4 text-amber-400" />
                 <span>2. Audio de Instrucciones de Obra</span>
               </h3>
-              <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded font-mono">
-                Dictado o WhatsApp
-              </span>
+              <button
+                type="button"
+                onClick={() => setShowExamplesModal(true)}
+                className="text-[11px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Estilo / Aprendizaje IA ({userRedactionExamples.length})</span>
+              </button>
             </div>
 
             <textarea
@@ -604,11 +688,11 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                       Cancelar
                     </button>
                     <button
-                      onClick={handleSaveAndCreateObra}
+                      onClick={handleSavePresupuestoBorrador}
                       className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95"
                     >
-                      <HardHat className="w-4 h-4 stroke-[2.5]" />
-                      <span>Guardar Presupuesto y Crear Obra</span>
+                      <FileText className="w-4 h-4 stroke-[2.5]" />
+                      <span>Guardar Presupuesto (Borrador)</span>
                     </button>
                   </div>
                 </div>
@@ -634,6 +718,84 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         </div>
 
       </div>
+
+      {/* Modal Ejemplos de Redacción y Aprendizaje para la IA */}
+      {showExamplesModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                  <span>Entrenamiento y Estilo de Redacción para la IA</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Introduce ejemplos de cómo te gusta redactar tus presupuestos, qué conceptos incluyes o excluyes por defecto.
+                </p>
+              </div>
+              <button onClick={() => setShowExamplesModal(false)} className="text-slate-400 hover:text-white font-bold text-lg">✕</button>
+            </div>
+
+            {/* Ejemplos Actuales */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
+                Ejemplos de Redacción Enseñados a la IA ({userRedactionExamples.length}):
+              </span>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {userRedactionExamples.map((ex) => (
+                  <div key={ex.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
+                    <span className="font-bold text-white block">{ex.titulo}</span>
+                    <p className="text-slate-300 italic">"{ex.texto}"</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Formulario Añadir Nuevo Ejemplo */}
+            <form onSubmit={handleAddExample} className="space-y-3 pt-2 border-t border-slate-800 text-xs">
+              <span className="font-bold text-white block">Añadir Nuevo Ejemplo de Redacción / Criterio:</span>
+              <div>
+                <label className="text-slate-400 block mb-1">Título / Trabajo</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Formateo de Fontanería con Multicapa"
+                  value={newExampleTitle}
+                  onChange={(e) => setNewExampleTitle(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Texto / Partida Redactada de Ejemplo</label>
+                <textarea
+                  rows="3"
+                  required
+                  placeholder="Escribe la descripción de la partida exactamente como quieres que la redacte la IA..."
+                  value={newExampleText}
+                  onChange={(e) => setNewExampleText(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExamplesModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
+                >
+                  Cerrar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow"
+                >
+                  Guardar Ejemplo de Aprendizaje
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
