@@ -20,12 +20,14 @@ import {
   KeyRound
 } from 'lucide-react';
 import GestionUsuarios from './GestionUsuarios';
+import PerfilDirectorConfig from './PerfilDirectorConfig';
+import MotorIaConfig from './MotorIaConfig';
 
 export default function EmpresaConfig() {
   const { empresaConfig, updateEmpresaConfig, auditLogs, showNotification } = useApp();
 
   const [form, setForm] = useState({ ...empresaConfig });
-  const [activeSubTab, setActiveSubTab] = useState('fiscal_data'); // fiscal_data, verifactu, ticketbai, sii_facturae, audit
+  const [activeSubTab, setActiveSubTab] = useState('perfil_director'); // perfil_director, motor_ia, usuarios, verifactu, ticketbai, sii_facturae, audit
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -44,11 +46,11 @@ export default function EmpresaConfig() {
         <div>
           <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Normativa Fiscal Española · Ley 11/2021 & VeriFactu</span>
+            <span>Ajustes Generales · Identidad, Motor IA, Accesos y Fiscalidad</span>
           </div>
-          <h1 className="text-2xl font-black text-white">Configuración Fiscal de la Empresa</h1>
+          <h1 className="text-2xl font-black text-white">Configuración del Sistema y Empresa</h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Datos fiscales para presupuestos, facturas, certificados digitales, VeriFactu (AEAT), TicketBAI y Facturae.
+            Perfil del Director de Obra, conexión del Motor de IA por API Key (BYOK), gestión de usuarios y cumplimiento legal VeriFactu.
           </p>
         </div>
 
@@ -57,14 +59,15 @@ export default function EmpresaConfig() {
           className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center gap-2"
         >
           <ShieldCheck className="w-4 h-4" />
-          <span>Guardar Configuración Fiscal</span>
+          <span>Guardar Configuración General</span>
         </button>
       </div>
 
       {/* Subtabs Navigation */}
       <div className="flex gap-2 border-b border-slate-800 overflow-x-auto pb-1 scrollbar-none">
         {[
-          { id: 'fiscal_data', label: 'Identificación y Datos Fiscales', icon: Building2 },
+          { id: 'perfil_director', label: 'Perfil Director & Empresa', icon: Building2, badge: 'Acreditado' },
+          { id: 'motor_ia', label: 'Motor Central IA (BYOK)', icon: Sparkles, badge: 'Multimodal' },
           { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
           { id: 'verifactu', label: 'VeriFactu (AEAT Ley 11/2021)', icon: ShieldCheck, badge: 'Obligatorio' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
@@ -99,6 +102,12 @@ export default function EmpresaConfig() {
           );
         })}
       </div>
+
+      {/* TAB PERFIL DIRECTOR & EMPRESA */}
+      {activeSubTab === 'perfil_director' && <PerfilDirectorConfig />}
+
+      {/* TAB MOTOR CENTRAL IA (BYOK) */}
+      {activeSubTab === 'motor_ia' && <MotorIaConfig />}
 
       {/* TAB USUARIOS & ACCESOS */}
       {activeSubTab === 'usuarios' && <GestionUsuarios />}

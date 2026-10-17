@@ -186,11 +186,26 @@ export default function PdfModal() {
             {/* Header: Company & Doc Title */}
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 border-b border-slate-200 pb-6">
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 font-black">
-                    OM
+                <div className="flex items-center gap-3 mb-1.5">
+                  {empresaConfig?.logoUrl ? (
+                    <img
+                      src={empresaConfig.logoUrl}
+                      alt="Logo Corporativo"
+                      className="h-10 max-w-[140px] object-contain rounded"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 font-black">
+                      OM
+                    </div>
+                  )}
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight text-slate-900 leading-tight">
+                      {empresaConfig?.nombreComercial || empresaConfig?.razonSocial || 'CONSTRUCCIONES OBRAMASTER SL'}
+                    </h2>
+                    {empresaConfig?.nombreComercial && empresaConfig?.razonSocial !== empresaConfig?.nombreComercial && (
+                      <span className="text-[11px] text-slate-500 font-semibold block">{empresaConfig.razonSocial}</span>
+                    )}
                   </div>
-                  <h2 className="text-xl font-black tracking-tight text-slate-900">{empresaConfig?.razonSocial || 'CONSTRUCCIONES OBRAMASTER SL'}</h2>
                 </div>
                 <p className="text-xs text-slate-500 leading-tight">
                   NIF: {empresaConfig?.cifNif || 'B-88776655'}<br />
@@ -323,6 +338,29 @@ export default function PdfModal() {
                     {Number(data.totalConIva || data.totalFactura || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* Director de Obra & Digital Signature Stamp */}
+            <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-end justify-between gap-4 text-xs">
+              <div className="text-[11px] text-slate-500 space-y-0.5">
+                <p><strong>Emisión y Aprobación Técnica:</strong> {empresaConfig?.razonSocial}</p>
+                <p>Conforme a la Ley 38/1999 de Ordenación de la Edificación (LOE) y Código Técnico CTE.</p>
+              </div>
+
+              <div className="text-center sm:text-right space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Firma y Sello del Director de Obra:</span>
+                <div className="inline-block p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  {empresaConfig?.firmaUrl ? (
+                    <img src={empresaConfig.firmaUrl} alt="Firma y Sello" className="h-14 max-w-[190px] object-contain mx-auto" />
+                  ) : (
+                    <div className="h-12 w-36 border border-dashed border-slate-300 flex items-center justify-center text-[10px] text-slate-400">
+                      Sello Oficial
+                    </div>
+                  )}
+                </div>
+                <p className="font-bold text-slate-900 text-xs">{empresaConfig?.directorNombre || 'Manuel Gómez Castillo'}</p>
+                <p className="text-[10px] text-slate-500">{empresaConfig?.directorTitulacion || 'Arquitecto Técnico & Aparejador'} {empresaConfig?.directorColegiado && `· Col. ${empresaConfig.directorColegiado}`}</p>
               </div>
             </div>
 

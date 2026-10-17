@@ -132,3 +132,102 @@ VALUES
   ('mario.silva', 'mario.silva@obramaster.es', '$2a$10$demoHashMario123', 'obrero', 'Mario Silva Santos', 'Demoliciones & Carga', '+34 622 334 455', true),
   ('ionut.radu', 'ionut.radu@obramaster.es', '$2a$10$demoHashIonut123', 'obrero', 'Ionut Radu', 'Yesos & Pladur', '+34 633 445 566', true)
 ON CONFLICT (username) DO NOTHING;
+
+-- =========================================================================
+-- 7. TABLA DE CONFIGURACIÓN DE EMPRESA Y DIRECTOR DE OBRA
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.company_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_name VARCHAR(150) NOT NULL,
+  commercial_name VARCHAR(150),
+  tax_id VARCHAR(50) NOT NULL, -- NIF/CIF
+  address TEXT,
+  phone VARCHAR(30),
+  email VARCHAR(100),
+  logo_url TEXT,
+  director_name VARCHAR(150),
+  director_title VARCHAR(100),
+  signature_url TEXT,
+  bank_account_iban VARCHAR(34),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- Trigger updated_at para company_settings
+DROP TRIGGER IF EXISTS trigger_company_settings_updated_at ON public.company_settings;
+CREATE TRIGGER trigger_company_settings_updated_at
+BEFORE UPDATE ON public.company_settings
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS para company_settings
+ALTER TABLE public.company_settings ENABLE ROW LEVEL SECURITY;
+
+-- Admins pueden modificar la configuración de empresa
+CREATE POLICY admin_company_settings_all ON public.company_settings
+FOR ALL
+USING (is_admin())
+WITH CHECK (is_admin());
+
+-- Usuarios autenticados (obreros) pueden leer los datos fiscales y logo para la app
+CREATE POLICY authenticated_read_company_settings ON public.company_settings
+FOR SELECT
+USING (auth.role() = 'authenticated');
+
+-- Inserción inicial de datos de empresa y Director
+INSERT INTO public.company_settings (
+  company_name, commercial_name, tax_id, address, phone, email,
+  logo_url, director_name, director_title, signature_url, bank_account_iban
+) VALUES (
+  'ObraMaster AI Construcciones y Reformas SL',
+  'ObraMaster AI',
+  'B87654321',
+  'Calle Velázquez 102, Planta 3, 28006 Madrid',
+  '+34 91 234 5678',
+  'administracion@obramaster.es',
+  'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f8?auto=format&fit=crop&w=200&q=80',
+  'Manuel Gómez Castillo',
+  'Arquitecto Técnico & Aparejador Colegiado (Col. COAATM 4.821)',
+  'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=300&q=80',
+  'ES91 2100 0418 45 0200051234'
+) ON CONFLICT DO NOTHING;
+
+-- =========================================================================
+-- 8. TABLA DE CONEXIÓN DEL MOTOR DE IA (BYOK - BRING YOUR OWN KEY)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.ai_integration_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider VARCHAR(50) NOT NULL DEFAULT 'openai', -- 'openai', 'anthropic', 'google', 'deepseek'
+  encrypted_api_key TEXT NOT NULL, -- Clave cifrada con AES-256 / Supabase Vault
+  model_name VARCHAR(50) DEFAULT 'gpt-4o',
+  is_active BOOLEAN DEFAULT false,
+  last_tested_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- Trigger updated_at para ai_integration_settings
+DROP TRIGGER IF EXISTS trigger_ai_integration_updated_at ON public.ai_integration_settings;
+CREATE TRIGGER trigger_ai_integration_updated_at
+BEFORE UPDATE ON public.ai_integration_settings
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS de máxima seguridad: SOLO ADMINS PUEDEN ACCEDER A LAS CLAVES DE IA
+ALTER TABLE public.ai_integration_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_ai_settings_exclusive ON public.ai_integration_settings
+FOR ALL
+USING (is_admin())
+WITH CHECK (is_admin());
+
+-- Inserción inicial de configuración de IA
+INSERT INTO public.ai_integration_settings (
+  provider, encrypted_api_key, model_name, is_active, last_tested_at
+) VALUES (
+  'openai',
+  'aes256_vault_sk_proj_demo9982348712349081234',
+  'gpt-4o',
+  true,
+  timezone('utc'::text, now())
+) ON CONFLICT DO NOTHING;

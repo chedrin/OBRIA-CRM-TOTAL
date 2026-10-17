@@ -31,7 +31,25 @@ export const INITIAL_EMPRESA_CONFIG = {
   // Huella de software garante (Reglamento Antifraude Ley 11/2021)
   softwareNombre: 'ObraMaster VeriFactu Engine',
   softwareVersion: '2.4.0-VERIFACTU',
-  softwareLicencia: 'VERI-AEAT-2026-991208'
+  softwareLicencia: 'VERI-AEAT-2026-991208',
+
+  // Datos Técnicos del Director de Obra
+  directorNombre: 'Manuel Gómez Castillo',
+  directorTitulacion: 'Arquitecto Técnico & Aparejador Colegiado',
+  directorColegiado: 'COAATM-4821',
+  logoUrl: 'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f8?auto=format&fit=crop&w=200&q=80',
+  firmaUrl: 'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=300&q=80',
+
+  // Conexión del Motor de IA (BYOK)
+  aiConfig: {
+    provider: 'openai',
+    apiKey: 'sk-proj-obramaster98765432109876543210',
+    modelName: 'gpt-4o',
+    isActive: true,
+    lastTestedAt: '2026-10-17 18:00',
+    status: 'connected',
+    latencyMs: 168
+  }
 };
 
 export const INITIAL_OBRAS = [
