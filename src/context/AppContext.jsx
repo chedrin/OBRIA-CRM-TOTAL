@@ -77,7 +77,8 @@ export function AppProvider({ children }) {
       fases: obraData.fases || [],
       diario: obraData.diario || [],
       necesidadesMateriales: obraData.necesidadesMateriales || [],
-      operariosIds: obraData.operariosIds || []
+      operariosIds: obraData.operariosIds || [],
+      catalogoPrecios: obraData.catalogoPrecios || JSON.parse(JSON.stringify(basePrecios))
     };
     setObras(prev => [newObra, ...prev]);
     showNotification(`Obra "${newObra.titulo}" creada correctamente`);
@@ -87,6 +88,77 @@ export function AppProvider({ children }) {
   const updateObra = (id, updates) => {
     setObras(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
     showNotification('Obra actualizada correctamente');
+  };
+
+  const updateObraBasePrecioItem = (obraId, itemIndexOrId, updatedItem) => {
+    setObras(prev => prev.map(o => {
+      if (o.id === obraId) {
+        const currentCat = o.catalogoPrecios && o.catalogoPrecios.length > 0
+          ? [...o.catalogoPrecios]
+          : JSON.parse(JSON.stringify(basePrecios));
+
+        let idx = typeof itemIndexOrId === 'number' ? itemIndexOrId : currentCat.findIndex(item => item.id === itemIndexOrId);
+        if (idx >= 0 && idx < currentCat.length) {
+          const coste = Number(updatedItem.costeSubcontrata ?? currentCat[idx].costeSubcontrata ?? 0);
+          const margen = Number(updatedItem.margenPct ?? currentCat[idx].margenPct ?? 30);
+          const pvpCalculado = Number((coste * (1 + margen / 100)).toFixed(2));
+
+          currentCat[idx] = {
+            ...currentCat[idx],
+            ...updatedItem,
+            costeSubcontrata: coste,
+            margenPct: margen,
+            precioVenta: updatedItem.precioVenta !== undefined ? Number(updatedItem.precioVenta) : pvpCalculado
+          };
+        }
+        return { ...o, catalogoPrecios: currentCat };
+      }
+      return o;
+    }));
+    showNotification('Catálogo de precios de la obra actualizado correctamente');
+  };
+
+  const addObraBasePrecioItem = (obraId, newItem) => {
+    setObras(prev => prev.map(o => {
+      if (o.id === obraId) {
+        const currentCat = o.catalogoPrecios && o.catalogoPrecios.length > 0
+          ? [...o.catalogoPrecios]
+          : JSON.parse(JSON.stringify(basePrecios));
+
+        const coste = Number(newItem.costeSubcontrata || 0);
+        const margen = Number(newItem.margenPct || 30);
+        const pvpCalculado = Number((coste * (1 + margen / 100)).toFixed(2));
+
+        const itemToAdd = {
+          id: `bp-obra-${Date.now()}`,
+          codigo: newItem.codigo || `PAR-${currentCat.length + 1}`,
+          capitulo: newItem.capitulo || 'General',
+          gremio: newItem.gremio || 'Albañilería',
+          concepto: newItem.concepto || 'Nueva partida',
+          unidad: newItem.unidad || 'ud',
+          costeSubcontrata: coste,
+          margenPct: margen,
+          precioVenta: newItem.precioVenta ? Number(newItem.precioVenta) : pvpCalculado
+        };
+        return { ...o, catalogoPrecios: [...currentCat, itemToAdd] };
+      }
+      return o;
+    }));
+    showNotification('Nueva partida añadida al catálogo de precios de la obra');
+  };
+
+  const deleteObraBasePrecioItem = (obraId, itemId) => {
+    setObras(prev => prev.map(o => {
+      if (o.id === obraId) {
+        const currentCat = o.catalogoPrecios && o.catalogoPrecios.length > 0
+          ? [...o.catalogoPrecios]
+          : JSON.parse(JSON.stringify(basePrecios));
+        const filtered = currentCat.filter(item => item.id !== itemId);
+        return { ...o, catalogoPrecios: filtered };
+      }
+      return o;
+    }));
+    showNotification('Partida eliminada del catálogo de la obra');
   };
 
   const addDiarioEntry = (obraId, entry) => {
@@ -403,6 +475,9 @@ export function AppProvider({ children }) {
       setMensajesInbox,
       addMensajeInbox,
       processMensajeInbox,
+      updateObraBasePrecioItem,
+      addObraBasePrecioItem,
+      deleteObraBasePrecioItem,
       subcontratasPresupuestos,
       setSubcontratasPresupuestos,
       activeTab,
