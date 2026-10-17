@@ -13,7 +13,8 @@ import {
   Bell,
   Sparkles,
   Smartphone,
-  ShieldCheck
+  ShieldCheck,
+  LogOut
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -23,7 +24,9 @@ export default function Navbar() {
     obras,
     mensajesInbox,
     subcontratasPresupuestos,
-    resetAllData
+    resetAllData,
+    currentUser,
+    logout
   } = useApp();
 
   const activeObrasCount = obras.filter(o => o.estado === 'en_curso').length;
@@ -72,6 +75,30 @@ export default function Navbar() {
               </span>
               <span className="text-slate-600">|</span>
               <span className="text-slate-300">Margen objetivo: <strong className="text-amber-400 font-semibold">32%</strong></span>
+            </div>
+
+            {/* Current User Badge & Logout */}
+            <div className="flex items-center gap-2 bg-slate-800/90 pl-2.5 pr-1.5 py-1 rounded-xl border border-slate-700 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span className="font-bold text-white text-[11px] hidden sm:inline">
+                  {currentUser ? currentUser.fullName.split(' ')[0] : 'Admin'}
+                </span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-mono font-bold">
+                  {currentUser?.role || 'admin'}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  if (window.confirm('¿Deseas cerrar la sesión actual?')) {
+                    logout();
+                  }
+                }}
+                className="p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-700/80 rounded-lg transition"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {/* Reset Demo Data Button */}

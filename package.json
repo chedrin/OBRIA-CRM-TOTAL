@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "build": "cp index.src.html index.html && vite build && cp -r dist/* ."
+    "build": "vite build"
   },
   "repository": {
     "type": "git",

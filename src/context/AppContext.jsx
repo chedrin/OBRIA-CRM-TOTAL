@@ -8,7 +8,8 @@ import {
   INITIAL_FACTURAS,
   INITIAL_FACTURAS_PROVEEDORES,
   INITIAL_MENSAJES_INBOX,
-  INITIAL_SUBCONTRATAS_PRESUPUESTOS
+  INITIAL_SUBCONTRATAS_PRESUPUESTOS,
+  INITIAL_USERS
 } from '../data/initialData';
 
 const AppContext = createContext();
@@ -23,7 +24,9 @@ const STORAGE_KEYS = {
   FACTURAS_PROV: 'obracon_facturas_prov_v1',
   MENSAJES: 'obracon_mensajes_v1',
   SUBCONTRATAS_PRES: 'obracon_sub_pres_v1',
-  AUDIT_LOGS: 'obracon_audit_logs_v1'
+  AUDIT_LOGS: 'obracon_audit_logs_v1',
+  USERS: 'obracon_users_v1',
+  AUTH_USER: 'obracon_current_auth_user_v1'
 };
 
 function loadStored(key, fallback) {
@@ -50,8 +53,12 @@ export function AppProvider({ children }) {
     { id: 'log-1', timestamp: '2026-10-16 10:15:22', usuario: 'Manuel (Gerente)', accion: 'EMISION_FACTURA_VERIFACTU', recurso: 'FAC-2026-024', ip: '88.12.45.192', hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }
   ]));
 
+  // Users & Authentication State
+  const [users, setUsers] = useState(() => loadStored(STORAGE_KEYS.USERS, INITIAL_USERS));
+  const [currentUser, setCurrentUser] = useState(() => loadStored(STORAGE_KEYS.AUTH_USER, null));
+
   // Navigation State
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas, empresa_config
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas, portal_obrero, empresa_config
   const [selectedObraId, setSelectedObraId] = useState(null);
   const [selectedPresupuestoId, setSelectedPresupuestoId] = useState(null);
   const [pdfModalData, setPdfModalData] = useState(null); // { type: 'presupuesto'|'factura', data: ... }
@@ -68,6 +75,14 @@ export function AppProvider({ children }) {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.MENSAJES, JSON.stringify(mensajesInbox)); }, [mensajesInbox]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRATAS_PRES, JSON.stringify(subcontratasPresupuestos)); }, [subcontratasPresupuestos]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs)); }, [auditLogs]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }, [users]);
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+    }
+  }, [currentUser]);
 
   const updateEmpresaConfig = (updates) => {
     setEmpresaConfig(prev => ({ ...prev, ...updates }));
@@ -78,7 +93,7 @@ export function AppProvider({ children }) {
     const newLog = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      usuario: 'Manuel (Gerente)',
+      usuario: currentUser ? `${currentUser.fullName} (${currentUser.role})` : 'Sistema',
       accion,
       recurso,
       ip: '192.168.1.45',
@@ -92,6 +107,202 @@ export function AppProvider({ children }) {
   const showNotification = (msg, type = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 4000);
+  };
+
+  // Auth Functions
+  const login = (usernameOrEmail, password) => {
+    const clean = (usernameOrEmail || '').trim().toLowerCase();
+    const cleanPass = (password || '').trim();
+
+    const user = users.find(u =>
+      u.username.toLowerCase() === clean ||
+      (u.email && u.email.toLowerCase() === clean)
+    );
+
+    if (!user) {
+      return { success: false, error: 'Usuario o correo no encontrado.' };
+    }
+
+    if (!user.isActive) {
+      return { success: false, error: 'Esta cuenta ha sido desactivada por el administrador.' };
+    }
+
+    if (user.password !== cleanPass) {
+      return { success: false, error: 'Contraseña incorrecta. Revisa tus credenciales.' };
+    }
+
+    const updatedUser = {
+      ...user,
+      lastLogin: new Date().toISOString()
+    };
+
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+    setCurrentUser(updatedUser);
+    showNotification(`¡Bienvenido, ${user.fullName}!`);
+    return { success: true, user: updatedUser };
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    showNotification('Sesión cerrada correctamente');
+  };
+
+  const quickSwitchUser = (userId) => {
+    const found = users.find(u => u.id === userId);
+    if (found) {
+      setCurrentUser(found);
+      showNotification(`Sesión cambiada a ${found.fullName} (${found.role})`);
+    }
+  };
+
+  // User Management (Admin CRUD)
+  const addUser = ({ username, password, role = 'obrero', fullName, trade, phone, email }) => {
+    const cleanUsername = (username || '').trim().toLowerCase();
+    if (!cleanUsername) return { success: false, error: 'El nombre de usuario es obligatorio.' };
+    if (!fullName || !fullName.trim()) return { success: false, error: 'El nombre completo es obligatorio.' };
+
+    if (users.some(u => u.username.toLowerCase() === cleanUsername)) {
+      return { success: false, error: `El usuario "${cleanUsername}" ya existe en el sistema.` };
+    }
+
+    const newUserId = `user-${role}-${Date.now()}`;
+    let associatedObreroId = null;
+
+    if (role === 'obrero') {
+      associatedObreroId = `obrero-${Date.now()}`;
+      const newObreroRecord = {
+        id: associatedObreroId,
+        nombre: fullName.trim(),
+        puesto: trade?.trim() || 'Operario Especialista',
+        telefono: phone?.trim() || '',
+        tipo: 'plantilla',
+        especialidad: trade?.trim() || 'Construcción y Reformas',
+        foto: 'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f8?auto=format&fit=crop&w=200&q=80',
+        calificacionMedia: 5.0,
+        criterios: { calidadAcabados: 5.0, puntualidadPlazos: 5.0, autonomiaProblemas: 5.0, limpiezaSeguridad: 5.0 },
+        obrasRealizadas: 0,
+        horasRegistradasMes: 0,
+        costeHora: 20.00,
+        estado: 'activo',
+        recomendacionesIA: 'Nuevo operario incorporado a la plantilla de la empresa.',
+        ultimasResenas: []
+      };
+      setObreros(prev => [...prev, newObreroRecord]);
+    }
+
+    const newUser = {
+      id: newUserId,
+      obreroId: associatedObreroId,
+      username: cleanUsername,
+      password: (password || '123456').trim(),
+      role,
+      fullName: fullName.trim(),
+      trade: trade?.trim() || (role === 'admin' ? 'Dirección Técnica' : 'Albañilería'),
+      phone: phone?.trim() || '',
+      email: email?.trim() || '',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      lastLogin: null
+    };
+
+    setUsers(prev => [...prev, newUser]);
+    addAuditLog('ALTA_USUARIO', `${role.toUpperCase()}: ${cleanUsername} (${fullName})`);
+    showNotification(`Usuario "${fullName}" creado exitosamente con rol ${role}.`);
+    return { success: true, user: newUser };
+  };
+
+  const updateUser = (userId, updates) => {
+    setUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        const updated = { ...u, ...updates };
+        if (currentUser && currentUser.id === userId) {
+          setCurrentUser(updated);
+        }
+        return updated;
+      }
+      return u;
+    }));
+    addAuditLog('MODIFICACION_USUARIO', `ID: ${userId}`);
+    showNotification('Datos de usuario actualizados correctamente.');
+  };
+
+  const resetUserPassword = (userId, newPassword) => {
+    if (!newPassword || newPassword.trim().length < 4) {
+      showNotification('La contraseña debe tener al menos 4 caracteres.', 'error');
+      return { success: false, error: 'Mínimo 4 caracteres' };
+    }
+    const cleanPass = newPassword.trim();
+    setUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        const updated = { ...u, password: cleanPass };
+        if (currentUser && currentUser.id === userId) {
+          setCurrentUser(updated);
+        }
+        return updated;
+      }
+      return u;
+    }));
+    addAuditLog('CAMBIO_PASSWORD', `Usuario ID: ${userId}`);
+    showNotification('Contraseña restablecida con éxito.');
+    return { success: true };
+  };
+
+  const changeAdminPassword = (userId, currentPassword, newPassword) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return { success: false, error: 'Usuario no encontrado' };
+    if (user.password !== currentPassword.trim()) {
+      return { success: false, error: 'La contraseña actual no coincide.' };
+    }
+    if (!newPassword || newPassword.trim().length < 4) {
+      return { success: false, error: 'La nueva contraseña debe tener al menos 4 caracteres.' };
+    }
+    const cleanPass = newPassword.trim();
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: cleanPass } : u));
+    if (currentUser && currentUser.id === userId) {
+      setCurrentUser(prev => ({ ...prev, password: cleanPass }));
+    }
+    addAuditLog('CAMBIO_PASSWORD_ADMIN', `Admin ID: ${userId}`);
+    showNotification('Tu contraseña se ha actualizado correctamente.');
+    return { success: true };
+  };
+
+  const deleteUser = (userId) => {
+    const userToDelete = users.find(u => u.id === userId);
+    if (!userToDelete) return;
+
+    const adminsCount = users.filter(u => u.role === 'admin' && u.isActive).length;
+    if (userToDelete.role === 'admin' && adminsCount <= 1) {
+      showNotification('No puedes eliminar el único administrador activo del sistema.', 'error');
+      return;
+    }
+
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    addAuditLog('ELIMINACION_USUARIO', `${userToDelete.username} (${userToDelete.fullName})`);
+    showNotification(`Usuario "${userToDelete.fullName}" eliminado.`);
+  };
+
+  const toggleUserStatus = (userId) => {
+    const userToToggle = users.find(u => u.id === userId);
+    if (!userToToggle) return;
+
+    if (userToToggle.role === 'admin') {
+      const activeAdmins = users.filter(u => u.role === 'admin' && u.isActive && u.id !== userId).length;
+      if (activeAdmins === 0 && userToToggle.isActive) {
+        showNotification('Debe haber al menos un administrador activo en el sistema.', 'error');
+        return;
+      }
+    }
+
+    const nextStatus = !userToToggle.isActive;
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, isActive: nextStatus } : u));
+    showNotification(`Usuario ${nextStatus ? 'activado' : 'desactivado'}.`);
+  };
+
+  const generateRandomPassword = () => {
+    const words = ['Obra', 'Reforma', 'Yeso', 'Pladur', 'Solado', 'Tubo', 'Alicatado', 'Pintor', 'Ladrillo'];
+    const word = words[Math.floor(Math.random() * words.length)];
+    const num = Math.floor(100 + Math.random() * 900);
+    return `${word}${num}!`;
   };
 
   // Obra Actions
@@ -524,7 +735,22 @@ export function AppProvider({ children }) {
       setPdfModalData,
       notification,
       showNotification,
-      resetAllData
+      resetAllData,
+      // Users & Auth
+      users,
+      setUsers,
+      currentUser,
+      setCurrentUser,
+      login,
+      logout,
+      quickSwitchUser,
+      addUser,
+      updateUser,
+      deleteUser,
+      toggleUserStatus,
+      resetUserPassword,
+      changeAdminPassword,
+      generateRandomPassword
     }}>
       {children}
     </AppContext.Provider>

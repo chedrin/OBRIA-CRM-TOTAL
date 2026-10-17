@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import Navbar from './components/Navbar';
 import Dashboard from './components/Dashboard';
@@ -12,16 +12,166 @@ import SubcontratasList from './components/Subcontratas/SubcontratasList';
 import PortalObreroView from './components/PortalObrero/PortalObreroView';
 import EmpresaConfig from './components/Configuracion/EmpresaConfig';
 import PdfModal from './components/Common/PdfModal';
-import { CheckCircle2, AlertCircle, HardHat } from 'lucide-react';
+import LoginObreroView from './components/Auth/LoginObreroView';
+import LoginAdminModal from './components/Auth/LoginAdminModal';
+import { CheckCircle2, AlertCircle, HardHat, ArrowLeft, ShieldCheck, ExternalLink } from 'lucide-react';
+
+function getInitialRoute() {
+  const hash = (window.location.hash || '').toLowerCase();
+  const path = (window.location.pathname || '').toLowerCase();
+  if (hash.includes('empleados') || path.includes('empleados') || hash.includes('obrero')) {
+    return 'empleados';
+  }
+  return 'admin';
+}
 
 function MainLayout() {
-  const { activeTab, notification } = useApp();
+  const { activeTab, setActiveTab, notification, currentUser, logout } = useApp();
+  const [route, setRoute] = useState(getInitialRoute);
+  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+
+  // Sync route on hashchange / popstate
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setRoute(getInitialRoute());
+    };
+
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
+  // RBAC GUARD: If an obrero is logged in and navigates to admin, force redirect to #empleados
+  useEffect(() => {
+    if (currentUser?.role === 'obrero' && route !== 'empleados') {
+      window.location.hash = '#empleados';
+      setRoute('empleados');
+    }
+  }, [currentUser, route]);
+
+  // Navigate to route helper
+  const navigateTo = (newRoute) => {
+    window.location.hash = newRoute === 'empleados' ? '#empleados' : '#admin';
+    setRoute(newRoute);
+  };
+
+  // ==========================================
+  // CASE 1: WORKER ROUTE (/#empleados)
+  // ==========================================
+  if (route === 'empleados') {
+    // If not logged in, show dedicated worker login
+    if (!currentUser) {
+      return (
+        <LoginObreroView
+          onSwitchToAdmin={() => navigateTo('admin')}
+        />
+      );
+    }
+
+    // If logged in as admin visiting #empleados, show supervisor banner
+    if (currentUser.role === 'admin') {
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+          {/* Admin Supervisor Top Bar */}
+          <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-bold flex items-center justify-between shadow-md">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
+              <span>Modo Supervisor: Estás visualizando el Portal Móvil con tu cuenta de Administrador ({currentUser.fullName})</span>
+            </div>
+            <button
+              onClick={() => navigateTo('admin')}
+              className="px-3 py-1 bg-slate-950 hover:bg-slate-900 text-amber-400 font-bold rounded-lg transition flex items-center gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Volver al Panel Admin</span>
+            </button>
+          </div>
+
+          <main className="flex-1 w-full max-w-xl mx-auto p-4 sm:p-6">
+            <PortalObreroView />
+          </main>
+
+          {/* Toast Notification */}
+          {notification && (
+            <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 bg-slate-900 border border-amber-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in duration-300">
+              {notification.type === 'error' ? (
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              )}
+              <span className="text-xs sm:text-sm font-semibold">{notification.msg}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Worker Logged In: 100% Mobile Isolated Layout (NO admin navbar, NO admin footer)
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans p-3 sm:p-5 selection:bg-amber-500 selection:text-slate-950">
+        <main className="flex-1 w-full max-w-xl mx-auto py-2">
+          <PortalObreroView />
+        </main>
+
+        {/* Minimal Worker Footer */}
+        <footer className="text-center py-4 text-[11px] text-slate-600">
+          ObraMaster Móvil v2.4 · Sesión activa como {currentUser.fullName}
+        </footer>
+
+        {/* Toast Notification */}
+        {notification && (
+          <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 bg-slate-900 border border-amber-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in duration-300">
+            {notification.type === 'error' ? (
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            )}
+            <span className="text-xs sm:text-sm font-semibold">{notification.msg}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ==========================================
+  // CASE 2: ADMIN ROUTE (/admin o #admin o #dashboard)
+  // ==========================================
+  // If not logged in as admin, show login modal or banner
+  const isAdminLoggedIn = currentUser && currentUser.role === 'admin';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       
+      {/* If not logged in, prompt admin login modal */}
+      {!isAdminLoggedIn && (
+        <LoginAdminModal
+          isOpen={true}
+          onClose={() => {}}
+          onSwitchToWorker={() => navigateTo('empleados')}
+        />
+      )}
+
       {/* Top Navigation */}
       <Navbar />
+
+      {/* Quick link banner to worker portal for convenience */}
+      <div className="bg-slate-900/60 border-b border-slate-800/80 px-4 py-1.5 text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <span className="text-[11px]">
+            Portal Móvil de Operarios disponible en la ruta independiente: <code className="text-amber-400 font-mono font-bold bg-slate-950 px-1.5 py-0.5 rounded">/#empleados</code>
+          </span>
+          <button
+            onClick={() => navigateTo('empleados')}
+            className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition"
+          >
+            <span>Abrir Portal Obrero</span>
+            <ExternalLink className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">

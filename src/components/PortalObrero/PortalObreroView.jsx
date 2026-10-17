@@ -18,9 +18,13 @@ import {
   Maximize2,
   Minimize2,
   ThumbsUp,
-  Image as ImageIcon
+  Image as ImageIcon,
+  LogOut,
+  ArrowLeft,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import PwaInstallPrompt from './PwaInstallPrompt';
 
 export default function PortalObreroView() {
   const {
@@ -29,12 +33,31 @@ export default function PortalObreroView() {
     updateObra,
     addDiarioEntry,
     addMensajeInbox,
-    showNotification
+    showNotification,
+    currentUser,
+    logout,
+    setActiveTab
   } = useApp();
 
-  // Selected Worker
-  const [selectedObreroId, setSelectedObreroId] = useState(obreros[0]?.id || 'obrero-1');
-  const [isPhoneFrame, setIsPhoneFrame] = useState(true);
+  const isObreroLoggedIn = currentUser?.role === 'obrero';
+
+  // Selected Worker (for Admin simulator)
+  const [selectedObreroId, setSelectedObreroId] = useState(
+    currentUser?.obreroId || obreros[0]?.id || 'obrero-1'
+  );
+  const [isPhoneFrame, setIsPhoneFrame] = useState(!isObreroLoggedIn);
+
+  // Determine current obrero
+  const currentObrero = isObreroLoggedIn
+    ? (obreros.find(o => o.id === currentUser?.obreroId) ||
+       obreros.find(o => o.nombre.toLowerCase().includes((currentUser?.fullName || '').split(' ')[0].toLowerCase())) || {
+        id: currentUser?.id,
+        nombre: currentUser?.fullName || 'Operario',
+        puesto: currentUser?.trade || 'Oficial',
+        telefono: currentUser?.phone || '',
+        foto: 'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f8?auto=format&fit=crop&w=200&q=80'
+      })
+    : (obreros.find(o => o.id === selectedObreroId) || obreros[0]);
 
   // Quick Action in Obra
   const [activeObraId, setActiveObraId] = useState(obras[0]?.id || '');
@@ -49,7 +72,6 @@ export default function PortalObreroView() {
   // Voice note state
   const [voiceText, setVoiceText] = useState('Manuel, ya hemos colocado el suelo porcelánico del pasillo y mañana empezamos con el baño suite.');
 
-  const currentObrero = obreros.find(o => o.id === selectedObreroId) || obreros[0];
   const currentObra = obras.find(o => o.id === activeObraId) || obras[0];
 
   // Assigned works to this worker
@@ -147,53 +169,90 @@ export default function PortalObreroView() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 max-w-xl mx-auto">
       
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
-            <Smartphone className="w-4 h-4" />
-            <span>Acceso en Teléfono Móvil para Operarios</span>
-          </div>
-          <h1 className="text-2xl font-black text-white">Portal Móvil del Obrero en Obra</h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Cada obrero entra desde su teléfono, consulta sus fases y tareas asignadas del presupuesto, las va completando en tiempo real, sube fotos y envía notas de voz.
-          </p>
-        </div>
+      {/* PWA Install Banner */}
+      <PwaInstallPrompt />
 
-        {/* Worker Switcher & Phone Frame Toggle */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1.5 rounded-xl text-xs">
-            <span className="text-slate-400 pl-2">Obrero:</span>
-            <select
-              value={selectedObreroId}
-              onChange={(e) => setSelectedObreroId(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:border-amber-400"
-            >
-              {obreros.map(o => (
-                <option key={o.id} value={o.id}>{o.nombre} ({o.puesto.split('/')[0]})</option>
-              ))}
-            </select>
+      {/* Top Header */}
+      {isObreroLoggedIn ? (
+        <div className="bg-slate-900 border border-slate-800 p-3.5 sm:p-4 rounded-2xl flex items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-600 to-yellow-400 text-slate-950 flex items-center justify-center shadow font-black">
+              <HardHat className="w-5 h-5 stroke-[2.3]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-white text-sm">ObraMaster Móvil</span>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 rounded font-bold">
+                  Operario
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                {currentObrero.nombre} · {currentObrero.puesto.split('/')[0]}
+              </p>
+            </div>
           </div>
 
           <button
-            onClick={() => setIsPhoneFrame(!isPhoneFrame)}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition border border-slate-700"
-            title="Alternar entre modo smartphone y pantalla completa"
+            onClick={() => {
+              if (window.confirm('¿Deseas cerrar tu sesión?')) {
+                logout();
+              }
+            }}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
+            title="Cerrar sesión"
           >
-            {isPhoneFrame ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
-            <span className="hidden sm:inline">{isPhoneFrame ? 'Pantalla Completa' : 'Ver Marco Móvil'}</span>
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Salir</span>
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/50 p-4 rounded-2xl border border-slate-800">
+          <div>
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
+              <Smartphone className="w-4 h-4" />
+              <span>Simulador / Vista Previa del Portal Móvil</span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-white">App Móvil del Obrero</h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Así es como cada operario ve y gestiona sus tareas desde su teléfono en <code className="text-amber-400 font-mono">/#empleados</code>.
+            </p>
+          </div>
+
+          {/* Worker Switcher & Phone Frame Toggle */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1 rounded-xl text-xs">
+              <span className="text-slate-400 pl-2">Ver como:</span>
+              <select
+                value={selectedObreroId}
+                onChange={(e) => setSelectedObreroId(e.target.value)}
+                className="bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:border-amber-400"
+              >
+                {obreros.map(o => (
+                  <option key={o.id} value={o.id}>{o.nombre} ({o.puesto.split('/')[0]})</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => setIsPhoneFrame(!isPhoneFrame)}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition border border-slate-700"
+              title="Alternar entre modo smartphone y pantalla completa"
+            >
+              {isPhoneFrame ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+              <span>{isPhoneFrame ? 'Pantalla Completa' : 'Marco Móvil'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Container (Simulated Smartphone Frame or Full Responsive) */}
-      <div className={`mx-auto transition-all duration-300 ${isPhoneFrame ? 'max-w-sm' : 'max-w-4xl'}`}>
+      <div className={`mx-auto transition-all duration-300 ${isPhoneFrame ? 'max-w-sm' : 'max-w-2xl w-full'}`}>
         
         {/* Smartphone Shell */}
-        <div className={`bg-slate-950 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden ${
-          isPhoneFrame ? 'p-3 ring-8 ring-slate-900' : 'p-6 rounded-2xl'
+        <div className={`bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden ${
+          isPhoneFrame ? 'p-3 ring-8 ring-slate-900 rounded-[2.5rem]' : 'p-3 sm:p-5 rounded-2xl'
         }`}>
           
           {/* Phone Top Notch & Status Bar (if phone frame) */}

@@ -804,3 +804,61 @@ export const DEMO_PRESUPUESTO_AI_TEMPLATES = [
     ]
   }
 ];
+
+export const INITIAL_USERS = [
+  {
+    id: 'user-admin-1',
+    username: 'admin',
+    password: 'admin123',
+    role: 'admin',
+    fullName: 'Manuel Gómez (Director de Obras)',
+    email: 'administracion@obramaster.es',
+    trade: 'Dirección Técnica & Gerencia',
+    phone: '+34 91 234 5678',
+    isActive: true,
+    createdAt: '2026-01-10T08:00:00Z',
+    lastLogin: '2026-10-17T16:00:00Z'
+  },
+  {
+    id: 'user-obrero-1',
+    obreroId: 'obrero-1',
+    username: 'pedro.gomez',
+    password: 'pedro123',
+    role: 'obrero',
+    fullName: 'Pedro Gómez Castillo',
+    email: 'pedro.gomez@obramaster.es',
+    trade: 'Albañilería & Alicatados Porcelánicos',
+    phone: '+34 611 223 344',
+    isActive: true,
+    createdAt: '2026-02-01T08:00:00Z',
+    lastLogin: '2026-10-17T08:42:00Z'
+  },
+  {
+    id: 'user-obrero-2',
+    obreroId: 'obrero-2',
+    username: 'mario.silva',
+    password: 'mario123',
+    role: 'obrero',
+    fullName: 'Mario Silva Santos',
+    email: 'mario.silva@obramaster.es',
+    trade: 'Demoliciones & Carga',
+    phone: '+34 622 334 455',
+    isActive: true,
+    createdAt: '2026-02-15T08:00:00Z',
+    lastLogin: '2026-10-16T17:30:00Z'
+  },
+  {
+    id: 'user-obrero-3',
+    obreroId: 'obrero-3',
+    username: 'ionut.radu',
+    password: 'ionut123',
+    role: 'obrero',
+    fullName: 'Ionut Radu',
+    email: 'ionut.radu@obramaster.es',
+    trade: 'Yesos & Pladur',
+    phone: '+34 633 445 566',
+    isActive: true,
+    createdAt: '2026-03-01T08:00:00Z',
+    lastLogin: '2026-10-15T18:15:00Z'
+  }
+];

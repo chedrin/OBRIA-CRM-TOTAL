@@ -16,8 +16,10 @@ import {
   Send,
   Sparkles,
   Download,
-  Info
+  Info,
+  KeyRound
 } from 'lucide-react';
+import GestionUsuarios from './GestionUsuarios';
 
 export default function EmpresaConfig() {
   const { empresaConfig, updateEmpresaConfig, auditLogs, showNotification } = useApp();
@@ -63,6 +65,7 @@ export default function EmpresaConfig() {
       <div className="flex gap-2 border-b border-slate-800 overflow-x-auto pb-1 scrollbar-none">
         {[
           { id: 'fiscal_data', label: 'Identificación y Datos Fiscales', icon: Building2 },
+          { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
           { id: 'verifactu', label: 'VeriFactu (AEAT Ley 11/2021)', icon: ShieldCheck, badge: 'Obligatorio' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
           { id: 'sii_facturae', label: 'SII & Facturae B2B', icon: FileSpreadsheet },
@@ -96,6 +99,9 @@ export default function EmpresaConfig() {
           );
         })}
       </div>
+
+      {/* TAB USUARIOS & ACCESOS */}
+      {activeSubTab === 'usuarios' && <GestionUsuarios />}
 
       {/* TAB 1: IDENTIFICACIÓN Y DATOS FISCALES */}
       {activeSubTab === 'fiscal_data' && (
