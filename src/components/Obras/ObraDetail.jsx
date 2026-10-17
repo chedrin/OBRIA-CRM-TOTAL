@@ -21,7 +21,14 @@ import {
   Star,
   Check,
   Sparkles,
-  ChevronRight
+  ChevronRight,
+  FolderOpen,
+  Tag,
+  Edit2,
+  Trash2,
+  Percent,
+  PlusCircle,
+  Download
 } from 'lucide-react';
 
 export default function ObraDetail({ obraId, onBack }) {
@@ -34,13 +41,18 @@ export default function ObraDetail({ obraId, onBack }) {
     obreros,
     presupuestos,
     facturas,
+    facturasProveedores,
+    basePrecios,
+    updateObraBasePrecioItem,
+    addObraBasePrecioItem,
+    deleteObraBasePrecioItem,
     setActiveTab,
     setSelectedPresupuestoId,
     setPdfModalData
   } = useApp();
 
   const obra = obras.find(o => o.id === obraId);
-  const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, equipo
+  const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, documentos, catalogo_precios, equipo
 
   // New Diario Entry State
   const [showNewDiarioModal, setShowNewDiarioModal] = useState(false);
@@ -75,8 +87,62 @@ export default function ObraDetail({ obraId, onBack }) {
   // Related Data
   const obraPresupuesto = presupuestos.find(p => p.id === obra.presupuestoId);
   const obraFacturas = facturas.filter(f => f.obraId === obra.id);
+  const obraFacturasProveedores = (facturasProveedores || []).filter(f => f.obraId === obra.id);
   const totalFacturadoObra = obraFacturas.reduce((s, f) => s + f.totalFactura, 0);
   const totalCobradoObra = obraFacturas.filter(f => f.estadoCobro === 'cobrada').reduce((s, f) => s + f.totalFactura, 0);
+
+  // Price Catalog for this specific Obra
+  const catalogList = obra.catalogoPrecios && obra.catalogoPrecios.length > 0 ? obra.catalogoPrecios : basePrecios;
+
+  // New Price Item State for Modal / Inline Add
+  const [showNewPriceModal, setShowNewPriceModal] = useState(false);
+  const [editingPriceItem, setEditingPriceItem] = useState(null);
+  const [priceForm, setPriceForm] = useState({
+    codigo: '',
+    concepto: '',
+    capitulo: 'Albañilería',
+    gremio: 'Albañilería',
+    unidad: 'm²',
+    costeSubcontrata: 15.00,
+    margenPct: 30,
+    precioVenta: 19.50
+  });
+
+  const handleOpenEditPrice = (item) => {
+    setEditingPriceItem(item);
+    setPriceForm({
+      codigo: item.codigo,
+      concepto: item.concepto,
+      capitulo: item.capitulo || 'Albañilería',
+      gremio: item.gremio || 'Albañilería',
+      unidad: item.unidad || 'm²',
+      costeSubcontrata: item.costeSubcontrata || 0,
+      margenPct: item.margenPct || 30,
+      precioVenta: item.precioVenta || 0
+    });
+    setShowNewPriceModal(true);
+  };
+
+  const handleSavePriceItem = (e) => {
+    e.preventDefault();
+    if (editingPriceItem) {
+      updateObraBasePrecioItem(obra.id, editingPriceItem.id, priceForm);
+    } else {
+      addObraBasePrecioItem(obra.id, priceForm);
+    }
+    setShowNewPriceModal(false);
+    setEditingPriceItem(null);
+    setPriceForm({
+      codigo: '',
+      concepto: '',
+      capitulo: 'Albañilería',
+      gremio: 'Albañilería',
+      unidad: 'm²',
+      costeSubcontrata: 15.00,
+      margenPct: 30,
+      precioVenta: 19.50
+    });
+  };
 
   const handleToggleFase = (faseId) => {
     const updatedFases = (obra.fases || []).map(f => {
@@ -242,6 +308,8 @@ export default function ObraDetail({ obraId, onBack }) {
           { id: 'fases', label: 'Fases y Planificación', count: obra.fases?.length },
           { id: 'diario', label: 'Diario de Obra (Bitácora)', count: obra.diario?.length },
           { id: 'materiales', label: 'Necesidades y Materiales', count: obra.necesidadesMateriales?.length },
+          { id: 'documentos', label: 'Documentación de Obra', count: (obraPresupuesto ? 1 : 0) + obraFacturas.length + obraFacturasProveedores.length },
+          { id: 'catalogo_precios', label: 'Catálogo de Precios Unitarios', count: catalogList.length },
           { id: 'economico', label: 'Presupuesto y Facturas', count: obraFacturas.length },
           { id: 'equipo', label: 'Equipo y Subcontratas', count: (obra.operariosIds || []).length }
         ].map(t => (
@@ -452,6 +520,194 @@ export default function ObraDetail({ obraId, onBack }) {
                           <option value="pedido">Pedido</option>
                           <option value="recibido">Recibido en obra</option>
                         </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: DOCUMENTACIÓN DE OBRA */}
+      {detailTab === 'documentos' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-amber-400" />
+                <span>Gestor Documental Integrado de la Obra</span>
+              </h3>
+              <p className="text-xs text-slate-400">Acceso centralizado a presupuestos, contratos, certificaciones y facturas de compras/subcontratas</p>
+            </div>
+          </div>
+
+          {/* Document Section 1: Presupuesto y Contrato */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
+            <h4 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              <span>Presupuesto Principal y Contrato</span>
+            </h4>
+            {obraPresupuesto ? (
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-amber-400 font-bold">{obraPresupuesto.numero}</span>
+                    <span className="text-xs text-slate-300 font-semibold">{obraPresupuesto.obraTitulo}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Fecha: {obraPresupuesto.fecha} · Base Imponible: {obraPresupuesto.baseImponible?.toLocaleString('es-ES')} €</p>
+                </div>
+                <button
+                  onClick={() => setPdfModalData({ type: 'presupuesto', data: obraPresupuesto })}
+                  className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Ver/Descargar PDF</span>
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">No hay presupuesto firmado vinculado a esta obra.</p>
+            )}
+          </div>
+
+          {/* Document Section 2: Facturas Emitidas a Cliente */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
+            <h4 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+              <DollarSign className="w-4 h-4" />
+              <span>Certificaciones y Facturas Emitidas al Cliente ({obraFacturas.length})</span>
+            </h4>
+            {obraFacturas.length > 0 ? (
+              <div className="space-y-2">
+                {obraFacturas.map((fac) => (
+                  <div key={fac.id} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-mono text-amber-400 font-bold mr-2">{fac.numero}</span>
+                      <span className="text-white font-medium">{fac.tipoFactura}</span>
+                      <span className="text-slate-400 block text-[11px] mt-0.5">Emisión: {fac.fechaEmision} · Vencimiento: {fac.fechaVencimiento}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-white text-sm">{fac.totalFactura?.toLocaleString('es-ES')} €</span>
+                      <button
+                        onClick={() => setPdfModalData({ type: 'factura', data: fac })}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition"
+                      >
+                        PDF
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">No hay facturas emitidas para esta obra.</p>
+            )}
+          </div>
+
+          {/* Document Section 3: Facturas de Proveedores y Subcontratas */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
+            <h4 className="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+              <Tag className="w-4 h-4" />
+              <span>Gastos Imputados, Materiales y Subcontratas ({obraFacturasProveedores.length})</span>
+            </h4>
+            {obraFacturasProveedores.length > 0 ? (
+              <div className="space-y-2">
+                {obraFacturasProveedores.map((gasto) => (
+                  <div key={gasto.id} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-mono text-indigo-400 font-bold mr-2">{gasto.numeroProveedor || 'Factura'}</span>
+                      <span className="text-white font-medium">{gasto.proveedor}</span>
+                      <p className="text-slate-400 text-[11px] mt-0.5">{gasto.concepto}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-rose-400 text-sm block">{gasto.total?.toLocaleString('es-ES')} €</span>
+                      <span className="text-[10px] text-slate-400">Fecha: {gasto.fecha}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">No hay gastos ni facturas de subcontratas asociadas a esta obra.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: CATÁLOGO DE PRECIOS UNITARIOS DE LA OBRA */}
+      {detailTab === 'catalogo_precios' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Tag className="w-5 h-5 text-amber-400" />
+                <span>Catálogo de Precios Unitarios de esta Obra</span>
+              </h3>
+              <p className="text-xs text-slate-400">Modifica libremente costes, unidades, conceptos y márgenes de ganancia % para esta obra</p>
+            </div>
+            <button
+              onClick={() => {
+                setEditingPriceItem(null);
+                setPriceForm({
+                  codigo: `PAR-${catalogList.length + 1}`,
+                  concepto: '',
+                  capitulo: 'Albañilería',
+                  gremio: 'Albañilería',
+                  unidad: 'm²',
+                  costeSubcontrata: 15.00,
+                  margenPct: 30,
+                  precioVenta: 19.50
+                });
+                setShowNewPriceModal(true);
+              }}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Añadir Partida al Catálogo</span>
+            </button>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs sm:text-sm text-slate-300">
+                <thead className="bg-slate-950/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Código</th>
+                    <th className="py-3 px-4">Capítulo / Concepto</th>
+                    <th className="py-3 px-4">Unidad</th>
+                    <th className="py-3 px-4 text-right">Coste Base (€)</th>
+                    <th className="py-3 px-4 text-right">Ganancia (%)</th>
+                    <th className="py-3 px-4 text-right">Precio Venta (€)</th>
+                    <th className="py-3 px-4 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {catalogList.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-800/40 transition">
+                      <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.codigo}</td>
+                      <td className="py-3 px-4">
+                        <span className="font-semibold text-white block">{item.concepto}</span>
+                        <span className="text-[10px] text-slate-400">{item.capitulo} · {item.gremio}</span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-300">{item.unidad}</td>
+                      <td className="py-3 px-4 text-right font-mono text-slate-300">{Number(item.costeSubcontrata).toFixed(2)} €</td>
+                      <td className="py-3 px-4 text-right font-bold text-emerald-400">+{item.margenPct}%</td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-white">{Number(item.precioVenta).toFixed(2)} €</td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleOpenEditPrice(item)}
+                            title="Editar concepto o margen"
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => deleteObraBasePrecioItem(obra.id, item.id)}
+                            title="Eliminar partida"
+                            className="p-1.5 bg-slate-800 hover:bg-rose-900/40 text-rose-400 rounded-lg transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -753,6 +1009,141 @@ export default function ObraDetail({ obraId, onBack }) {
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl"
                 >
                   Añadir Material
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar / Añadir Partida de Catálogo de la Obra */}
+      {showNewPriceModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-white">
+              {editingPriceItem ? 'Editar Partida de Precios' : 'Nueva Partida en Catálogo de Obra'}
+            </h3>
+            <form onSubmit={handleSavePriceItem} className="space-y-3 text-xs sm:text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Código</label>
+                  <input
+                    type="text"
+                    required
+                    value={priceForm.codigo}
+                    onChange={(e) => setPriceForm({ ...priceForm, codigo: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Unidad (m², ud, ml, etc.)</label>
+                  <input
+                    type="text"
+                    required
+                    value={priceForm.unidad}
+                    onChange={(e) => setPriceForm({ ...priceForm, unidad: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Concepto / Descripción Partida</label>
+                <textarea
+                  rows="2"
+                  required
+                  value={priceForm.concepto}
+                  onChange={(e) => setPriceForm({ ...priceForm, concepto: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                ></textarea>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Capítulo</label>
+                  <input
+                    type="text"
+                    value={priceForm.capitulo}
+                    onChange={(e) => setPriceForm({ ...priceForm, capitulo: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Gremio</label>
+                  <input
+                    type="text"
+                    value={priceForm.gremio}
+                    onChange={(e) => setPriceForm({ ...priceForm, gremio: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <div>
+                  <label className="text-slate-400 block mb-1 text-[11px]">Coste Base (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={priceForm.costeSubcontrata}
+                    onChange={(e) => {
+                      const c = parseFloat(e.target.value) || 0;
+                      const m = parseFloat(priceForm.margenPct) || 0;
+                      setPriceForm({
+                        ...priceForm,
+                        costeSubcontrata: c,
+                        precioVenta: (c * (1 + m / 100)).toFixed(2)
+                      });
+                    }}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-amber-400 block mb-1 text-[11px] font-bold">Ganancia (%)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    required
+                    value={priceForm.margenPct}
+                    onChange={(e) => {
+                      const m = parseFloat(e.target.value) || 0;
+                      const c = parseFloat(priceForm.costeSubcontrata) || 0;
+                      setPriceForm({
+                        ...priceForm,
+                        margenPct: m,
+                        precioVenta: (c * (1 + m / 100)).toFixed(2)
+                      });
+                    }}
+                    className="w-full bg-slate-800 border border-amber-500/50 rounded-xl p-2 text-amber-300 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-emerald-400 block mb-1 text-[11px] font-bold">PVP Final (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={priceForm.precioVenta}
+                    onChange={(e) => setPriceForm({ ...priceForm, precioVenta: e.target.value })}
+                    className="w-full bg-slate-800 border border-emerald-500/50 rounded-xl p-2 text-emerald-300 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowNewPriceModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl"
+                >
+                  Guardar Partida
                 </button>
               </div>
             </form>
