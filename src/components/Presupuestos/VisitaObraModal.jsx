@@ -25,11 +25,14 @@ import {
 } from 'lucide-react';
 import { VISITA_TEMPLATES } from '../../services/siteVisitAIService';
 import confetti from 'canvas-confetti';
+import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
+import { processScopeWithAI } from '../../services/aiAudioTextService';
 
 export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const {
     basePrecios,
     generateQuoteFromSiteVisit,
+    addPresupuesto,
     empresaConfig,
     showNotification
   } = useApp();
@@ -51,11 +54,94 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const [margenObjetivo, setMargenObjetivo] = useState(30);
   const [tipoIva, setTipoIva] = useState(10);
 
-  // Audio Recording State
+  // Audio Recording & Text Input State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioTranscript, setAudioTranscript] = useState(VISITA_TEMPLATES[0].audioMuestra);
+  const [complementaryText, setComplementaryText] = useState('');
   const timerRef = useRef(null);
+
+  // Quick Scope Transform with AI
+  const handleTransformWithAI = async () => {
+    const combinedInput = [
+      audioTranscript ? `[NOTAS DE VOZ]: ${audioTranscript}` : '',
+      complementaryText ? `[ANOTACIONES Y MEDICIONES IN SITU]: ${complementaryText}` : ''
+    ].filter(Boolean).join('\n\n');
+
+    if (!combinedInput.trim()) {
+      showNotification('Por favor, graba un audio o escribe notas técnicas antes de procesar con IA.', 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+    setCurrentStep(2);
+    setStepLabel('Analizando requerimientos técnicos y generando partidas normalizadas...');
+
+    try {
+      const aiResult = await processScopeWithAI(
+        combinedInput,
+        'visita_obra',
+        null,
+        empresaConfig?.aiConfig || {},
+        basePrecios
+      );
+
+      // Convert chapters & items into full quote line items
+      const allItems = [];
+      (aiResult.capitulos || []).forEach(cap => {
+        (cap.partidas || []).forEach(part => {
+          allItems.push({
+            id: part.id || `par-vis-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            codigo: part.codigo || 'GEN-01',
+            capitulo: cap.nombre_capitulo || 'General',
+            concepto: part.concepto,
+            unidad: part.unidad || 'ud',
+            cantidad: Number(part.cantidad) || 1,
+            costeUnitario: Number(part.costeUnitario) || Number(part.precioUnitario) * 0.7,
+            precioVenta: Number(part.precioUnitario) || 50,
+            margenPct: Number(margenObjetivo) || 30,
+            total: Number(part.total) || ((Number(part.cantidad) || 1) * (Number(part.precioUnitario) || 50))
+          });
+        });
+      });
+
+      const subtotal = allItems.reduce((s, it) => s + (it.total || 0), 0);
+      const ivaAmt = Number((subtotal * (tipoIva / 100)).toFixed(2));
+      const totalConIva = Number((subtotal + ivaAmt).toFixed(2));
+
+      const newQuote = addPresupuesto({
+        numero: `PRES-IA-${Date.now().toString().slice(-4)}`,
+        obraTitulo: obraTitulo || 'Presupuesto de Visita de Obra',
+        cliente: clienteNombre || 'Cliente de Visita',
+        telefono: clienteTelefono || '+34 600 000 000',
+        email: clienteEmail || 'cliente@ejemplo.es',
+        direccion: direccion || 'Dirección de obra',
+        calidades: calidades || 'Estándar / Calidad Media',
+        plazoMeses: plazoDeseado || 2,
+        margenGlobalPct: margenObjetivo || 30,
+        tipoIvaPct: tipoIva || 10,
+        baseImponible: Number(subtotal.toFixed(2)),
+        ivaImporte: ivaAmt,
+        totalConIva: totalConIva,
+        partidas: allItems,
+        notas: `Generado mediante Captura Multimodal IA (Audio + Texto in situ).\n\nResumen: ${aiResult.resumen_alcance || ''}\n\nPliego Técnico: ${aiResult.redaccion_tecnica_estilo || ''}`,
+        resumenEjecutivo: aiResult.resumen_alcance,
+        redaccionPliego: aiResult.redaccion_tecnica_estilo
+      });
+
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      showNotification('✨ ¡Presupuesto generado con partidas normalizadas por IA!');
+      setIsProcessing(false);
+      onClose();
+      if (onQuoteCreated) {
+        onQuoteCreated(newQuote);
+      }
+    } catch (err) {
+      console.error('Error transforming scope to quote:', err);
+      setIsProcessing(false);
+      showNotification('Error al generar las partidas con IA', 'error');
+    }
+  };
 
   // Captures (Photos, Sketches, Laser measurements)
   const [capturas, setCapturas] = useState(VISITA_TEMPLATES[0].capturas);
@@ -287,62 +373,86 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               </div>
             </div>
 
-            {/* In Situ Voice Recording Section */}
-            <div className="bg-slate-950 border border-slate-800 p-4 sm:p-5 rounded-2xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                    isRecording ? 'bg-rose-500 text-white animate-pulse' : 'bg-blue-500/20 text-blue-400'
-                  }`}>
-                    <Mic className="w-4 h-4" />
+            {/* In Situ Dual Multimodal Capture Section (Audio + Texto + IA) */}
+            <div className="bg-slate-950 border border-slate-800 p-4 sm:p-5 rounded-2xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                    <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-xs sm:text-sm">
-                      1. Notas de Voz Dictadas en la Visita (Speech-to-Text)
+                    <h3 className="font-bold text-white text-xs sm:text-sm flex items-center gap-2">
+                      <span>1. Captura Rápida Multimodal en Visita (Audio + Texto Técnico)</span>
+                      <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-bold">
+                        Whisper & IA
+                      </span>
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Dicta mientras recorres las estancias: medidas, demoliciones, enchufes y reformas deseadas.
+                      Dicta o sube notas de voz y añade mediciones in situ tomadas con distanciómetro láser.
                     </p>
                   </div>
                 </div>
 
-                {/* Mic Record Button */}
+                {/* Central Transform Action */}
                 <button
                   type="button"
-                  onClick={toggleRecording}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                    isRecording
-                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-                  }`}
+                  onClick={handleTransformWithAI}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition active:scale-95 shrink-0"
                 >
-                  {isRecording ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-blue-400" />}
-                  <span>{isRecording ? `Grabando (${formatSeconds(recordingSeconds)})` : 'Grabar con Micro'}</span>
+                  <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
+                  <span>Transformar con IA a Presupuesto</span>
                 </button>
               </div>
 
-              {/* Waveform / recording banner */}
-              {isRecording && (
-                <div className="p-3 bg-rose-950/30 border border-rose-500/30 rounded-xl flex items-center justify-between text-xs text-rose-300 animate-in fade-in">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
-                    <span>Escuchando micrófono del teléfono... Habla claro sobre los trabajos a presupuestar.</span>
+              {/* Dual Methods: Audio + Text */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                
+                {/* 1. Entrada por Audio */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-amber-400" />
+                      <span>A. Entrada por Audio (Micrófono o Archivo)</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">.m4a, .mp3, .wav</span>
                   </div>
-                  <span className="font-mono font-bold text-rose-400">{formatSeconds(recordingSeconds)}</span>
-                </div>
-              )}
 
-              {/* Transcribed Text Area */}
-              <textarea
-                rows="3"
-                value={audioTranscript}
-                onChange={(e) => {
-                  setAudioTranscript(e.target.value);
-                  setIsManualMode(true);
-                }}
-                placeholder="Ej: Reforma de baño de 6 m2, tirar bañera y alicatar con porcelánico rectificado..."
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 font-sans"
-              ></textarea>
+                  <AudioVoiceRecorder
+                    onTranscriptionComplete={(text) => {
+                      setAudioTranscript(text);
+                      setIsManualMode(true);
+                    }}
+                    initialTranscript={audioTranscript}
+                  />
+                </div>
+
+                {/* 2. Entrada por Texto */}
+                <div className="space-y-2 flex flex-col">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-blue-400" />
+                    <span>B. Entrada por Texto (Mediciones & Comentarios In Situ)</span>
+                  </span>
+
+                  <div className="flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-2xl p-3 min-h-[180px]">
+                    <textarea
+                      rows="7"
+                      value={complementaryText}
+                      onChange={(e) => {
+                        setComplementaryText(e.target.value);
+                        setIsManualMode(true);
+                      }}
+                      placeholder="Anotaciones complementarias in situ:&#10;• Dimensiones: 4.20m x 2.80m (altura 2.50m)&#10;• Alicatar hasta el techo con porcelánico rectificado&#10;• Falso techo de pladur verde con 4 puntos de luz LED&#10;• Reubicar bajante y colocar inodoro suspendido..."
+                      className="w-full flex-1 bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none resize-none font-sans"
+                    ></textarea>
+
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                      <span>{complementaryText.length} caracteres</span>
+                      <span className="text-amber-400/80 text-[10px]">Complementa el audio para la IA</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
             </div>
 
             {/* Captures: Photos, Laser Sketches, OCR */}

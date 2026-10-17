@@ -17,8 +17,11 @@ import {
   Clock,
   DollarSign,
   Send,
-  Volume2
+  Volume2,
+  Layers,
+  Inbox
 } from 'lucide-react';
+import AudioEmailCaptureView from './AudioEmailCaptureView';
 
 export default function AudioEmailInbox() {
   const {
@@ -28,6 +31,7 @@ export default function AudioEmailInbox() {
     addMensajeInbox
   } = useApp();
 
+  const [inboxViewMode, setInboxViewMode] = useState('multimodal_studio'); // 'multimodal_studio' | 'message_feed'
   const [activeTab, setActiveTab] = useState('todos'); // todos, audios, emails, procesados
   const [isRecording, setIsRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -205,21 +209,53 @@ export default function AudioEmailInbox() {
   return (
     <div className="space-y-6">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Top Header & Mode Switcher */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-            <Mic className="w-7 h-7 text-amber-400" />
-            <span>Recepción de Necesidades por Audio y Email con IA</span>
+            <Sparkles className="w-7 h-7 text-amber-400" />
+            <span>Módulo Multimodal de Captura IA & Mensajes de Obra</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Recibe audios o mails de obreros y clientes, transcribe al instante y calcula automáticamente las necesidades y materiales de cada obra.
+            Captura voz en directo, procesa audios o hilos de email/WhatsApp y genera partidas técnicas presupuestarias normalizadas con IA.
           </p>
+        </div>
+
+        <div className="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl shadow-inner self-start lg:self-auto">
+          <button
+            onClick={() => setInboxViewMode('multimodal_studio')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition ${
+              inboxViewMode === 'multimodal_studio'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Estudio Multimodal IA</span>
+            <span className="text-[10px] bg-slate-950/40 text-slate-950 px-1.5 py-0.5 rounded-full uppercase tracking-wider font-extrabold">Recomendado</span>
+          </button>
+
+          <button
+            onClick={() => setInboxViewMode('message_feed')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition ${
+              inboxViewMode === 'message_feed'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Inbox className="w-4 h-4" />
+            <span>Bandeja de Mensajes ({mensajesInbox.length})</span>
+          </button>
         </div>
       </div>
 
-      {/* Voice Recorder & Intake Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden space-y-6">
+      {/* View router */}
+      {inboxViewMode === 'multimodal_studio' ? (
+        <AudioEmailCaptureView />
+      ) : (
+        <div className="space-y-6">
+          {/* Voice Recorder & Intake Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden space-y-6">
         
         {/* Sub-modes selector */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
@@ -571,8 +607,12 @@ export default function AudioEmailInbox() {
             </div>
           );
         })}
+        </div>
       </div>
+    )}
 
-    </div>
+  </div>
   );
 }
+
+

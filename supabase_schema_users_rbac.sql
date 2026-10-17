@@ -563,4 +563,27 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.employees;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.subcontractors;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.subcontractor_invoices;
 
+-- =========================================================================
+-- 21. TABLA DE AUDITORÍA Y TRAZABILIDAD DE CAPTURAS MULTIMODALES (IA)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.ai_inputs_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tipo_entrada VARCHAR(50) NOT NULL, -- 'audio', 'texto', 'email', 'whatsapp'
+  remitente VARCHAR(150),
+  obra_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+  audio_url TEXT,
+  transcripcion_original TEXT,
+  redaccion_tecnica TEXT,
+  partidas_generadas JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_inputs_obra ON public.ai_inputs_log(obra_id);
+CREATE INDEX IF NOT EXISTS idx_ai_inputs_tipo ON public.ai_inputs_log(tipo_entrada);
+
+ALTER TABLE public.ai_inputs_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY admin_ai_inputs_all ON public.ai_inputs_log FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+
+
 
