@@ -1,0 +1,425 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import {
+  INITIAL_OBRAS,
+  INITIAL_OBREROS,
+  INITIAL_BASE_PRECIOS,
+  INITIAL_PRESUPUESTOS,
+  INITIAL_FACTURAS,
+  INITIAL_FACTURAS_PROVEEDORES,
+  INITIAL_MENSAJES_INBOX,
+  INITIAL_SUBCONTRATAS_PRESUPUESTOS
+} from '../data/initialData';
+
+const AppContext = createContext();
+
+const STORAGE_KEYS = {
+  OBRAS: 'obracon_obras_v1',
+  OBREROS: 'obracon_obreros_v1',
+  BASE_PRECIOS: 'obracon_base_precios_v1',
+  PRESUPUESTOS: 'obracon_presupuestos_v1',
+  FACTURAS: 'obracon_facturas_v1',
+  FACTURAS_PROV: 'obracon_facturas_prov_v1',
+  MENSAJES: 'obracon_mensajes_v1',
+  SUBCONTRATAS_PRES: 'obracon_sub_pres_v1',
+};
+
+function loadStored(key, fallback) {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch (e) {
+    console.error('Error loading from localStorage', e);
+    return fallback;
+  }
+}
+
+export function AppProvider({ children }) {
+  const [obras, setObras] = useState(() => loadStored(STORAGE_KEYS.OBRAS, INITIAL_OBRAS));
+  const [obreros, setObreros] = useState(() => loadStored(STORAGE_KEYS.OBREROS, INITIAL_OBREROS));
+  const [basePrecios, setBasePrecios] = useState(() => loadStored(STORAGE_KEYS.BASE_PRECIOS, INITIAL_BASE_PRECIOS));
+  const [presupuestos, setPresupuestos] = useState(() => loadStored(STORAGE_KEYS.PRESUPUESTOS, INITIAL_PRESUPUESTOS));
+  const [facturas, setFacturas] = useState(() => loadStored(STORAGE_KEYS.FACTURAS, INITIAL_FACTURAS));
+  const [facturasProveedores, setFacturasProveedores] = useState(() => loadStored(STORAGE_KEYS.FACTURAS_PROV, INITIAL_FACTURAS_PROVEEDORES));
+  const [mensajesInbox, setMensajesInbox] = useState(() => loadStored(STORAGE_KEYS.MENSAJES, INITIAL_MENSAJES_INBOX));
+  const [subcontratasPresupuestos, setSubcontratasPresupuestos] = useState(() => loadStored(STORAGE_KEYS.SUBCONTRATAS_PRES, INITIAL_SUBCONTRATAS_PRESUPUESTOS));
+
+  // Navigation State
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas
+  const [selectedObraId, setSelectedObraId] = useState(null);
+  const [selectedPresupuestoId, setSelectedPresupuestoId] = useState(null);
+  const [pdfModalData, setPdfModalData] = useState(null); // { type: 'presupuesto'|'factura', data: ... }
+  const [notification, setNotification] = useState(null);
+
+  // Sync to LocalStorage
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.OBRAS, JSON.stringify(obras)); }, [obras]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.OBREROS, JSON.stringify(obreros)); }, [obreros]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.BASE_PRECIOS, JSON.stringify(basePrecios)); }, [basePrecios]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.PRESUPUESTOS, JSON.stringify(presupuestos)); }, [presupuestos]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.FACTURAS, JSON.stringify(facturas)); }, [facturas]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.FACTURAS_PROV, JSON.stringify(facturasProveedores)); }, [facturasProveedores]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.MENSAJES, JSON.stringify(mensajesInbox)); }, [mensajesInbox]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRATAS_PRES, JSON.stringify(subcontratasPresupuestos)); }, [subcontratasPresupuestos]);
+
+  const showNotification = (msg, type = 'success') => {
+    setNotification({ msg, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  // Obra Actions
+  const addObra = (obraData) => {
+    const newObra = {
+      ...obraData,
+      id: `obra-${Date.now()}`,
+      codigo: `OBR-2026-${String(obras.length + 1).padStart(3, '0')}`,
+      progreso: obraData.progreso || 0,
+      costeRealActual: obraData.costeRealActual || 0,
+      margenRealPct: obraData.margenRealPct || obraData.margenEsperadoPct || 30,
+      fases: obraData.fases || [],
+      diario: obraData.diario || [],
+      necesidadesMateriales: obraData.necesidadesMateriales || [],
+      operariosIds: obraData.operariosIds || []
+    };
+    setObras(prev => [newObra, ...prev]);
+    showNotification(`Obra "${newObra.titulo}" creada correctamente`);
+    return newObra;
+  };
+
+  const updateObra = (id, updates) => {
+    setObras(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
+    showNotification('Obra actualizada correctamente');
+  };
+
+  const addDiarioEntry = (obraId, entry) => {
+    const newEntry = {
+      ...entry,
+      id: `d-${Date.now()}`,
+      fecha: entry.fecha || new Date().toISOString().split('T')[0]
+    };
+    setObras(prev => prev.map(o => {
+      if (o.id === obraId) {
+        return { ...o, diario: [newEntry, ...(o.diario || [])] };
+      }
+      return o;
+    }));
+    showNotification('Entrada guardada en el Diario de Obra');
+  };
+
+  const addMaterialToObra = (obraId, material) => {
+    const newMat = {
+      ...material,
+      id: `m-${Date.now()}`,
+      estado: material.estado || 'pendiente'
+    };
+    setObras(prev => prev.map(o => {
+      if (o.id === obraId) {
+        return { ...o, necesidadesMateriales: [...(o.necesidadesMateriales || []), newMat] };
+      }
+      return o;
+    }));
+    showNotification(`Material "${newMat.concepto}" añadido a las necesidades`);
+  };
+
+  const updateMaterialStatus = (obraId, materialId, newStatus) => {
+    setObras(prev => prev.map(o => {
+      if (o.id === obraId) {
+        return {
+          ...o,
+          necesidadesMateriales: (o.necesidadesMateriales || []).map(m => m.id === materialId ? { ...m, estado: newStatus } : m)
+        };
+      }
+      return o;
+    }));
+  };
+
+  // Presupuesto Actions
+  const addPresupuesto = (presData) => {
+    const newPres = {
+      ...presData,
+      id: `pres-${Date.now()}`,
+      numero: `PRES-2026-${String(presupuestos.length + 1).padStart(3, '0')}`,
+      fecha: presData.fecha || new Date().toISOString().split('T')[0],
+      estado: presData.estado || 'borrador',
+      validezDias: presData.validezDias || 30
+    };
+    setPresupuestos(prev => [newPres, ...prev]);
+    showNotification(`Presupuesto ${newPres.numero} generado con éxito`);
+    return newPres;
+  };
+
+  const updatePresupuesto = (id, updates) => {
+    setPresupuestos(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    showNotification('Presupuesto actualizado');
+  };
+
+  // Presupuesto to Factura conversion in 1-click
+  const convertPresupuestoToFactura = (presupuestoId, tipoFactura = 'Certificación 1 (Anticipo 40%)', porcentaje = 40) => {
+    const pres = presupuestos.find(p => p.id === presupuestoId);
+    if (!pres) return null;
+
+    const fechaHoy = new Date().toISOString().split('T')[0];
+    const fechaVenc = new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0];
+    const factor = (porcentaje || 100) / 100;
+
+    const baseCalculada = Number((pres.baseImponible * factor).toFixed(2));
+    const cuotaIvaCalculada = Number((baseCalculada * (pres.tipoIvaPct / 100)).toFixed(2));
+    const totalCalculado = Number((baseCalculada + cuotaIvaCalculada).toFixed(2));
+
+    // Determinar trimestre actual
+    const mes = new Date().getMonth(); // 0 a 11
+    const trim = mes < 3 ? '1T' : mes < 6 ? '2T' : mes < 9 ? '3T' : '4T';
+
+    const newFactura = {
+      id: `fac-${Date.now()}`,
+      numero: `FAC-2026-${String(facturas.length + 1).padStart(3, '0')}`,
+      presupuestoId: pres.id,
+      obraId: pres.obraId || null,
+      obraTitulo: pres.obraTitulo || pres.cliente,
+      cliente: pres.cliente,
+      cifNif: pres.nif || 'Sin NIF',
+      direccion: pres.direccion || 'Domicilio de obra',
+      fechaEmision: fechaHoy,
+      fechaVencimiento: fechaVenc,
+      tipoFactura: tipoFactura,
+      trimestre: trim,
+      ano: 2026,
+      baseImponible: baseCalculada,
+      tipoIvaPct: pres.tipoIvaPct || 10,
+      cuotaIva: cuotaIvaCalculada,
+      retencionIrpfPct: 0,
+      cuotaRetencion: 0,
+      totalFactura: totalCalculado,
+      estadoCobro: 'pendiente',
+      fechaCobro: null,
+      metodoPago: 'Transferencia bancaria a 15 días'
+    };
+
+    setFacturas(prev => [newFactura, ...prev]);
+    // Update presupuesto status
+    setPresupuestos(prev => prev.map(p => p.id === pres.id ? { ...p, estado: 'facturado' } : p));
+    showNotification(`¡Factura ${newFactura.numero} generada con éxito por ${totalCalculado.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}!`);
+    return newFactura;
+  };
+
+  const updateFacturaStatus = (facturaId, estadoCobro, metodoPago = null) => {
+    setFacturas(prev => prev.map(f => {
+      if (f.id === facturaId) {
+        return {
+          ...f,
+          estadoCobro,
+          fechaCobro: estadoCobro === 'cobrada' ? new Date().toISOString().split('T')[0] : null,
+          metodoPago: metodoPago || f.metodoPago
+        };
+      }
+      return f;
+    }));
+    showNotification(`Factura marcada como ${estadoCobro}`);
+  };
+
+  const addFacturaProveedor = (gasto) => {
+    const newGasto = {
+      ...gasto,
+      id: `gasto-${Date.now()}`,
+      fecha: gasto.fecha || new Date().toISOString().split('T')[0]
+    };
+    setFacturasProveedores(prev => [newGasto, ...prev]);
+    showNotification('Factura de gasto/subcontrata añadida al libro de IVA soportado');
+  };
+
+  // Obreros & Subcontratas review
+  const addReviewObrero = (obreroId, review) => {
+    setObreros(prev => prev.map(o => {
+      if (o.id === obreroId) {
+        const prevResenas = o.ultimasResenas || [];
+        const newResenas = [{ ...review, id: `r-${Date.now()}`, fecha: new Date().toISOString().split('T')[0] }, ...prevResenas];
+        
+        // Recalcular media
+        const sum = newResenas.reduce((acc, r) => acc + (Number(r.nota) || 5), 0);
+        const newMedia = Number((sum / newResenas.length).toFixed(1));
+
+        return {
+          ...o,
+          calificacionMedia: newMedia,
+          obrasRealizadas: (o.obrasRealizadas || 0) + 1,
+          ultimasResenas: newResenas
+        };
+      }
+      return o;
+    }));
+    showNotification('Calificación registrada y tenida en cuenta para futuras asignaciones');
+  };
+
+  // Subcontractor Quote Application & Price Database Auto-update with configured margin!
+  const applySubcontrataPresupuesto = (subPresupuestoId, partidasToUpdate, globalMargin = null) => {
+    setBasePrecios(prevBase => {
+      const updated = [...prevBase];
+      partidasToUpdate.forEach(item => {
+        const idx = updated.findIndex(bp => bp.codigo === item.codigo);
+        const marginPct = globalMargin !== null ? globalMargin : item.margenConfiguradoPct;
+        const nuevoCoste = item.nuevoPrecioSubcontrata;
+        const nuevoPvp = Number((nuevoCoste * (1 + marginPct / 100)).toFixed(2));
+
+        if (idx >= 0) {
+          updated[idx] = {
+            ...updated[idx],
+            costeSubcontrata: nuevoCoste,
+            margenPct: marginPct,
+            precioVenta: nuevoPvp
+          };
+        } else {
+          updated.push({
+            id: `bp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            codigo: item.codigo,
+            capitulo: item.capitulo || 'Subcontratas',
+            gremio: item.gremio || 'Instalaciones',
+            concepto: item.concepto,
+            unidad: item.unidad || 'ud',
+            costeSubcontrata: nuevoCoste,
+            margenPct: marginPct,
+            precioVenta: nuevoPvp
+          });
+        }
+      });
+      return updated;
+    });
+
+    setSubcontratasPresupuestos(prev => prev.map(sp => {
+      if (sp.id === subPresupuestoId) {
+        return { ...sp, estado: 'aplicado' };
+      }
+      return sp;
+    }));
+
+    showNotification(`¡Base de Precios actualizada con éxito! Precios de coste y PVP actualizados con el margen comercial.`);
+  };
+
+  // Inbox & Requirement processing
+  const processMensajeInbox = (mensajeId, obraId, accionTipo, datosExtra) => {
+    const msg = mensajesInbox.find(m => m.id === mensajeId);
+    if (!msg) return;
+
+    if (accionTipo === 'aplicar_necesidades_obra') {
+      // Add each calculated need to the obra's material list
+      const items = msg.analisisIA?.necesidadesCalculadas || [];
+      items.forEach(item => {
+        addMaterialToObra(obraId, {
+          concepto: item.concepto,
+          cantidad: item.cantidad,
+          unidad: item.unidad,
+          costeEstimado: item.costeAprox,
+          proveedor: 'Por asignar'
+        });
+      });
+    } else if (accionTipo === 'crear_partida_presupuesto') {
+      // Add to obra's presupuesto as an extra partida
+      const targetObra = obras.find(o => o.id === obraId);
+      if (targetObra && targetObra.presupuestoId) {
+        const pres = presupuestos.find(p => p.id === targetObra.presupuestoId);
+        if (pres) {
+          const newPartidas = (msg.analisisIA?.necesidadesCalculadas || []).map((nc, idx) => ({
+            id: `pextra-${Date.now()}-${idx}`,
+            codigo: `EXT-${idx + 1}`,
+            capitulo: 'Modificaciones y Adicionales',
+            concepto: nc.concepto,
+            cantidad: nc.cantidad,
+            unidad: nc.unidad,
+            costeUnitario: Number((nc.costeAprox / (nc.cantidad || 1)).toFixed(2)),
+            margenPct: 30,
+            precioVenta: Number(((nc.pvpCliente || nc.costeAprox * 1.3) / (nc.cantidad || 1)).toFixed(2)),
+            total: nc.pvpCliente || (nc.costeAprox * 1.3)
+          }));
+
+          const updatedPartidas = [...pres.partidas, ...newPartidas];
+          const newBase = updatedPartidas.reduce((s, p) => s + p.total, 0);
+          const newIva = Number((newBase * (pres.tipoIvaPct / 100)).toFixed(2));
+          const newTotal = Number((newBase + newIva).toFixed(2));
+
+          updatePresupuesto(pres.id, {
+            partidas: updatedPartidas,
+            baseImponible: Number(newBase.toFixed(2)),
+            cuotaIva: newIva,
+            totalConIva: newTotal
+          });
+        }
+      }
+    }
+
+    setMensajesInbox(prev => prev.map(m => m.id === mensajeId ? { ...m, estadoProcesado: true } : m));
+    showNotification('Mensaje procesado y aplicado a la obra.');
+  };
+
+  const addMensajeInbox = (newMsg) => {
+    const msg = {
+      ...newMsg,
+      id: `msg-${Date.now()}`,
+      fecha: new Date().toISOString().replace('T', ' ').substr(0, 16),
+      estadoProcesado: false
+    };
+    setMensajesInbox(prev => [msg, ...prev]);
+    showNotification('Nuevo mensaje recibido y analizado por IA');
+    return msg;
+  };
+
+  const resetAllData = () => {
+    if (window.confirm('¿Seguro que deseas reiniciar los datos de demostración a su estado inicial?')) {
+      setObras(INITIAL_OBRAS);
+      setObreros(INITIAL_OBREROS);
+      setBasePrecios(INITIAL_BASE_PRECIOS);
+      setPresupuestos(INITIAL_PRESUPUESTOS);
+      setFacturas(INITIAL_FACTURAS);
+      setFacturasProveedores(INITIAL_FACTURAS_PROVEEDORES);
+      setMensajesInbox(INITIAL_MENSAJES_INBOX);
+      setSubcontratasPresupuestos(INITIAL_SUBCONTRATAS_PRESUPUESTOS);
+      showNotification('Datos reiniciados a los valores de prueba');
+    }
+  };
+
+  return (
+    <AppContext.Provider value={{
+      obras,
+      setObras,
+      addObra,
+      updateObra,
+      addDiarioEntry,
+      addMaterialToObra,
+      updateMaterialStatus,
+      obreros,
+      setObreros,
+      addReviewObrero,
+      basePrecios,
+      setBasePrecios,
+      applySubcontrataPresupuesto,
+      presupuestos,
+      setPresupuestos,
+      addPresupuesto,
+      updatePresupuesto,
+      convertPresupuestoToFactura,
+      facturas,
+      setFacturas,
+      updateFacturaStatus,
+      facturasProveedores,
+      setFacturasProveedores,
+      addFacturaProveedor,
+      mensajesInbox,
+      setMensajesInbox,
+      addMensajeInbox,
+      processMensajeInbox,
+      subcontratasPresupuestos,
+      setSubcontratasPresupuestos,
+      activeTab,
+      setActiveTab,
+      selectedObraId,
+      setSelectedObraId,
+      selectedPresupuestoId,
+      setSelectedPresupuestoId,
+      pdfModalData,
+      setPdfModalData,
+      notification,
+      showNotification,
+      resetAllData
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export const useApp = () => useContext(AppContext);
