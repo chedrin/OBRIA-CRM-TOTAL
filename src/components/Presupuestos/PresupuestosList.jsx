@@ -24,9 +24,12 @@ import PresupuestoGeneratorAI from './PresupuestoGeneratorAI';
 export default function PresupuestosList() {
   const {
     presupuestos,
+    updatePresupuesto,
+    addObra,
     convertPresupuestoToFactura,
     setPdfModalData,
-    setActiveTab
+    setActiveTab,
+    showNotification
   } = useApp();
 
   const [viewMode, setViewMode] = useState('list'); // list o new_ai
@@ -49,6 +52,46 @@ export default function PresupuestosList() {
     convertPresupuestoToFactura(showConvertModal.id, convertTipo, Number(convertPorcentaje));
     setShowConvertModal(null);
     setActiveTab('facturas');
+  };
+
+  const handleAceptarPresupuesto = (pres) => {
+    // Marcar presupuesto como aceptado por el cliente
+    updatePresupuesto(pres.id, { estado: 'aceptado' });
+
+    // Generar fases automáticamente a partir de los capítulos
+    const capitulosUnicos = Array.from(new Set((pres.partidas || []).map(p => p.capitulo || 'General')));
+    const fasesFromPresupuesto = capitulosUnicos.map((cap, idx) => ({
+      id: `fase-auto-${Date.now()}-${idx}`,
+      nombre: `Fase ${idx + 1}: ${cap}`,
+      progreso: 0,
+      estado: 'pendiente',
+      dias: cap.includes('Demolicion') ? 4 : cap.includes('Fontaneria') || cap.includes('Electricidad') ? 8 : 10,
+      responsable: 'Por asignar'
+    }));
+
+    // Crear la Obra automáticamente asociada al presupuesto aceptado
+    addObra({
+      titulo: pres.obraTitulo || `Obra ${pres.cliente}`,
+      cliente: pres.cliente,
+      telefono: pres.telefono || '+34 600 000 000',
+      email: pres.email || 'cliente@ejemplo.es',
+      direccion: pres.direccion || 'Dirección de obra',
+      tipo: 'Reforma Integral',
+      estado: 'en_curso',
+      progreso: 0,
+      presupuestoTotal: pres.totalConIva || pres.baseImponible,
+      costeRealActual: 0,
+      margenEsperadoPct: pres.margenGlobalPct || 35,
+      margenRealPct: pres.margenGlobalPct || 35,
+      presupuestoId: pres.id,
+      notas: `Obra creada automáticamente tras la aceptación del presupuesto ${pres.numero}.`,
+      fases: fasesFromPresupuesto,
+      necesidadesMateriales: [
+        { id: `mat-${Date.now()}-1`, concepto: 'Materiales base iniciales', cantidad: 1, unidad: 'lote', costeEstimado: 500, proveedor: 'Por asignar' }
+      ]
+    });
+
+    showNotification(`¡Presupuesto ${pres.numero} ACEPTADO por el cliente! Se ha creado la obra en ejecución y generado sus fases.`);
   };
 
   return (
@@ -180,13 +223,24 @@ export default function PresupuestosList() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* Botón Aceptar Presupuesto (Si aún es borrador o enviado) */}
+                  {!isAceptado && !isFacturado && (
+                    <button
+                      onClick={() => handleAceptarPresupuesto(pres)}
+                      className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-amber-500/20 active:scale-95"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Cliente Acepta Presupuesto</span>
+                    </button>
+                  )}
+
                   {/* View PDF */}
                   <button
                     onClick={() => setPdfModalData({ type: 'presupuesto', data: pres })}
                     className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
                   >
                     <FileText className="w-4 h-4" />
-                    <span>Ver Presupuesto PDF</span>
+                    <span>Ver PDF</span>
                   </button>
 
                   {/* 1-Click Convert to Invoice */}
