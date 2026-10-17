@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
+  INITIAL_EMPRESA_CONFIG,
   INITIAL_OBRAS,
   INITIAL_OBREROS,
   INITIAL_BASE_PRECIOS,
@@ -13,6 +14,7 @@ import {
 const AppContext = createContext();
 
 const STORAGE_KEYS = {
+  EMPRESA: 'obracon_empresa_config_v1',
   OBRAS: 'obracon_obras_v1',
   OBREROS: 'obracon_obreros_v1',
   BASE_PRECIOS: 'obracon_base_precios_v1',
@@ -21,6 +23,7 @@ const STORAGE_KEYS = {
   FACTURAS_PROV: 'obracon_facturas_prov_v1',
   MENSAJES: 'obracon_mensajes_v1',
   SUBCONTRATAS_PRES: 'obracon_sub_pres_v1',
+  AUDIT_LOGS: 'obracon_audit_logs_v1'
 };
 
 function loadStored(key, fallback) {
@@ -34,6 +37,7 @@ function loadStored(key, fallback) {
 }
 
 export function AppProvider({ children }) {
+  const [empresaConfig, setEmpresaConfig] = useState(() => loadStored(STORAGE_KEYS.EMPRESA, INITIAL_EMPRESA_CONFIG));
   const [obras, setObras] = useState(() => loadStored(STORAGE_KEYS.OBRAS, INITIAL_OBRAS));
   const [obreros, setObreros] = useState(() => loadStored(STORAGE_KEYS.OBREROS, INITIAL_OBREROS));
   const [basePrecios, setBasePrecios] = useState(() => loadStored(STORAGE_KEYS.BASE_PRECIOS, INITIAL_BASE_PRECIOS));
@@ -42,15 +46,19 @@ export function AppProvider({ children }) {
   const [facturasProveedores, setFacturasProveedores] = useState(() => loadStored(STORAGE_KEYS.FACTURAS_PROV, INITIAL_FACTURAS_PROVEEDORES));
   const [mensajesInbox, setMensajesInbox] = useState(() => loadStored(STORAGE_KEYS.MENSAJES, INITIAL_MENSAJES_INBOX));
   const [subcontratasPresupuestos, setSubcontratasPresupuestos] = useState(() => loadStored(STORAGE_KEYS.SUBCONTRATAS_PRES, INITIAL_SUBCONTRATAS_PRESUPUESTOS));
+  const [auditLogs, setAuditLogs] = useState(() => loadStored(STORAGE_KEYS.AUDIT_LOGS, [
+    { id: 'log-1', timestamp: '2026-10-16 10:15:22', usuario: 'Manuel (Gerente)', accion: 'EMISION_FACTURA_VERIFACTU', recurso: 'FAC-2026-024', ip: '88.12.45.192', hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }
+  ]));
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas, empresa_config
   const [selectedObraId, setSelectedObraId] = useState(null);
   const [selectedPresupuestoId, setSelectedPresupuestoId] = useState(null);
   const [pdfModalData, setPdfModalData] = useState(null); // { type: 'presupuesto'|'factura', data: ... }
   const [notification, setNotification] = useState(null);
 
   // Sync to LocalStorage
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.EMPRESA, JSON.stringify(empresaConfig)); }, [empresaConfig]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.OBRAS, JSON.stringify(obras)); }, [obras]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.OBREROS, JSON.stringify(obreros)); }, [obreros]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.BASE_PRECIOS, JSON.stringify(basePrecios)); }, [basePrecios]);
@@ -59,6 +67,27 @@ export function AppProvider({ children }) {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FACTURAS_PROV, JSON.stringify(facturasProveedores)); }, [facturasProveedores]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.MENSAJES, JSON.stringify(mensajesInbox)); }, [mensajesInbox]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRATAS_PRES, JSON.stringify(subcontratasPresupuestos)); }, [subcontratasPresupuestos]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs)); }, [auditLogs]);
+
+  const updateEmpresaConfig = (updates) => {
+    setEmpresaConfig(prev => ({ ...prev, ...updates }));
+    showNotification('Datos fiscales y configuración de la empresa guardados correctamente');
+  };
+
+  const addAuditLog = (accion, recurso, valorAnterior = null, valorNuevo = null) => {
+    const newLog = {
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      usuario: 'Manuel (Gerente)',
+      accion,
+      recurso,
+      ip: '192.168.1.45',
+      valorAnterior,
+      valorNuevo,
+      hash: Math.random().toString(36).substring(2) + Date.now().toString(36)
+    };
+    setAuditLogs(prev => [newLog, ...prev]);
+  };
 
   const showNotification = (msg, type = 'success') => {
     setNotification({ msg, type });
@@ -447,6 +476,11 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
+      empresaConfig,
+      setEmpresaConfig,
+      updateEmpresaConfig,
+      auditLogs,
+      addAuditLog,
       obras,
       setObras,
       addObra,

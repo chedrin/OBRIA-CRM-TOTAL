@@ -12,7 +12,8 @@ import {
   RefreshCw,
   Bell,
   Sparkles,
-  Smartphone
+  Smartphone,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -39,6 +40,7 @@ export default function Navbar() {
     { id: 'obreros', label: 'Obreros & Calificación', icon: Users },
     { id: 'subcontratas', label: 'Subcontratas & Precios', icon: Percent, badge: pendingSubPresCount, badgeColor: 'bg-indigo-500' },
     { id: 'portal_obrero', label: 'App Móvil Obrero', icon: Smartphone, badgeColor: 'bg-emerald-500' },
+    { id: 'empresa_config', label: 'Config. Fiscal', icon: ShieldCheck, isSpecial: true },
   ];
 
   return (

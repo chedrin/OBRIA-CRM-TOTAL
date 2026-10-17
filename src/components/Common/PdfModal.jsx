@@ -1,10 +1,10 @@
 import React, { useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Printer, Download, FileText, CheckCircle2, Building2 } from 'lucide-react';
+import { X, Printer, Download, FileText, CheckCircle2, Building2, ShieldCheck, QrCode, Lock } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 export default function PdfModal() {
-  const { pdfModalData, setPdfModalData, showNotification } = useApp();
+  const { pdfModalData, setPdfModalData, empresaConfig, showNotification } = useApp();
   const printRef = useRef(null);
 
   if (!pdfModalData) return null;
@@ -190,12 +190,12 @@ export default function PdfModal() {
                   <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 font-black">
                     OM
                   </div>
-                  <h2 className="text-xl font-black tracking-tight text-slate-900">CONSTRUCCIONES OBRAMASTER SL</h2>
+                  <h2 className="text-xl font-black tracking-tight text-slate-900">{empresaConfig?.razonSocial || 'CONSTRUCCIONES OBRAMASTER SL'}</h2>
                 </div>
                 <p className="text-xs text-slate-500 leading-tight">
-                  NIF: B-88776655<br />
-                  C/ Velázquez 48, 28001 Madrid<br />
-                  Tel: +34 912 345 678 · info@obramaster.es
+                  NIF: {empresaConfig?.cifNif || 'B-88776655'}<br />
+                  {empresaConfig?.direccion || 'C/ Velázquez 48'}, {empresaConfig?.codigoPostal} {empresaConfig?.localidad}<br />
+                  Tel: {empresaConfig?.telefono || '+34 912 345 678'} · {empresaConfig?.email || 'info@obramaster.es'}
                 </p>
               </div>
 
@@ -203,7 +203,7 @@ export default function PdfModal() {
                 <span className={`inline-block px-3 py-1 rounded text-xs font-black uppercase tracking-wider mb-1 ${
                   isFactura ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
                 }`}>
-                  {isFactura ? 'FACTURA' : 'PRESUPUESTO'}
+                  {isFactura ? (empresaConfig?.modoVeriFactu ? 'FACTURA VERIFACTU' : 'FACTURA') : 'PRESUPUESTO'}
                 </span>
                 <p className="font-mono font-bold text-slate-800 text-base">{data.numero}</p>
                 <p className="text-xs text-slate-500">Fecha: {isFactura ? data.fechaEmision : data.fecha}</p>
@@ -274,11 +274,38 @@ export default function PdfModal() {
               </table>
             </div>
 
+            {/* VeriFactu / TicketBAI Stamp Box (Conforme a Ley 11/2021) */}
+            {isFactura && (
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-300 flex items-center justify-between gap-4 text-[11px] text-slate-600">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Factura Verificable en Sede Electrónica de la AEAT (VeriFactu)</span>
+                  </span>
+                  <p className="font-mono text-[9px] text-slate-500 break-all">
+                    Huella SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    Software garante: ObraMaster Engine v2.4.0 · Reg. Antifraude Ley 11/2021
+                  </p>
+                </div>
+                <div className="bg-white p-1 rounded border border-slate-300 shrink-0 text-center">
+                  <div className="w-12 h-12 bg-slate-900 text-white flex items-center justify-center font-bold text-[8px]">
+                    QR AEAT
+                  </div>
+                  <span className="text-[8px] font-bold text-slate-500 block mt-0.5">VERIFACTU</span>
+                </div>
+              </div>
+            )}
+
             {/* Totals Breakdown */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4 border-t border-slate-200">
               <div className="text-[11px] text-slate-500 max-w-sm space-y-1">
                 <p><strong>Garantía:</strong> 2 años en instalaciones y acabados según LOE.</p>
-                <p><strong>Cuenta Bancaria:</strong> ES76 0049 1500 0512 3456 7890 (Banco Santander)</p>
+                <p><strong>Cuenta Bancaria IBAN:</strong> {empresaConfig?.iban || 'ES91 2100 0418 45 0200051234'}</p>
+                {empresaConfig?.registroMercantil && (
+                  <p className="text-[10px] text-slate-400">{empresaConfig.registroMercantil}</p>
+                )}
               </div>
 
               <div className="w-full sm:w-64 space-y-1.5 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">

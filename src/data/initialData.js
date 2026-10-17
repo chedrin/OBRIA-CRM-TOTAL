@@ -1,5 +1,39 @@
 // Initial realistic dataset for Spanish Construction & Reform Contractor
 
+export const INITIAL_EMPRESA_CONFIG = {
+  razonSocial: 'ObraMaster AI Construcciones y Reformas SL',
+  nombreComercial: 'ObraMaster AI',
+  cifNif: 'B87654321',
+  direccion: 'Calle Velázquez 102, Planta 3',
+  codigoPostal: '28006',
+  localidad: 'Madrid',
+  provincia: 'Madrid',
+  pais: 'España',
+  telefono: '+34 91 234 5678',
+  email: 'administracion@obramaster.es',
+  web: 'www.obramaster.es',
+  registroMercantil: 'Mercantil de Madrid, Tomo 38.412, Folio 110, Sección 8, Hoja M-683102',
+  iban: 'ES91 2100 0418 45 0200051234',
+  bicSwift: 'CAIXESMMXXX',
+
+  // Parámetros Fiscales
+  regimenFiscal: 'Regimen General de Ley 37/1992 del IVA',
+  serieFacturacionDefecto: 'FAC-2026',
+  modoVeriFactu: true, // Sistema VeriFactu activo (Envío automático AEAT)
+  modoTicketBai: false, // Paiz Vasco (Álava, Bizkaia, Gipuzkoa)
+  provinciaTicketBai: 'Bizkaia',
+  modoSII: true, // Suministro Inmediato de Información (>6M€ o REDEME)
+  modoFacturae: true, // Factura Electrónica B2B Ley Crea y Crece
+  certificadoCargado: true,
+  certificadoNombre: 'CERT_FNMT_B87654321_2025_2028.p12',
+  certificadoCaducidad: '2028-06-30',
+
+  // Huella de software garante (Reglamento Antifraude Ley 11/2021)
+  softwareNombre: 'ObraMaster VeriFactu Engine',
+  softwareVersion: '2.4.0-VERIFACTU',
+  softwareLicencia: 'VERI-AEAT-2026-991208'
+};
+
 export const INITIAL_OBRAS = [
   {
     id: 'obra-1',
