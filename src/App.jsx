@@ -10,6 +10,7 @@ import GestoriaTrimestres from './components/Gestoria/GestoriaTrimestres';
 import ObrerosList from './components/Obreros/ObrerosList';
 import SubcontratasList from './components/Subcontratas/SubcontratasList';
 import PortalObreroView from './components/PortalObrero/PortalObreroView';
+import EmpresaConfig from './components/Configuracion/EmpresaConfig';
 import PdfModal from './components/Common/PdfModal';
 import { CheckCircle2, AlertCircle, HardHat } from 'lucide-react';
 
@@ -33,6 +34,7 @@ function MainLayout() {
         {activeTab === 'obreros' && <ObrerosList />}
         {activeTab === 'subcontratas' && <SubcontratasList />}
         {activeTab === 'portal_obrero' && <PortalObreroView />}
+        {activeTab === 'empresa_config' && <EmpresaConfig />}
       </main>
 
       {/* Footer */}

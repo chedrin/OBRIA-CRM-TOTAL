@@ -13,7 +13,11 @@ import {
   Building2,
   ArrowRight,
   Download,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
+  QrCode,
+  Lock,
+  FileCode
 } from 'lucide-react';
 
 export default function FacturasList() {
@@ -23,8 +27,58 @@ export default function FacturasList() {
     setPdfModalData,
     presupuestos,
     convertPresupuestoToFactura,
+    empresaConfig,
+    showNotification,
     setActiveTab
   } = useApp();
+
+  const handleDownloadFacturaeXml = (fac) => {
+    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<fe:Facturae xmlns:fe="http://www.facturae.es/Facturae/2014/v3.2.2/Facturae">
+  <FileHeader>
+    <SchemaVersion>3.2.2</SchemaVersion>
+    <Modality>I</Modality>
+    <InvoiceIssuerType>EM</InvoiceIssuerType>
+    <Batch>
+      <InvoicesCount>1</InvoicesCount>
+      <TotalInvoicesAmount><TotalAmount>${fac.totalFactura.toFixed(2)}</TotalAmount></TotalInvoicesAmount>
+    </Batch>
+  </FileHeader>
+  <Parties>
+    <SellerParty>
+      <TaxIdentification><TaxIdentificationNumber>${empresaConfig.cifNif}</TaxIdentificationNumber></TaxIdentification>
+      <LegalEntity><CorporateName>${empresaConfig.razonSocial}</CorporateName></LegalEntity>
+    </SellerParty>
+    <BuyerParty>
+      <TaxIdentification><TaxIdentificationNumber>${fac.cifNif}</TaxIdentificationNumber></TaxIdentification>
+      <Individual><Name>${fac.cliente}</Name></Individual>
+    </BuyerParty>
+  </Parties>
+  <Invoices>
+    <Invoice>
+      <InvoiceHeader>
+        <InvoiceNumber>${fac.numero}</InvoiceNumber>
+        <InvoiceDocumentType>FC</InvoiceDocumentType>
+        <InvoiceClass>OO</InvoiceClass>
+        <IssueDate>${fac.fechaEmision}</IssueDate>
+      </InvoiceHeader>
+      <InvoiceTotals>
+        <TotalGrossAmount>${fac.baseImponible.toFixed(2)}</TotalGrossAmount>
+        <TotalTaxOutputs>${fac.cuotaIva.toFixed(2)}</TotalTaxOutputs>
+        <InvoiceTotal>${fac.totalFactura.toFixed(2)}</InvoiceTotal>
+      </InvoiceTotals>
+    </Invoice>
+  </Invoices>
+</fe:Facturae>`;
+
+    const blob = new Blob([xmlContent], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Facturae_${fac.numero}.xml`;
+    a.click();
+    showNotification(`Facturae XML generado y descargado para ${fac.numero}`);
+  };
 
   const [filterEstado, setFilterEstado] = useState('todas'); // todas, cobrada, pendiente
   const [filterTrimestre, setFilterTrimestre] = useState('todos'); // todos, 1T, 2T, 3T, 4T
@@ -209,12 +263,22 @@ export default function FacturasList() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* VeriFactu & Facturae XML Buttons */}
+                  <button
+                    onClick={() => handleDownloadFacturaeXml(fac)}
+                    className="px-2.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-xl text-xs font-semibold flex items-center gap-1 transition"
+                    title="Descargar XML Facturae v3.2.2 para Administración / B2B"
+                  >
+                    <FileCode className="w-3.5 h-3.5" />
+                    <span>Facturae XML</span>
+                  </button>
+
                   <button
                     onClick={() => setPdfModalData({ type: 'factura', data: fac })}
                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    <span>Ver PDF</span>
+                    <span>Ver PDF VeriFactu</span>
                   </button>
 
                   {!isCobrada ? (
