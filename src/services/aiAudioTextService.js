@@ -8,6 +8,10 @@
  * 4. Audit logging of raw inputs and refined AI outputs (ai_inputs_log)
  */
 
+import { generateBudgetWithGemini, normalizeGeminiModel } from './geminiService';
+import { buildFewShotReferenceContext, buildGeminiSystemPromptWithReferences } from './referenceBudgetService';
+import { checkBackendStatus, transcribeAudioViaBackend, generateBudgetViaBackend } from './backendAiService';
+
 export const SYSTEM_PROMPT_TECHNICAL_SPECS = `Eres el Ingeniero Técnico de Edificación y Presupuestador Jefe de la empresa constructora "ObraMaster".
 Tu objetivo es recibir audios transcritos, notas de voz, textos coloquiales o correos electrónicos de clientes/directores de obra y transformarlos en partidas formales de presupuesto de construcción o reforma.
 
@@ -46,42 +50,72 @@ FORMATO DE SALIDA (ESTRICTO JSON):
  * @param {Blob|File} audioBlob - Audio file recorded or uploaded
  * @param {Object} aiConfig - User's configured AI settings
  */
-export async function transcribeAudio(audioBlob, aiConfig = {}) {
-  // If user configured an OpenAI API Key
-  if (aiConfig.apiKey && (aiConfig.provider === 'openai' || !aiConfig.provider)) {
+export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallback = '') {
+  const apiKey = (aiConfig.apiKey || '').trim();
+
+  // 1. Probar en primer lugar con el Backend Local Multimodal (Google Gemini Audio)
+  if (audioBlob && audioBlob.size > 0) {
+    try {
+      const backendStatus = await checkBackendStatus();
+      if (backendStatus.isAvailable) {
+        const transResult = await transcribeAudioViaBackend(audioBlob, apiKey);
+        if (transResult && transResult.texto) {
+          return { success: true, text: transResult.texto, source: 'backend-gemini' };
+        }
+      }
+    } catch (bErr) {
+      console.warn('Backend proxy no disponible para audio, pasando a método alternativo:', bErr.message);
+    }
+  }
+
+  const hasRealOpenAiKey =
+    apiKey.startsWith('sk-') &&
+    !apiKey.includes('obramaster9876543210') &&
+    (aiConfig.provider === 'openai' || !aiConfig.provider);
+
+  // 2. If user configured a valid OpenAI API Key, call Whisper Cloud
+  if (hasRealOpenAiKey && audioBlob && audioBlob.size > 0) {
     try {
       const formData = new FormData();
       const fileExt = audioBlob.name?.split('.').pop() || 'webm';
       formData.append('file', audioBlob, `audio_recording.${fileExt}`);
       formData.append('model', 'whisper-1');
       formData.append('language', 'es');
-      formData.append('prompt', 'Vocabulario de construcción: tabique, pladur, alicatado, rozas, desescombro, REBT, CTE, multicapa, Geberit, porcelánico.');
+      formData.append('prompt', 'Vocabulario de construcción y reformas en España: tabicón cerámico, trasdosado de pladur, alicatado porcelánico rectificado, rozas, desescombro, REBT, CTE, multicapa, Geberit, inodoro suspendido, solera autonivelante.');
 
       const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${aiConfig.apiKey.trim()}`
+          'Authorization': `Bearer ${apiKey}`
         },
         body: formData
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.warn('Whisper API error, using technical speech fallback:', errorText);
+        console.warn('Whisper API cloud response error:', errorText);
       } else {
         const data = await response.json();
-        if (data.text) {
-          return { success: true, text: data.text, source: 'whisper-api' };
+        if (data.text && data.text.trim().length > 0) {
+          return { success: true, text: data.text.trim(), source: 'whisper-api' };
         }
       }
     } catch (err) {
-      console.warn('Network error calling Whisper API:', err);
+      console.warn('Network error calling Whisper Cloud API:', err);
     }
   }
 
-  // Fallback simulator for realistic construction demonstrations
-  // Generates a realistic site dictation if no key is configured
-  await new Promise(r => setTimeout(r, 1200));
+  // 2. If browser speech recognition captured real words spoken by the user into the microphone
+  if (liveSpeechFallback && liveSpeechFallback.trim().length > 3) {
+    return {
+      success: true,
+      text: liveSpeechFallback.trim(),
+      source: 'browser-speech-recognition'
+    };
+  }
+
+  // 3. Fallback realistic site dictation simulator for testing/demonstrations
+  await new Promise(r => setTimeout(r, 800));
   const sampleDictations = [
     "Revisión de obra en baño principal y pasillo. Hay que demoler la bañera antigua de chapa y picar unos 24 metros cuadrados de azulejo antiguo. Instalar plato de ducha de pizarra grafito de 140 por 80 con mampara fija. Modificar tomas de agua con tubería multicapa y desagüe insonorizado. En el pasillo rascar gotelé en 35 metros cuadrados de pared y pintar en blanco mate lavable.",
     "Petición urgente del cliente para la cocina. Quiere añadir 3 enchufes dobles sobre la encimera para electrodomésticos, mover el punto de luz del techo 80 centímetros hacia el centro de la isla y colocar falso techo de pladur con foseado perimetral para tira LED indirecta.",
@@ -103,11 +137,52 @@ export async function transcribeAudio(audioBlob, aiConfig = {}) {
  * @param {string} projectId - Target project ID if any
  * @param {Object} aiConfig - AI settings from AppContext
  * @param {Array} basePrecios - Company price master catalog
+ * @param {Array} [referenceBudgets=[]] - Reference historical budgets for Few-Shot RAG
  */
-export async function processScopeWithAI(inputText, contextType = 'presupuesto_obra', projectId = null, aiConfig = {}, basePrecios = []) {
+export async function processScopeWithAI(
+  inputText,
+  contextType = 'presupuesto_obra',
+  projectId = null,
+  aiConfig = {},
+  basePrecios = [],
+  referenceBudgets = [],
+  customPhotos = [],
+  audioBlob = null
+) {
   if (!inputText || !inputText.trim()) {
     throw new Error('El texto de entrada está vacío');
   }
+
+  const activeRefs = (referenceBudgets || []).filter(b => b.is_active);
+
+  // 0. Probar primero con el Backend Local Multimodal (http://localhost:3000)
+  try {
+    const backendStatus = await checkBackendStatus();
+    if (backendStatus.isAvailable) {
+      console.log('ObraMaster AI: Procesando presupuesto a través del Backend Proxy seguro (http://localhost:3000)...');
+      const validPhotos = (customPhotos || []).map(p => p.file || p.blob).filter(Boolean);
+      const audioFiles = audioBlob ? [audioBlob] : [];
+
+      const backendResult = await generateBudgetViaBackend({
+        fotos: validPhotos,
+        audios: audioFiles,
+        dictado: inputText,
+        basePrecios,
+        referenceBudgets: activeRefs,
+        customApiKey: aiConfig.apiKey
+      });
+
+      if (backendResult && (backendResult.capitulos?.length > 0 || backendResult.conceptos?.length > 0)) {
+        return sanitizeStructuredOutput(backendResult, inputText);
+      }
+    }
+  } catch (backendErr) {
+    console.warn('Backend proxy no disponible o falló, recurriendo a conexión cliente directa:', backendErr.message);
+  }
+
+  const effectiveSystemPrompt = activeRefs.length > 0
+    ? buildGeminiSystemPromptWithReferences(activeRefs)
+    : SYSTEM_PROMPT_TECHNICAL_SPECS;
 
   const promptUser = `
 TIPO DE ENTRADA: ${contextType}
@@ -119,6 +194,8 @@ ${inputText.trim()}
 
 CATÁLOGO OFICIAL DE PRECIOS DISPONIBLE EN LA EMPRESA (UTILIZAR PRIORITARIAMENTE ESTOS CÓDIGOS Y PRECIOS DE REFERENCIA):
 ${(basePrecios || []).slice(0, 20).map(bp => `- ${bp.codigo}: ${bp.concepto} | Coste Sub: ${bp.costeSubcontrata}€ | PVP: ${bp.precioVenta}€ / ${bp.unidad}`).join('\n')}
+
+${activeRefs.length > 0 ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA ACTIVOS (${activeRefs.length}):\nUtiliza los pliegos y estilo técnico canónico aprendido de los documentos de referencia proporcionados.` : ''}
 
 Por favor, procesa esta solicitud conforme a las pautas de redacción técnica contractual de ObraMaster y genera el JSON estructurado exacto.`;
 
@@ -134,11 +211,11 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
         body: JSON.stringify({
           model: aiConfig.model || 'gpt-4o',
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT_TECHNICAL_SPECS },
+            { role: 'system', content: effectiveSystemPrompt },
             { role: 'user', content: promptUser }
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.2
+          temperature: 0.15
         })
       });
 
@@ -167,12 +244,12 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
         },
         body: JSON.stringify({
           model: aiConfig.model || 'claude-3-5-sonnet-20241022',
-          system: SYSTEM_PROMPT_TECHNICAL_SPECS,
+          system: effectiveSystemPrompt,
           messages: [
             { role: 'user', content: promptUser }
           ],
           max_tokens: 3000,
-          temperature: 0.2
+          temperature: 0.15
         })
       });
 
@@ -190,7 +267,28 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
     }
   }
 
-  // 3. Technical Rule-Based Construction Engine (Deterministic Fallback)
+  // 3. If Google Gemini API Key is available
+  if (aiConfig.apiKey && aiConfig.provider === 'google') {
+    try {
+      const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || 'gemini-1.5-flash');
+      const parsed = await generateBudgetWithGemini({
+        promptUser,
+        systemPrompt: effectiveSystemPrompt,
+        apiKey: aiConfig.apiKey,
+        model: geminiModel,
+        temperature: 0.15,
+        referenceBudgets: activeRefs
+      });
+      if (parsed) {
+        return sanitizeStructuredOutput(parsed, inputText);
+      }
+    } catch (err) {
+      console.error('Error connecting to Google Gemini API:', err);
+      throw err;
+    }
+  }
+
+  // 4. Technical Rule-Based Construction Engine (Deterministic Fallback)
   // Parses quantities, areas, materials, and maps to standard technical specs
   await new Promise(r => setTimeout(r, 900));
   return parseTextToConstructionSpecs(inputText, basePrecios);
@@ -200,36 +298,50 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
  * Sanitizes and verifies the AI JSON response structure
  */
 function sanitizeStructuredOutput(parsed, rawInput) {
-  const resumen = parsed.resumen_alcance || 'Alcance de obra procesado mediante Inteligencia Artificial.';
+  const resumen = parsed.resumen_alcance || parsed.resumen_obra || 'Alcance de obra procesado mediante Inteligencia Artificial.';
   const revisada = parsed.transcripcion_revisada || rawInput;
   const redaccion = parsed.redaccion_tecnica_estilo || 
-    'Ejecución de trabajos según pliego de condiciones técnicas, incluyendo medios auxiliares, acopio de materiales y retirada de residuos a vertedero homologado.';
+    parsed.resumen_obra ||
+    'Ejecución de trabajos según pliego de condiciones técnicas de la empresa, incluyendo medios auxiliares, acopio de materiales y retirada de residuos a vertedero homologado con canon oficial.';
 
   const capitulos = (parsed.capitulos || []).map((cap, capIdx) => {
-    const nombreCap = cap.nombre_capitulo || `0${capIdx + 1}. TRABAJOS GENERALES`;
+    const rawNombre = cap.nombre_capitulo || cap.nombre || (cap.codigo_capitulo ? `${cap.codigo_capitulo}. ${cap.nombre || 'CAPÍTULO'}` : `0${capIdx + 1}. TRABAJOS GENERALES`);
+    const nombreCap = rawNombre.trim();
+    const codigoCap = cap.codigo_capitulo || cap.codigo || String(capIdx + 1).padStart(2, '0');
+
     const partidas = (cap.partidas || []).map((p, pIdx) => {
-      const med = Number(p.medicion || 1);
-      const precio = Number(p.precio_unitario_estimado || 25);
-      const tot = Number((med * precio).toFixed(2));
+      const med = Number(p.medicion || p.cantidad || 1);
+      const precio = Number(p.precio_unitario_estimado || p.precio_unitario || p.precioVenta || 25);
+      const tot = Number((p.total_estimado || p.total || (med * precio)).toFixed(2));
+      const tituloPartida = p.titulo || p.concepto || 'Partida técnica';
+      const descPartida = p.descripcion || p.concepto || 'Suministro e instalación según normativa vigente y pliego de prescripciones técnicas.';
 
       return {
         id: `part-${Date.now()}-${capIdx}-${pIdx}`,
         codigo: p.codigo || `IA-${String(pIdx + 1).padStart(2, '0')}`,
-        titulo: p.titulo || p.concepto || 'Partida técnica',
-        descripcion: p.descripcion || p.concepto || 'Suministro e instalación según normativa vigente.',
+        titulo: tituloPartida,
+        concepto: tituloPartida,
+        descripcion: descPartida,
         unidad: p.unidad || 'ud',
         medicion: med,
+        cantidad: med,
         precio_unitario_estimado: precio,
+        precioUnitario: precio,
+        precioVenta: precio,
+        costeUnitario: Number((precio * 0.7).toFixed(2)),
         total_estimado: tot,
-        margen_pct: 30
+        total: tot,
+        margen_pct: p.margen_pct || p.margenPct || 30
       };
     });
 
-    const subtotalCap = Number(partidas.reduce((s, p) => s + p.total_estimado, 0).toFixed(2));
+    const subtotalCap = Number(partidas.reduce((s, p) => s + p.total, 0).toFixed(2));
 
     return {
       id: `cap-${Date.now()}-${capIdx}`,
+      codigo: codigoCap,
       nombre_capitulo: nombreCap,
+      nombre: nombreCap,
       subtotal: subtotalCap,
       partidas
     };
@@ -237,6 +349,7 @@ function sanitizeStructuredOutput(parsed, rawInput) {
 
   return {
     resumen_alcance: resumen,
+    resumen_obra: resumen,
     transcripcion_revisada: revisada,
     redaccion_tecnica_estilo: redaccion,
     capitulos

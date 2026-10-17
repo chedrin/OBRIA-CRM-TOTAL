@@ -1048,6 +1048,21 @@ export const INITIAL_USERS = [
     isActive: true,
     createdAt: '2026-04-10T08:00:00Z',
     lastLogin: '2026-10-09T14:10:00Z'
+  },
+  {
+    id: 'user-obrero-5',
+    obreroId: 'obrero-5',
+    employeeId: 'emp-5',
+    username: 'joseluis.navarro',
+    password: 'obra2026',
+    role: 'obrero',
+    fullName: 'José Luis Navarro Rivas',
+    email: 'joseluis.navarro@gmail.com',
+    trade: 'Peonaje y Desescombro',
+    phone: '+34 655 667 788',
+    isActive: true,
+    createdAt: '2026-05-01T08:00:00Z',
+    lastLogin: null
   }
 ];
 
@@ -1215,7 +1230,7 @@ export const INITIAL_EMPLOYEES = [
   {
     id: 'emp-5',
     obreroId: 'obrero-5',
-    usuarioId: null,
+    usuarioId: 'user-obrero-5',
     nombre: 'José Luis',
     apellidos: 'Navarro Rivas',
     dni: '33445566T',
@@ -1505,4 +1520,47 @@ export const INITIAL_SUBCONTRACTORS = [
     facturasRecibidas: []
   }
 ];
+
+export const INITIAL_AVISOS_TECNICOS = [
+  {
+    id: 'aviso-1',
+    obraId: 'obra-1',
+    obraCodigo: 'OBR-2026-001',
+    obraTitulo: 'Reforma Integral Ático Velázquez',
+    titulo: 'Uso obligatorio de arnés y línea de vida en terraza exterior',
+    tipo: 'seguridad',
+    prioridad: 'urgente',
+    descripcion: 'Por indicación de la Coordinación de Seguridad y Salud (PRL), todos los operarios que trabajen en la colocación de barandilla y solado de la terraza exterior deben anclarse obligatoriamente a la línea de vida homologada instalada en el peto. Prohibido asomarse o retirar protecciones colectivas sin arnés.',
+    fecha: '2026-10-17T08:30:00Z',
+    emisor: 'Manuel Gómez (Director de Obra)',
+    leidoPor: []
+  },
+  {
+    id: 'aviso-2',
+    obraId: 'obra-1',
+    obraCodigo: 'OBR-2026-001',
+    obraTitulo: 'Reforma Integral Ático Velázquez',
+    titulo: 'Comprobación de cota de bajante antes de cerrar tabique de pladur',
+    tipo: 'tecnico',
+    prioridad: 'alta',
+    descripcion: 'Atención equipo de albañilería y fontanería: antes de fijar las placas hidrófugas del baño principal, verificar que el entronque del inodoro suspendido mantiene mínimo el 2% de pendiente hacia el bajante general. No cerrar estructura sin fotografía previa.',
+    fecha: '2026-10-16T14:15:00Z',
+    emisor: 'Manuel Gómez (Director de Obra)',
+    leidoPor: ['carlos.ruiz']
+  },
+  {
+    id: 'aviso-3',
+    obraId: 'obra-2',
+    obraCodigo: 'OBR-2026-002',
+    obraTitulo: 'Construcción Vivienda Unifamiliar Las Rozas',
+    titulo: 'Corte temporal de suministro eléctrico por acometida de cuba',
+    tipo: 'operativo',
+    prioridad: 'media',
+    descripcion: 'El próximo lunes a primera hora llegará la autobomba de hormigón para la solera de cimentación. Se interrumpirá la corriente en los cuadros provisionales durante 45 minutos. Planificar las tareas que requieran maquinaria a batería.',
+    fecha: '2026-10-15T16:00:00Z',
+    emisor: 'Dirección Facultativa',
+    leidoPor: []
+  }
+];
+
 

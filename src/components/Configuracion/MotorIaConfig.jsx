@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { normalizeGeminiModel } from '../../services/geminiService';
+import { checkBackendStatus } from '../../services/backendAiService';
 import {
   Sparkles,
   Key,
@@ -60,10 +62,11 @@ const PROVIDERS = [
     name: 'Google Gemini',
     logo: '✨',
     badge: 'Gran Ventana Contexto',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-1.5-flash',
     models: [
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Recomendado · Ultrarrápido & Multimodal)', speed: 'Ultrarrápido', context: '1M tokens' },
-      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Cálculo estructural y normativo)', speed: 'Rápido', context: '2M tokens' }
+      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Recomendado · Ultrarrápido & Multimodal)', speed: 'Ultrarrápido', context: '1M tokens' },
+      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Razonamiento profundo para mediciones y normativas)', speed: 'Rápido', context: '2M tokens' },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Última generación Google)', speed: 'Ultrarrápido', context: '1M tokens' }
     ],
     keyPrefix: 'AIza',
     helpUrl: 'https://aistudio.google.com/app/apikey'
@@ -98,7 +101,12 @@ export default function MotorIaConfig() {
 
   const [provider, setProvider] = useState(currentAi.provider || 'openai');
   const [apiKey, setApiKey] = useState(currentAi.apiKey || '');
-  const [modelName, setModelName] = useState(currentAi.modelName || 'gpt-4o');
+  const [modelName, setModelName] = useState(() => {
+    if (currentAi.provider === 'google') {
+      return normalizeGeminiModel(currentAi.modelName || 'gemini-1.5-flash');
+    }
+    return currentAi.modelName || 'gpt-4o';
+  });
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(
@@ -116,6 +124,19 @@ export default function MotorIaConfig() {
   const [simulating, setSimulating] = useState(false);
   const [simOutput, setSimOutput] = useState(null);
 
+  // Backend Proxy State
+  const [backendInfo, setBackendInfo] = useState({ checking: true, isAvailable: false, details: null });
+
+  const verifyBackend = async () => {
+    setBackendInfo(prev => ({ ...prev, checking: true }));
+    const res = await checkBackendStatus();
+    setBackendInfo({ checking: false, isAvailable: res.isAvailable, details: res.details });
+  };
+
+  useEffect(() => {
+    verifyBackend();
+  }, []);
+
   const selectedProviderObj = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0];
 
   const handleProviderChange = (newProvider) => {
@@ -131,8 +152,9 @@ export default function MotorIaConfig() {
     setTesting(true);
     setTestResult(null);
 
+    const effectiveModel = provider === 'google' ? normalizeGeminiModel(modelName) : modelName;
     // Call test connection method
-    const res = await testAiConnection(provider, apiKey, modelName);
+    const res = await testAiConnection(provider, apiKey, effectiveModel);
     setTesting(false);
 
     if (res.success) {
@@ -152,10 +174,11 @@ export default function MotorIaConfig() {
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
+    const effectiveModel = provider === 'google' ? normalizeGeminiModel(modelName) : modelName;
     updateAiConfig({
       provider,
       apiKey: apiKey.trim(),
-      modelName,
+      modelName: effectiveModel,
       isActive: true,
       status: testResult?.success ? 'connected' : 'configured',
       lastTestedAt: testResult?.testedAt || new Date().toISOString()
@@ -267,6 +290,44 @@ export default function MotorIaConfig() {
           </div>
           <p className="leading-relaxed text-[11px] text-slate-300">
             El protocolo <strong>MCP</strong> (Model Context Protocol) está diseñado para asistentes de escritorio locales (Cursor, Claude Desktop). Para una aplicación SaaS y móvil como <strong>ObraMaster</strong>, la integración mediante <strong>REST API con API Key cifrada (AES-256)</strong> permite que los obreros envíen notas de voz y fotos desde la obra a cualquier hora y el servidor procese los presupuestos y partes en tiempo real de forma autónoma.
+          </p>
+        </div>
+
+        {/* Backend Proxy Server Live Status */}
+        <div className={`p-4 rounded-xl border text-xs space-y-2 transition ${
+          backendInfo.isAvailable
+            ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+            : 'bg-slate-950/80 border-slate-800 text-slate-400'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${backendInfo.isAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
+              <span className="font-bold text-white text-xs">
+                {backendInfo.isAvailable
+                  ? `Servidor Backend Proxy Activo (http://localhost:${backendInfo.details?.port || 3000})`
+                  : 'Servidor Backend Proxy Local'}
+              </span>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                backendInfo.isAvailable ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+              }`}>
+                {backendInfo.isAvailable ? 'CONECTADO · CLAVE EN .ENV' : 'NO DETECTADO EN PUERTO 3000'}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={verifyBackend}
+              className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 flex items-center gap-1.5 text-[11px] transition"
+            >
+              <RefreshCw className={`w-3 h-3 ${backendInfo.checking ? 'animate-spin' : ''}`} />
+              <span>Verificar</span>
+            </button>
+          </div>
+
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            {backendInfo.isAvailable
+              ? `El backend intermediario está procesando audios y fotografías con Google Gemini (${backendInfo.details?.activeModel || 'gemini-1.5-flash'}) de forma protegida sin exponer tu clave en el navegador.`
+              : 'Para iniciar el backend local y proteger tu API Key: ejecuta "npm run server" o "node backend/server.js". Mientras no esté activo, el frontend funcionará con tu clave configurada abajo.'}
           </p>
         </div>
       </div>

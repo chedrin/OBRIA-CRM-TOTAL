@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Users,
@@ -33,7 +33,10 @@ import {
   Ban,
   Building,
   CreditCard,
-  HeartHandshake
+  HeartHandshake,
+  KeyRound,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -55,11 +58,13 @@ export default function ObrerosList() {
     rehireEmployee,
     addEmployeeAbsence,
     resetEmployeePassword,
+    createMobileAccountForEmployee,
     users = [],
     toggleUserStatus,
     obreros = [],
     obras = [],
     addReviewObrero,
+    updateObreroScoringDirect,
     generateRandomPassword,
     showNotification
   } = useApp();
@@ -111,12 +116,27 @@ export default function ObrerosList() {
   const [criterioLimpieza, setCriterioLimpieza] = useState(5.0);
   const [criterioAutonomia, setCriterioAutonomia] = useState(5.0);
   const [comentarioReview, setComentarioReview] = useState('');
+  const [scoringMode, setScoringMode] = useState('direct'); // 'direct' (override) | 'average' (weighted)
 
   // AI Recommender
   const [selectedTradeRecommender, setSelectedTradeRecommender] = useState(TRADES_AI_MATCH[0].id);
 
-  // Form State: Nuevo Empleado
-  const [newEmpForm, setNewEmpForm] = useState({
+  // Helper to compute clean normalized username
+  const computeUsername = (nombre, apellidos) => {
+    const raw = `${nombre || ''} ${apellidos || ''}`.trim();
+    if (!raw) return '';
+    return raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .join('.');
+  };
+
+  const initialNewEmpForm = {
     nombre: '',
     apellidos: '',
     dni: '',
@@ -143,8 +163,14 @@ export default function ObrerosList() {
     foto: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=200&q=80',
     createMobileAccount: true,
     mobileUsername: '',
-    mobilePassword: ''
-  });
+    mobilePassword: 'obra2026',
+    isCustomUsername: false
+  };
+
+  // Form State: Nuevo Empleado
+  const [newEmpForm, setNewEmpForm] = useState(initialNewEmpForm);
+  const [createdCredentialsModal, setCreatedCredentialsModal] = useState(null);
+  const [showPasswordInModal, setShowPasswordInModal] = useState(false);
 
   // Copied alert state
   const [copiedText, setCopiedText] = useState(null);
@@ -220,47 +246,39 @@ export default function ObrerosList() {
       return;
     }
 
+    const cleanUsername = (newEmpForm.mobileUsername || computeUsername(newEmpForm.nombre, newEmpForm.apellidos) || 'operario')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9.]/g, '')
+      .replace(/\.+/g, '.')
+      .replace(/^\.|\.$/g, '');
+
+    const finalPassword = (newEmpForm.mobilePassword || 'obra2026').trim();
+
     const userCreds = newEmpForm.createMobileAccount ? {
       createAccount: true,
-      username: newEmpForm.mobileUsername || `${newEmpForm.nombre.toLowerCase().trim()}.${newEmpForm.apellidos.toLowerCase().trim()}`.replace(/\s+/g, '.'),
-      password: newEmpForm.mobilePassword || generateRandomPassword()
+      username: cleanUsername,
+      password: finalPassword
     } : null;
 
-    addEmployee(newEmpForm, userCreds);
+    const res = addEmployee(newEmpForm, userCreds);
 
-    confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
+    confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
     setShowAddModal(false);
 
+    if (userCreds) {
+      setCreatedCredentialsModal({
+        fullName: `${newEmpForm.nombre} ${newEmpForm.apellidos}`.trim(),
+        username: cleanUsername,
+        password: finalPassword,
+        phone: newEmpForm.telefono || '',
+        dni: newEmpForm.dni || ''
+      });
+    }
+
     // Reset form
-    setNewEmpForm({
-      nombre: '',
-      apellidos: '',
-      dni: '',
-      naf: '',
-      fechaNacimiento: '1990-05-15',
-      direccion: '',
-      telefono: '',
-      email: '',
-      iban: 'ES',
-      categoria: 'Oficial 1ª',
-      convenio: 'Convenio General del Sector de la Construcción (Madrid)',
-      especialidad: 'Albañilería & Alicatados',
-      tipoContrato: 'indefinido',
-      jornadaHorasSemana: 40,
-      salarioBaseMensual: 1850.00,
-      plusConvenio: 220.00,
-      precioHoraExtra: 18.50,
-      irpfPct: 14.0,
-      situacionFamiliar: 'soltero',
-      hijosACargo: 0,
-      dependientesACargo: 0,
-      discapacidadPct: 0,
-      fechaAlta: new Date().toISOString().split('T')[0],
-      foto: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=200&q=80',
-      createMobileAccount: true,
-      mobileUsername: '',
-      mobilePassword: ''
-    });
+    setNewEmpForm(initialNewEmpForm);
   };
 
   // Open Termination Modal
@@ -319,21 +337,111 @@ export default function ObrerosList() {
     }
   };
 
+  const openRatingModalForObrero = (targetObrero) => {
+    if (!targetObrero) return;
+    setSelectedObreroForReview(targetObrero.id);
+    const scoreVal = Number(targetObrero.calificacionMedia || 5.0);
+    const crit = targetObrero.criterios || {
+      calidadAcabados: scoreVal,
+      puntualidadPlazos: scoreVal,
+      limpiezaSeguridad: scoreVal,
+      autonomiaProblemas: scoreVal
+    };
+    setCriterioCalidad(Number(crit.calidadAcabados ?? 5.0));
+    setCriterioPlazos(Number(crit.puntualidadPlazos ?? 5.0));
+    setCriterioLimpieza(Number(crit.limpiezaSeguridad ?? 5.0));
+    setCriterioAutonomia(Number(crit.autonomiaProblemas ?? 5.0));
+    setComentarioReview('');
+    setScoringMode('direct');
+    setShowRatingModal(true);
+  };
+
+  const handleWorkerSelectChange = (newObreroId) => {
+    setSelectedObreroForReview(newObreroId);
+    const target = obreros.find(o => o.id === newObreroId);
+    if (target) {
+      const scoreVal = Number(target.calificacionMedia || 5.0);
+      const crit = target.criterios || {
+        calidadAcabados: scoreVal,
+        puntualidadPlazos: scoreVal,
+        limpiezaSeguridad: scoreVal,
+        autonomiaProblemas: scoreVal
+      };
+      setCriterioCalidad(Number(crit.calidadAcabados ?? 5.0));
+      setCriterioPlazos(Number(crit.puntualidadPlazos ?? 5.0));
+      setCriterioLimpieza(Number(crit.limpiezaSeguridad ?? 5.0));
+      setCriterioAutonomia(Number(crit.autonomiaProblemas ?? 5.0));
+    }
+  };
+
+  // Quick preset helper to quickly set all criteria
+  const handleApplyRatingPreset = (presetScore) => {
+    setCriterioCalidad(presetScore);
+    setCriterioPlazos(presetScore);
+    setCriterioLimpieza(presetScore);
+    setCriterioAutonomia(presetScore);
+  };
+
   // Handle Review Modal Submit
   const handleSubmitReview = (e) => {
     e.preventDefault();
     if (!selectedObreroForReview) return;
-    const media = Number(((criterioCalidad + criterioPlazos + criterioLimpieza + criterioAutonomia) / 4).toFixed(1));
+    const computedMedia = Number(((criterioCalidad + criterioPlazos + criterioLimpieza + criterioAutonomia) / 4).toFixed(1));
 
     addReviewObrero(selectedObreroForReview, {
-      obra: selectedObraForReview,
-      nota: media,
-      comentario: comentarioReview || 'Trabajo ejecutado según especificaciones de proyecto y calidad requerida.'
+      obra: selectedObraForReview || 'Inspección de Obra',
+      nota: computedMedia,
+      isDirectOverride: scoringMode === 'direct',
+      criterios: {
+        calidadAcabados: criterioCalidad,
+        puntualidadPlazos: criterioPlazos,
+        limpiezaSeguridad: criterioLimpieza,
+        autonomiaProblemas: criterioAutonomia
+      },
+      comentario: comentarioReview || (
+        computedMedia >= 4.5
+          ? 'Excelente trabajo ejecutado según especificaciones y acabados impecables.'
+          : computedMedia >= 3.0
+          ? 'Trabajo aceptable con aspectos a mejorar en remates o tiempos.'
+          : 'Incidencias detectadas en calidad, plazos o remates de obra.'
+      )
     });
 
     confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
     setShowRatingModal(false);
   };
+
+  // Dynamic AI Worker Recommendation based on live real scoring
+  const recommendedWorker = useMemo(() => {
+    const tradeKeywords = {
+      alicatado: ['alicat', 'porcelan', 'soler', 'azulej', 'albañil'],
+      demolicion: ['demolic', 'desescombr', 'peón', 'carga'],
+      pladur: ['pladur', 'yeso', 'techo', 'falso techo'],
+      electricidad: ['electr', 'cuadro', 'bt', 'cie'],
+      fontaneria: ['fontan', 'clima', 'aeroterm', 'tuber', 'gas'],
+      pintura: ['pint', 'gotel', 'alisad', 'lac']
+    };
+
+    const keywords = tradeKeywords[selectedTradeRecommender] || [];
+    
+    // Find workers that match this specialty
+    const matching = obreros.filter(o => {
+      const text = `${o.nombre || ''} ${o.puesto || ''} ${o.especialidad || ''}`.toLowerCase();
+      return keywords.some(k => text.includes(k));
+    });
+
+    const pool = matching.length > 0 ? matching : obreros;
+    const sorted = [...pool].sort((a, b) => (Number(b.calificacionMedia) || 0) - (Number(a.calificacionMedia) || 0));
+    const top = sorted[0] || obreros[0];
+
+    const matchPct = top ? Math.min(99, Math.round(((Number(top.calificacionMedia) || 5) / 5) * 100)) : 95;
+
+    return {
+      worker: top,
+      matchPct,
+      tradeLabel: TRADES_AI_MATCH.find(t => t.id === selectedTradeRecommender)?.label || 'Partida'
+    };
+  }, [obreros, selectedTradeRecommender]);
 
   const activeEmployeesCount = employees.filter(e => e.estado === 'activo').length;
   const vacationEmployeesCount = employees.filter(e => e.estado === 'vacaciones').length;
@@ -567,10 +675,31 @@ export default function ObrerosList() {
                               <span className="font-bold text-white text-sm block">
                                 {emp.nombre} {emp.apellidos}
                               </span>
-                              <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                                <Phone className="w-3 h-3 text-amber-400" />
-                                {emp.telefono || 'Sin teléfono'}
-                              </span>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                                  <Phone className="w-3 h-3 text-amber-400" />
+                                  {emp.telefono || 'Sin teléfono'}
+                                </span>
+                                {(() => {
+                                  const matchedObrero = obreros.find(o => o.id === emp.obreroId || `${o.nombre || ''}`.toLowerCase() === `${emp.nombre || ''} ${emp.apellidos || ''}`.toLowerCase().trim());
+                                  const scoreVal = matchedObrero?.calificacionMedia ?? emp.calificacionMedia;
+                                  if (scoreVal === undefined) return null;
+                                  const isGood = scoreVal >= 4.0;
+                                  const isMid = scoreVal >= 3.0;
+                                  return (
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md inline-flex items-center gap-0.5 ${
+                                      isGood
+                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                        : isMid
+                                        ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                        : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                                    }`}>
+                                      <Star className="w-2.5 h-2.5 fill-current" />
+                                      {Number(scoreVal).toFixed(1)}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -624,15 +753,36 @@ export default function ObrerosList() {
                         {/* App Movil Access */}
                         <td className="py-3 px-4 text-center">
                           {linkedUser ? (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                              isMobileActive
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            }`}>
-                              {isMobileActive ? 'Acceso Activo' : 'Suspendido'}
-                            </span>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                isMobileActive
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                              }`}>
+                                {isMobileActive ? 'Acceso Activo' : 'Suspendido'}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">@{linkedUser.username}</span>
+                            </div>
                           ) : (
-                            <span className="text-[10px] text-slate-500">Sin usuario</span>
+                            <button
+                              onClick={() => {
+                                const res = createMobileAccountForEmployee(emp.id, 'obra2026');
+                                if (res.success) {
+                                  setCreatedCredentialsModal({
+                                    fullName: `${emp.nombre} ${emp.apellidos}`.trim(),
+                                    username: res.credentials.username,
+                                    password: res.credentials.password,
+                                    phone: emp.telefono || '',
+                                    dni: emp.dni || ''
+                                  });
+                                }
+                              }}
+                              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold transition flex items-center gap-1 mx-auto"
+                              title="Generar credenciales para la App Móvil"
+                            >
+                              <KeyRound className="w-3 h-3" />
+                              <span>Activar App</span>
+                            </button>
                           )}
                         </td>
 
@@ -938,29 +1088,39 @@ export default function ObrerosList() {
             {/* AI Recommendation Result */}
             <div className="bg-slate-950/80 p-4 rounded-xl border border-indigo-500/20 flex flex-col sm:flex-row items-center justify-between gap-4 mt-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 font-black">
-                  98%
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center border font-black text-xs shrink-0 ${
+                  recommendedWorker.matchPct >= 85
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : recommendedWorker.matchPct >= 65
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                    : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                }`}>
+                  {recommendedWorker.matchPct}%
                 </div>
                 <div>
-                  <span className="text-[11px] text-emerald-400 font-bold block uppercase tracking-wider">Candidato Recomendado por IA</span>
-                  <span className="font-bold text-white text-sm">
-                    {selectedTradeRecommender === 'alicatado' ? 'Pedro Gómez Castillo (Oficial 1ª)' :
-                     selectedTradeRecommender === 'demolicion' ? 'Mario Silva Santos (Peón Especialista)' :
-                     selectedTradeRecommender === 'pladur' ? 'Ionut Radu (Oficial 1ª Pladur)' :
-                     selectedTradeRecommender === 'pintura' ? 'Antonio Morales Vega (Oficial 2ª)' :
-                     'Pedro Gómez Castillo (Oficial 1ª)'}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider">
+                      Candidato Recomendado por IA
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      ({recommendedWorker.tradeLabel})
+                    </span>
+                  </div>
+                  <span className="font-bold text-white text-sm block">
+                    {recommendedWorker.worker?.nombre} ({recommendedWorker.worker?.puesto})
                   </span>
                   <p className="text-xs text-slate-400 italic mt-0.5">
-                    "Máxima puntuación histórica en acabados y cumplimiento milimétrico de plazos en reformas anteriores."
+                    {recommendedWorker.matchPct >= 85
+                      ? `"Máxima puntuación técnica (${Number(recommendedWorker.worker?.calificacionMedia || 5).toFixed(1)}⭐) en acabados y cumplimiento milimétrico de plazos."`
+                      : recommendedWorker.matchPct >= 65
+                      ? `"Puntuación moderada (${Number(recommendedWorker.worker?.calificacionMedia || 3.5).toFixed(1)}⭐). Se recomienda seguimiento en plazos y remates."`
+                      : `"⚠️ Puntuación reciente baja (${Number(recommendedWorker.worker?.calificacionMedia || 2).toFixed(1)}⭐). Revisar antes de asignar o considerar subcontrata."`}
                   </p>
                 </div>
               </div>
 
               <button
-                onClick={() => {
-                  setSelectedObreroForReview(obreros[0]?.id || '');
-                  setShowRatingModal(true);
-                }}
+                onClick={() => openRatingModalForObrero(recommendedWorker.worker || obreros[0])}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0"
               >
                 <Star className="w-4 h-4 fill-amber-400" />
@@ -971,55 +1131,142 @@ export default function ObrerosList() {
 
           {/* Workers Rating Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {obreros.map((obrero) => (
-              <div key={obrero.id} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <img src={obrero.foto} alt={obrero.nombre} className="w-12 h-12 rounded-xl object-cover border border-slate-700" />
+            {obreros.map((obrero) => {
+              const score = Number(obrero.calificacionMedia || 5.0);
+              const crit = obrero.criterios || {
+                calidadAcabados: score,
+                puntualidadPlazos: score,
+                limpiezaSeguridad: score,
+                autonomiaProblemas: score
+              };
+
+              const badgeColor = score >= 4.5
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : score >= 3.5
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                : score >= 2.5
+                ? 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400';
+
+              const barColor = (val) => val >= 4 ? 'bg-emerald-400' : val >= 3 ? 'bg-amber-400' : 'bg-rose-400';
+
+              return (
+                <div key={obrero.id} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow space-y-4 hover:border-slate-700 transition">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <img src={obrero.foto} alt={obrero.nombre} className="w-12 h-12 rounded-xl object-cover border border-slate-700 shrink-0" />
+                      <div>
+                        <h4 className="font-bold text-white text-sm">{obrero.nombre}</h4>
+                        <p className="text-xs text-amber-400">{obrero.puesto}</p>
+                        <span className="text-[10px] text-slate-500">{obrero.obrasRealizadas || 0} obras evaluadas</span>
+                      </div>
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-black text-sm ${badgeColor}`}>
+                      <Star className="w-4 h-4 fill-current" />
+                      <span>{score.toFixed(1)}</span>
+                    </div>
+                  </div>
+
+                  {/* Rating Criteria Progress Bars */}
+                  <div className="space-y-2 pt-1 text-xs">
                     <div>
-                      <h4 className="font-bold text-white text-sm">{obrero.nombre}</h4>
-                      <p className="text-xs text-amber-400">{obrero.puesto}</p>
-                      <span className="text-[10px] text-slate-500">{obrero.obrasRealizadas} obras realizadas</span>
+                      <div className="flex justify-between text-slate-300 mb-1">
+                        <span className="text-slate-400">Calidad Acabados:</span>
+                        <span className="font-bold text-white font-mono">{Number(crit.calidadAcabados || 5).toFixed(1)} / 5.0</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.calidadAcabados || 5)}`}
+                          style={{ width: `${Math.min(100, Math.max(0, ((crit.calidadAcabados || 5) / 5) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-slate-300 mb-1">
+                        <span className="text-slate-400">Puntualidad Plazos:</span>
+                        <span className="font-bold text-white font-mono">{Number(crit.puntualidadPlazos || 5).toFixed(1)} / 5.0</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.puntualidadPlazos || 5)}`}
+                          style={{ width: `${Math.min(100, Math.max(0, ((crit.puntualidadPlazos || 5) / 5) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-slate-300 mb-1">
+                        <span className="text-slate-400">Limpieza y Seguridad:</span>
+                        <span className="font-bold text-white font-mono">{Number(crit.limpiezaSeguridad || 5).toFixed(1)} / 5.0</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.limpiezaSeguridad || 5)}`}
+                          style={{ width: `${Math.min(100, Math.max(0, ((crit.limpiezaSeguridad || 5) / 5) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-slate-300 mb-1">
+                        <span className="text-slate-400">Autonomía y Resolución:</span>
+                        <span className="font-bold text-white font-mono">{Number(crit.autonomiaProblemas || 5).toFixed(1)} / 5.0</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.autonomiaProblemas || 5)}`}
+                          style={{ width: `${Math.min(100, Math.max(0, ((crit.autonomiaProblemas || 5) / 5) * 100))}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/20 text-amber-400">
-                    <Star className="w-4 h-4 fill-amber-400" />
-                    <span className="font-black text-sm">{obrero.calificacionMedia}</span>
+
+                  {/* Últimas Reseñas */}
+                  {obrero.ultimasResenas && obrero.ultimasResenas.length > 0 && (
+                    <div className="pt-2 border-t border-slate-800 text-[11px] bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                      <div className="flex items-center justify-between text-slate-400 mb-1">
+                        <span className="font-bold text-slate-300 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Última Evaluación:</span>
+                        </span>
+                        <span className="font-mono font-bold text-amber-400">{Number(obrero.ultimasResenas[0].nota || 5).toFixed(1)}⭐ ({obrero.ultimasResenas[0].fecha})</span>
+                      </div>
+                      <p className="text-slate-400 italic line-clamp-2">
+                        "{obrero.ultimasResenas[0].comentario}"
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Actions Bar */}
+                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1" title="Ajuste rápido de estrellas">
+                      {[1, 2, 3, 4, 5].map((starVal) => (
+                        <button
+                          key={starVal}
+                          type="button"
+                          onClick={() => updateObreroScoringDirect(obrero.id, starVal)}
+                          className={`p-1 rounded hover:bg-slate-800 transition ${
+                            starVal <= Math.round(score) ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'
+                          }`}
+                          title={`Fijar scoring directo a ${starVal}⭐`}
+                        >
+                          <Star className="w-3.5 h-3.5 fill-current" />
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => openRatingModalForObrero(obrero)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow"
+                    >
+                      <Star className="w-3.5 h-3.5 fill-amber-400" />
+                      <span>Calificar Criterios</span>
+                    </button>
                   </div>
                 </div>
-
-                {/* Rating Criteria Progress Bars */}
-                {obrero.criterios && (
-                  <div className="space-y-1.5 text-xs pt-1">
-                    <div className="flex justify-between text-slate-400">
-                      <span>Calidad Acabados:</span>
-                      <span className="font-bold text-white">{obrero.criterios.calidadAcabados} / 5.0</span>
-                    </div>
-                    <div className="flex justify-between text-slate-400">
-                      <span>Puntualidad Plazos:</span>
-                      <span className="font-bold text-white">{obrero.criterios.puntualidadPlazos} / 5.0</span>
-                    </div>
-                    <div className="flex justify-between text-slate-400">
-                      <span>Limpieza y Seguridad:</span>
-                      <span className="font-bold text-white">{obrero.criterios.limpiezaSeguridad} / 5.0</span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="pt-2 border-t border-slate-800 flex justify-end">
-                  <button
-                    onClick={() => {
-                      setSelectedObreroForReview(obrero.id);
-                      setShowRatingModal(true);
-                    }}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
-                  >
-                    <Star className="w-3.5 h-3.5 fill-amber-400" />
-                    <span>Añadir Valoración</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
         </div>
@@ -1061,7 +1308,7 @@ export default function ObrerosList() {
                         setNewEmpForm(prev => ({
                           ...prev,
                           nombre: val,
-                          mobileUsername: prev.mobileUsername || `${val.toLowerCase().trim()}.${(prev.apellidos || '').toLowerCase().trim()}`.replace(/\s+/g, '.')
+                          mobileUsername: prev.isCustomUsername ? prev.mobileUsername : computeUsername(val, prev.apellidos)
                         }));
                       }}
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
@@ -1074,7 +1321,14 @@ export default function ObrerosList() {
                       required
                       placeholder="Ej: Gómez Castillo"
                       value={newEmpForm.apellidos}
-                      onChange={(e) => setNewEmpForm({ ...newEmpForm, apellidos: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewEmpForm(prev => ({
+                          ...prev,
+                          apellidos: val,
+                          mobileUsername: prev.isCustomUsername ? prev.mobileUsername : computeUsername(prev.nombre, val)
+                        }));
+                      }}
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                     />
                   </div>
@@ -1267,36 +1521,77 @@ export default function ObrerosList() {
                 </div>
 
                 {newEmpForm.createMobileAccount && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                    <div>
-                      <label className="text-slate-400 block mb-1 text-[11px]">Usuario móvil sugerido</label>
-                      <input
-                        type="text"
-                        placeholder="pedro.gomez"
-                        value={newEmpForm.mobileUsername}
-                        onChange={(e) => setNewEmpForm({ ...newEmpForm, mobileUsername: e.target.value })}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono text-xs"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-slate-400 text-[11px]">Contraseña temporal</label>
-                        <button
-                          type="button"
-                          onClick={() => setNewEmpForm({ ...newEmpForm, mobilePassword: generateRandomPassword() })}
-                          className="text-amber-400 hover:text-amber-300 text-[10px] font-bold"
-                        >
-                          Generar aleatoria
-                        </button>
+                  <div className="space-y-3 mt-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-slate-400 text-[11px] font-semibold">Usuario de Acceso Móvil *</label>
+                          {newEmpForm.isCustomUsername && (
+                            <button
+                              type="button"
+                              onClick={() => setNewEmpForm(prev => ({
+                                ...prev,
+                                isCustomUsername: false,
+                                mobileUsername: computeUsername(prev.nombre, prev.apellidos)
+                              }))}
+                              className="text-[10px] text-amber-400 hover:underline"
+                            >
+                              Auto
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          placeholder="ej: pedro.gomez"
+                          value={newEmpForm.mobileUsername}
+                          onChange={(e) => setNewEmpForm({ ...newEmpForm, mobileUsername: e.target.value.toLowerCase(), isCustomUsername: true })}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Obra123!"
-                        value={newEmpForm.mobilePassword}
-                        onChange={(e) => setNewEmpForm({ ...newEmpForm, mobilePassword: e.target.value })}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono text-xs"
-                      />
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="text-slate-400 text-[11px] font-semibold">Contraseña para la App *</label>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setNewEmpForm({ ...newEmpForm, mobilePassword: 'obra2026' })}
+                              className="text-slate-400 hover:text-white text-[10px] bg-slate-850 px-1.5 py-0.5 rounded border border-slate-700"
+                              title="Poner clave por defecto"
+                            >
+                              obra2026
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewEmpForm({ ...newEmpForm, mobilePassword: generateRandomPassword() })}
+                              className="text-amber-400 hover:text-amber-300 text-[10px] font-bold"
+                            >
+                              ⚡ Aleatoria
+                            </button>
+                          </div>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type={showPasswordInModal ? 'text' : 'password'}
+                            required
+                            placeholder="obra2026"
+                            value={newEmpForm.mobilePassword}
+                            onChange={(e) => setNewEmpForm({ ...newEmpForm, mobilePassword: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 pr-8 text-amber-300 font-mono text-xs font-bold focus:outline-none focus:border-amber-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPasswordInModal(!showPasswordInModal)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5"
+                          >
+                            {showPasswordInModal ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
                     </div>
+                    <p className="text-[10px] text-slate-400">
+                      💡 El operario podrá entrar en <code className="text-amber-400 font-mono">/#empleados</code> con este <strong>usuario</strong>, con su <strong>número de móvil</strong> o con su <strong>DNI</strong>.
+                    </p>
                   </div>
                 )}
               </div>
@@ -1636,7 +1931,31 @@ export default function ObrerosList() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-slate-400 italic">Este operario no tiene cuenta móvil creada.</p>
+                      <div className="pt-2 border-t border-slate-800 space-y-3">
+                        <p className="text-slate-300 text-xs">
+                          Este operario no tiene cuenta de acceso vinculada al portal móvil (<code>/#empleados</code>).
+                        </p>
+                        <button
+                          onClick={() => {
+                            const res = createMobileAccountForEmployee(selectedEmployee.id, 'obra2026');
+                            if (res.success) {
+                              const updatedEmp = employees.find(e => e.id === selectedEmployee.id);
+                              if (updatedEmp) setSelectedEmployee(updatedEmp);
+                              setCreatedCredentialsModal({
+                                fullName: `${selectedEmployee.nombre} ${selectedEmployee.apellidos}`.trim(),
+                                username: res.credentials.username,
+                                password: res.credentials.password,
+                                phone: selectedEmployee.telefono || '',
+                                dni: selectedEmployee.dni || ''
+                              });
+                            }
+                          }}
+                          className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition"
+                        >
+                          <KeyRound className="w-4 h-4" />
+                          <span>Generar Acceso Móvil Ahora (Clave: obra2026)</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1968,122 +2287,348 @@ export default function ObrerosList() {
       {/* ========================================================================= */}
       {/* MODAL 6: CALIFICAR TRABAJO (PRESERVADO)                                   */}
       {/* ========================================================================= */}
-      {showRatingModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
-                <span>Calificar Desempeño en Obra</span>
-              </h3>
-              <button onClick={() => setShowRatingModal(false)} className="text-slate-400 hover:text-white">✕</button>
-            </div>
+      {showRatingModal && (() => {
+        const currentSelectedObrero = obreros.find(o => o.id === selectedObreroForReview) || obreros[0];
+        const computedMedia = Number(((criterioCalidad + criterioPlazos + criterioLimpieza + criterioAutonomia) / 4).toFixed(1));
 
-            <form onSubmit={handleSubmitReview} className="space-y-4 text-xs sm:text-sm">
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Operario / Subcontrata</label>
-                <select
-                  value={selectedObreroForReview}
-                  onChange={(e) => setSelectedObreroForReview(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                >
-                  {obreros.map(o => (
-                    <option key={o.id} value={o.id}>{o.nombre} ({o.puesto})</option>
-                  ))}
-                </select>
+        const scoreColor = computedMedia >= 4.5
+          ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+          : computedMedia >= 3.5
+          ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+          : computedMedia >= 2.5
+          ? 'text-orange-400 bg-orange-500/10 border-orange-500/30'
+          : 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+
+        const scoreLabel = computedMedia >= 4.5
+          ? 'Excelente / Sobresaliente'
+          : computedMedia >= 3.5
+          ? 'Bueno / Rendimiento Adecuado'
+          : computedMedia >= 2.5
+          ? 'Regular / Requiere Supervisión'
+          : 'Deficiente / Calificación Muy Baja';
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4 my-6">
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <Star className="w-4 h-4 fill-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Evaluación & Scoring de Operario</h3>
+                    <p className="text-[11px] text-slate-400">Ajusta la calificación técnica y los criterios de desempeño</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowRatingModal(false)} className="text-slate-400 hover:text-white text-sm p-1">✕</button>
               </div>
 
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Obra Ejecutada</label>
-                <select
-                  value={selectedObraForReview}
-                  onChange={(e) => setSelectedObraForReview(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                >
-                  {obras.map(ob => (
-                    <option key={ob.id} value={ob.titulo}>{ob.titulo}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sliders */}
-              <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs">
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-slate-300">Calidad de Acabados</span>
-                    <span className="text-amber-400 font-bold">{criterioCalidad} / 5</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={criterioCalidad}
-                    onChange={(e) => setCriterioCalidad(Number(e.target.value))}
-                    className="w-full accent-amber-500"
+              {/* Worker selector & preview */}
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-3">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={currentSelectedObrero?.foto || 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=200&q=80'}
+                    alt={currentSelectedObrero?.nombre}
+                    className="w-12 h-12 rounded-xl object-cover border border-slate-700 shrink-0"
                   />
+                  <div className="flex-1 min-w-0">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block">Seleccionar Operario</label>
+                    <select
+                      value={selectedObreroForReview}
+                      onChange={(e) => handleWorkerSelectChange(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg py-1 px-2 text-white font-bold text-xs focus:outline-none focus:border-amber-400"
+                    >
+                      {obreros.map(o => (
+                        <option key={o.id} value={o.id}>
+                          {o.nombre} ({o.puesto}) - Actual: {Number(o.calificacionMedia || 5).toFixed(1)}⭐
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-slate-300">Cumplimiento de Plazos</span>
-                    <span className="text-amber-400 font-bold">{criterioPlazos} / 5</span>
+                {/* Live Scoring Display */}
+                <div className={`p-3 rounded-xl border flex items-center justify-between ${scoreColor}`}>
+                  <div className="flex items-center gap-2">
+                    <Star className="w-6 h-6 fill-current" />
+                    <div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xl font-black">{computedMedia.toFixed(1)}</span>
+                        <span className="text-xs opacity-70">/ 5.0</span>
+                      </div>
+                      <span className="text-[11px] font-bold block">{scoreLabel}</span>
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={criterioPlazos}
-                    onChange={(e) => setCriterioPlazos(Number(e.target.value))}
-                    className="w-full accent-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-slate-300">Limpieza y Seguridad</span>
-                    <span className="text-amber-400 font-bold">{criterioLimpieza} / 5</span>
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase tracking-wider block opacity-70">Puntuación Actual</span>
+                    <span className="text-xs font-mono font-bold">{Number(currentSelectedObrero?.calificacionMedia || 5).toFixed(1)}⭐</span>
                   </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={criterioLimpieza}
-                    onChange={(e) => setCriterioLimpieza(Number(e.target.value))}
-                    className="w-full accent-amber-500"
-                  />
                 </div>
               </div>
 
-              <div>
-                <label className="text-slate-400 block mb-1">Comentario para Historial Interno</label>
-                <textarea
-                  rows="2"
-                  placeholder="Excelente corte de ingletes en azulejos, obra entregada limpia..."
-                  value={comentarioReview}
-                  onChange={(e) => setComentarioReview(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                ></textarea>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              {/* Mode Selector */}
+              <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-xs">
                 <button
                   type="button"
-                  onClick={() => setShowRatingModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition"
+                  onClick={() => setScoringMode('direct')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-bold transition text-center ${
+                    scoringMode === 'direct'
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  Cancelar
+                  ⚡ Ajuste Directo (Inmediato)
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold transition shadow"
+                  type="button"
+                  onClick={() => setScoringMode('average')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-bold transition text-center ${
+                    scoringMode === 'average'
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  Guardar Calificación
+                  📋 Promedio Ponderado
                 </button>
               </div>
-            </form>
+
+              {/* Quick Presets */}
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">
+                  Ajuste Rápido de Calificación:
+                </span>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[
+                    { val: 5.0, label: '5.0', desc: 'Excelente', color: 'hover:border-emerald-500 hover:text-emerald-400' },
+                    { val: 4.0, label: '4.0', desc: 'Bueno', color: 'hover:border-emerald-500 hover:text-emerald-400' },
+                    { val: 3.0, label: '3.0', desc: 'Regular', color: 'hover:border-amber-500 hover:text-amber-400' },
+                    { val: 2.0, label: '2.0', desc: 'Bajo', color: 'hover:border-rose-500 hover:text-rose-400' },
+                    { val: 1.0, label: '1.0', desc: 'Mínimo', color: 'hover:border-rose-500 hover:text-rose-400' }
+                  ].map(preset => (
+                    <button
+                      key={preset.val}
+                      type="button"
+                      onClick={() => handleApplyRatingPreset(preset.val)}
+                      className={`p-1.5 rounded-xl bg-slate-800 border text-center transition ${preset.color} ${
+                        computedMedia === preset.val ? 'border-amber-400 text-amber-300 font-bold bg-slate-750' : 'border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <span className="text-xs font-black block">{preset.label}⭐</span>
+                      <span className="text-[9px] block text-slate-400">{preset.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sliders Form */}
+              <form onSubmit={handleSubmitReview} className="space-y-3 text-xs">
+                
+                {/* 4 Detailed Sliders */}
+                <div className="space-y-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-slate-300 font-medium">1. Calidad de Acabados</span>
+                      <span className="text-amber-400 font-mono font-bold">{criterioCalidad.toFixed(1)} / 5.0</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="0.5"
+                      value={criterioCalidad}
+                      onChange={(e) => setCriterioCalidad(Number(e.target.value))}
+                      className="w-full accent-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-slate-300 font-medium">2. Cumplimiento de Plazos</span>
+                      <span className="text-amber-400 font-mono font-bold">{criterioPlazos.toFixed(1)} / 5.0</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="0.5"
+                      value={criterioPlazos}
+                      onChange={(e) => setCriterioPlazos(Number(e.target.value))}
+                      className="w-full accent-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-slate-300 font-medium">3. Limpieza y Seguridad</span>
+                      <span className="text-amber-400 font-mono font-bold">{criterioLimpieza.toFixed(1)} / 5.0</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="0.5"
+                      value={criterioLimpieza}
+                      onChange={(e) => setCriterioLimpieza(Number(e.target.value))}
+                      className="w-full accent-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-slate-300 font-medium">4. Autonomía y Resolución</span>
+                      <span className="text-amber-400 font-mono font-bold">{criterioAutonomia.toFixed(1)} / 5.0</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="0.5"
+                      value={criterioAutonomia}
+                      onChange={(e) => setCriterioAutonomia(Number(e.target.value))}
+                      className="w-full accent-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Obra and Comments */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Obra Imputada</label>
+                    <select
+                      value={selectedObraForReview}
+                      onChange={(e) => setSelectedObraForReview(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white"
+                    >
+                      <option value="Evaluación General de Dirección">Evaluación General de Dirección</option>
+                      {obras.map(ob => (
+                        <option key={ob.id} value={ob.titulo}>{ob.titulo}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1">Motivo / Comentario</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Remates impecables en ingletes..."
+                      value={comentarioReview}
+                      onChange={(e) => setComentarioReview(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowRatingModal(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-black transition shadow-lg shadow-amber-500/20 flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>Guardar Calificación ({computedMedia.toFixed(1)}⭐)</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL CONFIRMACIÓN: CREDENCIALES GENERADAS PARA EL OPERARIO               */}
+      {/* ========================================================================= */}
+      {createdCredentialsModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-emerald-500/40 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5">
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/30">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                ¡Acceso Móvil Generado con Éxito!
+              </span>
+              <h3 className="text-lg font-black text-white">{createdCredentialsModal.fullName}</h3>
+              <p className="text-xs text-slate-300">
+                Las credenciales están listas para que el operario acceda a su portal en <code className="text-amber-400 font-mono">/#empleados</code>.
+              </p>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                <span className="text-slate-400">Enlace de la App:</span>
+                <code className="text-amber-400 font-mono font-bold">{window.location.origin}/#empleados</code>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Usuario móvil:</span>
+                <div className="flex items-center gap-1.5">
+                  <code className="text-white font-mono font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    {createdCredentialsModal.username}
+                  </code>
+                  <button
+                    onClick={() => handleCopy(createdCredentialsModal.username, 'cred_user')}
+                    className="p-1 text-slate-400 hover:text-white"
+                  >
+                    {copiedText === 'cred_user' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Contraseña:</span>
+                <div className="flex items-center gap-1.5">
+                  <code className="text-amber-400 font-mono font-black bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    {createdCredentialsModal.password}
+                  </code>
+                  <button
+                    onClick={() => handleCopy(createdCredentialsModal.password, 'cred_pass')}
+                    className="p-1 text-slate-400 hover:text-white"
+                  >
+                    {copiedText === 'cred_pass' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+              {createdCredentialsModal.phone && (
+                <div className="flex items-center justify-between pt-1 text-slate-400 border-t border-slate-800/60">
+                  <span>Teléfono (login alternativo):</span>
+                  <span className="text-slate-300 font-mono">{createdCredentialsModal.phone}</span>
+                </div>
+              )}
+              {createdCredentialsModal.dni && (
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>DNI (login alternativo):</span>
+                  <span className="text-slate-300 font-mono">{createdCredentialsModal.dni}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                onClick={() => {
+                  const msg = `Hola ${createdCredentialsModal.fullName}, aquí tienes tus datos de acceso a la App de ObraMaster:\n\n🔗 Web Móvil: ${window.location.origin}/#empleados\n👤 Usuario: ${createdCredentialsModal.username}\n🔑 Contraseña: ${createdCredentialsModal.password}\n\n(También puedes identificarte con tu teléfono o DNI).\nRecuerda usar la opción 'Añadir a pantalla de inicio' en tu navegador para tenerla como app.`;
+                  handleCopy(msg, 'cred_whatsapp');
+                  showNotification('¡Mensaje copiado para enviar por WhatsApp o SMS!');
+                }}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition flex items-center justify-center gap-2 text-xs shadow-lg shadow-emerald-600/20"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>{copiedText === 'cred_whatsapp' ? '¡Mensaje Copiado!' : 'Copiar Mensaje para WhatsApp / SMS'}</span>
+              </button>
+
+              <button
+                onClick={() => setCreatedCredentialsModal(null)}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-2xl transition text-xs"
+              >
+                Entendido / Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

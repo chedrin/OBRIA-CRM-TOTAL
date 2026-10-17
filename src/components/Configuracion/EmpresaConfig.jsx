@@ -22,12 +22,13 @@ import {
 import GestionUsuarios from './GestionUsuarios';
 import PerfilDirectorConfig from './PerfilDirectorConfig';
 import MotorIaConfig from './MotorIaConfig';
+import PresupuestosModeloConfig from './PresupuestosModeloConfig';
 
 export default function EmpresaConfig() {
-  const { empresaConfig, updateEmpresaConfig, auditLogs, showNotification } = useApp();
+  const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification } = useApp();
 
   const [form, setForm] = useState({ ...empresaConfig });
-  const [activeSubTab, setActiveSubTab] = useState('perfil_director'); // perfil_director, motor_ia, usuarios, verifactu, ticketbai, sii_facturae, audit
+  const [activeSubTab, setActiveSubTab] = useState('perfil_director'); // perfil_director, motor_ia, presupuestos_modelo, usuarios, verifactu, ticketbai, sii_facturae, audit
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -37,6 +38,8 @@ export default function EmpresaConfig() {
     e.preventDefault();
     updateEmpresaConfig(form);
   };
+
+  const activeRefsCount = (referenceBudgets || []).filter(b => b.is_active).length;
 
   return (
     <div className="space-y-6">
@@ -68,6 +71,7 @@ export default function EmpresaConfig() {
         {[
           { id: 'perfil_director', label: 'Perfil Director & Empresa', icon: Building2, badge: 'Acreditado' },
           { id: 'motor_ia', label: 'Motor Central IA (BYOK)', icon: Sparkles, badge: 'Multimodal' },
+          { id: 'presupuestos_modelo', label: 'Presupuestos Modelo (PDFs IA)', icon: FileText, badge: `${activeRefsCount} Activos` },
           { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
           { id: 'verifactu', label: 'VeriFactu (AEAT Ley 11/2021)', icon: ShieldCheck, badge: 'Obligatorio' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
@@ -108,6 +112,9 @@ export default function EmpresaConfig() {
 
       {/* TAB MOTOR CENTRAL IA (BYOK) */}
       {activeSubTab === 'motor_ia' && <MotorIaConfig />}
+
+      {/* TAB PRESUPUESTOS MODELO (PDFs RAG) */}
+      {activeSubTab === 'presupuestos_modelo' && <PresupuestosModeloConfig />}
 
       {/* TAB USUARIOS & ACCESOS */}
       {activeSubTab === 'usuarios' && <GestionUsuarios />}

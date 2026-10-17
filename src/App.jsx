@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
+import TopHeader from './components/TopHeader';
 import Dashboard from './components/Dashboard';
 import ObrasList from './components/Obras/ObrasList';
 import AudioEmailInbox from './components/AudioInbox/AudioEmailInbox';
@@ -26,9 +27,23 @@ function getInitialRoute() {
 }
 
 function MainLayout() {
-  const { activeTab, setActiveTab, notification, currentUser, logout, activeRealtimeAlert } = useApp();
+  const { activeTab = 'dashboard', setActiveTab = () => {}, notification, currentUser, logout = () => {}, activeRealtimeAlert } = useApp() || {};
   const [route, setRoute] = useState(getInitialRoute);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('obramaster_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('obramaster_sidebar_collapsed', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   // Sync route on hashchange / popstate
   useEffect(() => {
@@ -159,7 +174,7 @@ function MainLayout() {
   const isAdminLoggedIn = currentUser && currentUser.role === 'admin';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans selection:bg-amber-500 selection:text-slate-950">
       
       {/* If not logged in, prompt admin login modal */}
       {!isAdminLoggedIn && (
@@ -170,59 +185,59 @@ function MainLayout() {
         />
       )}
 
-      {/* Top Navigation */}
-      <Navbar />
+      {/* Left Vertical Navigation Menu */}
+      <Sidebar
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapse}
+      />
 
-      {/* Quick link banner to worker portal for convenience */}
-      <div className="bg-slate-900/60 border-b border-slate-800/80 px-4 py-1.5 text-xs text-slate-400">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <span className="text-[11px]">
-            Portal Móvil de Operarios disponible en la ruta independiente: <code className="text-amber-400 font-mono font-bold bg-slate-950 px-1.5 py-0.5 rounded">/#empleados</code>
-          </span>
-          <button
-            onClick={() => navigateTo('empleados')}
-            className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition"
-          >
-            <span>Abrir Portal Obrero</span>
-            <ExternalLink className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
+      {/* Main Content Column (Top Header + Main Content + Footer) */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen bg-slate-950">
+        
+        {/* Top Header Bar */}
+        <TopHeader
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          onNavigateToWorker={() => navigateTo('empleados')}
+        />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'obras' && <ObrasList />}
-        {activeTab === 'inbox' && <AudioEmailInbox />}
-        {activeTab === 'presupuestos' && <PresupuestosList />}
-        {activeTab === 'facturas' && <FacturasList />}
-        {activeTab === 'gestoria' && <GestoriaTrimestres />}
-        {activeTab === 'obreros' && <ObrerosList />}
-        {activeTab === 'subcontratas' && <SubcontratasList />}
-        {activeTab === 'portal_obrero' && <PortalObreroView />}
-        {activeTab === 'empresa_config' && <EmpresaConfig />}
-      </main>
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'obras' && <ObrasList />}
+          {activeTab === 'inbox' && <AudioEmailInbox />}
+          {activeTab === 'presupuestos' && <PresupuestosList />}
+          {activeTab === 'facturas' && <FacturasList />}
+          {activeTab === 'gestoria' && <GestoriaTrimestres />}
+          {activeTab === 'obreros' && <ObrerosList />}
+          {activeTab === 'subcontratas' && <SubcontratasList />}
+          {activeTab === 'portal_obrero' && <PortalObreroView />}
+          {activeTab === 'empresa_config' && <EmpresaConfig />}
+        </main>
 
-      {/* Footer */}
-      <footer className="bg-slate-900 border-t border-slate-800 text-xs text-slate-500 py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-amber-500 flex items-center justify-center text-slate-950 font-bold text-[10px]">
-              OM
+        {/* Footer */}
+        <footer className="bg-slate-900 border-t border-slate-800 text-xs text-slate-500 py-6 mt-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded bg-amber-500 flex items-center justify-center text-slate-950 font-bold text-[10px]">
+                OM
+              </div>
+              <span className="font-bold text-slate-300">ObraMaster AI</span>
+              <span>— Software de Gestión Integral para Constructores y Reformas</span>
             </div>
-            <span className="font-bold text-slate-300">ObraMaster AI</span>
-            <span>— Software de Gestión Integral para Constructores y Reformas</span>
-          </div>
 
-          <div className="flex items-center gap-4 text-[11px]">
-            <span>Modelos 303/130 AEAT</span>
-            <span>·</span>
-            <span>REBT & LOE Normativa</span>
-            <span>·</span>
-            <span className="text-emerald-400 font-semibold">● Sistema Activo en la Nube</span>
+            <div className="flex items-center gap-4 text-[11px]">
+              <span>Modelos 303/130 AEAT</span>
+              <span>·</span>
+              <span>REBT & LOE Normativa</span>
+              <span>·</span>
+              <span className="text-emerald-400 font-semibold">● Sistema Activo en la Nube</span>
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+
+      </div>
 
       {/* Realtime Broadcast Banner */}
       {activeRealtimeAlert && (

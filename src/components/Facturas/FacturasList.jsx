@@ -17,8 +17,10 @@ import {
   ShieldCheck,
   QrCode,
   Lock,
-  FileCode
+  FileCode,
+  Send
 } from 'lucide-react';
+import SendDocumentModal from '../Common/SendDocumentModal';
 
 export default function FacturasList() {
   const {
@@ -84,6 +86,7 @@ export default function FacturasList() {
   const [filterTrimestre, setFilterTrimestre] = useState('todos'); // todos, 1T, 2T, 3T, 4T
   const [searchQuery, setSearchQuery] = useState('');
   const [showConvertModal, setShowConvertModal] = useState(false);
+  const [facturaToSend, setFacturaToSend] = useState(null);
   const [selectedPresId, setSelectedPresId] = useState(presupuestos[0]?.id || '');
   const [certificacionTipo, setCertificacionTipo] = useState('Certificación 1 (Anticipo 40% Inicio Obra)');
   const [certificacionPct, setCertificacionPct] = useState(40);
@@ -281,6 +284,15 @@ export default function FacturasList() {
                     <span>Ver PDF VeriFactu</span>
                   </button>
 
+                  <button
+                    onClick={() => setFacturaToSend(fac)}
+                    className="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1 transition active:scale-95"
+                    title="Enviar factura oficial por Email y WhatsApp"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Enviar</span>
+                  </button>
+
                   {!isCobrada ? (
                     <button
                       onClick={() => updateFacturaStatus(fac.id, 'cobrada', 'Transferencia bancaria')}
@@ -388,6 +400,14 @@ export default function FacturasList() {
           </div>
         </div>
       )}
+
+      {/* Modal Enviar Factura por Email / WhatsApp */}
+      <SendDocumentModal
+        isOpen={!!facturaToSend}
+        onClose={() => setFacturaToSend(null)}
+        document={facturaToSend}
+        documentType="factura"
+      />
 
     </div>
   );

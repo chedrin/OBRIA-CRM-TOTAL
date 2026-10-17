@@ -17,11 +17,13 @@ import {
   User,
   MapPin,
   Camera,
-  Mic
+  Mic,
+  Send
 } from 'lucide-react';
 import PresupuestoGeneratorAI from './PresupuestoGeneratorAI';
 import VisitaObraModal from './VisitaObraModal';
 import ConsolaRevisionPresupuesto from './ConsolaRevisionPresupuesto';
+import SendDocumentModal from '../Common/SendDocumentModal';
 import { generateExecutionPlanFromBudget } from '../../services/obraBudgetSyncService';
 
 export default function PresupuestosList() {
@@ -39,6 +41,7 @@ export default function PresupuestosList() {
   const [selectedQuoteId, setSelectedQuoteId] = useState(null);
   const [showVisitaModal, setShowVisitaModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(null); // presupuesto object
+  const [quoteToSend, setQuoteToSend] = useState(null);
   const [convertPorcentaje, setConvertPorcentaje] = useState(40);
   const [convertTipo, setConvertTipo] = useState('Certificación 1 (Anticipo 40% Inicio Obra)');
 
@@ -272,6 +275,16 @@ export default function PresupuestosList() {
                     <span>Ver PDF</span>
                   </button>
 
+                  {/* Enviar al Cliente por Email / WhatsApp */}
+                  <button
+                    onClick={() => setQuoteToSend(pres)}
+                    className="px-3.5 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                    title="Enviar presupuesto formal por Email y WhatsApp"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Enviar</span>
+                  </button>
+
                   {/* 1-Click Convert to Invoice */}
                   <button
                     onClick={() => handleOpenConvertModal(pres)}
@@ -381,6 +394,14 @@ export default function PresupuestosList() {
           setSelectedQuoteId(newQuote.id);
           setViewMode('revision_consola');
         }}
+      />
+
+      {/* Modal Enviar Presupuesto por Email / WhatsApp */}
+      <SendDocumentModal
+        isOpen={!!quoteToSend}
+        onClose={() => setQuoteToSend(null)}
+        document={quoteToSend}
+        documentType="presupuesto"
       />
 
     </div>

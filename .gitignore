@@ -12,3 +12,11 @@ DerivedData/
 .cache/
 .DS_Store
 *.log
+.env
+.env.*
+!.env.example
+!backend/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+dist/

@@ -79,11 +79,14 @@ export default function LoginObreroView({ onSwitchToAdmin }) {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             
-            {/* Username */}
+            {/* Username / Phone / DNI */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 block">
-                Usuario o Teléfono
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-300 block">
+                  Usuario, Teléfono o DNI
+                </label>
+                <span className="text-[10px] text-amber-400/80">3 formas de entrar</span>
+              </div>
               <div className="relative">
                 <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -91,12 +94,15 @@ export default function LoginObreroView({ onSwitchToAdmin }) {
                   required
                   autoCapitalize="none"
                   autoCorrect="off"
-                  placeholder="ej: pedro.gomez"
+                  placeholder="ej: pedro.gomez, 611223344 o DNI"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-medium"
                 />
               </div>
+              <p className="text-[10px] text-slate-400">
+                Puedes acceder con tu nombre de usuario, tu número de móvil o tu DNI/NIE.
+              </p>
             </div>
 
             {/* Password */}

@@ -11,7 +11,8 @@ import {
   INITIAL_SUBCONTRATAS_PRESUPUESTOS,
   INITIAL_USERS,
   INITIAL_EMPLOYEES,
-  INITIAL_SUBCONTRACTORS
+  INITIAL_SUBCONTRACTORS,
+  INITIAL_AVISOS_TECNICOS
 } from '../data/initialData';
 import realtimeSync from '../services/realtimeSyncService';
 import {
@@ -19,12 +20,18 @@ import {
   processSiteVisitExpediente,
   applyVoiceCommandToQuote
 } from '../services/siteVisitAIService';
+import { testGeminiConnection, normalizeGeminiModel } from '../services/geminiService';
 import {
   generateExecutionPlanFromBudget,
   calculateGlobalProjectProgress,
   calculatePhaseWeightedProgress,
   repairAndSyncObrasWithBudgets
 } from '../services/obraBudgetSyncService';
+import {
+  INITIAL_REFERENCE_BUDGETS,
+  validatePdfFile,
+  extractTextFromPdfBlob
+} from '../services/referenceBudgetService';
 
 const AppContext = createContext();
 
@@ -43,7 +50,9 @@ const STORAGE_KEYS = {
   AUTH_USER: 'obracon_current_auth_user_v1',
   SITE_VISITS: 'obracon_site_visits_v1',
   EMPLOYEES: 'obracon_employees_v1',
-  SUBCONTRACTORS: 'obracon_subcontractors_v1'
+  SUBCONTRACTORS: 'obracon_subcontractors_v1',
+  AVISOS_TECNICOS: 'obracon_avisos_tecnicos_v1',
+  REFERENCE_BUDGETS: 'obramaster_reference_budgets_v1'
 };
 
 function loadStored(key, fallback) {
@@ -57,7 +66,14 @@ function loadStored(key, fallback) {
 }
 
 export function AppProvider({ children }) {
-  const [empresaConfig, setEmpresaConfig] = useState(() => loadStored(STORAGE_KEYS.EMPRESA, INITIAL_EMPRESA_CONFIG));
+  const [empresaConfig, setEmpresaConfig] = useState(() => {
+    const raw = loadStored(STORAGE_KEYS.EMPRESA, INITIAL_EMPRESA_CONFIG);
+    if (raw?.aiConfig?.provider === 'google') {
+      if (raw.aiConfig.modelName) raw.aiConfig.modelName = normalizeGeminiModel(raw.aiConfig.modelName);
+      if (raw.aiConfig.model) raw.aiConfig.model = normalizeGeminiModel(raw.aiConfig.model);
+    }
+    return raw;
+  });
   const [obreros, setObreros] = useState(() => loadStored(STORAGE_KEYS.OBREROS, INITIAL_OBREROS));
   const [basePrecios, setBasePrecios] = useState(() => loadStored(STORAGE_KEYS.BASE_PRECIOS, INITIAL_BASE_PRECIOS));
   const [presupuestos, setPresupuestos] = useState(() => loadStored(STORAGE_KEYS.PRESUPUESTOS, INITIAL_PRESUPUESTOS));
@@ -74,8 +90,14 @@ export function AppProvider({ children }) {
     { id: 'log-1', timestamp: '2026-10-16 10:15:22', usuario: 'Manuel (Gerente)', accion: 'EMISION_FACTURA_VERIFACTU', recurso: 'FAC-2026-024', ip: '88.12.45.192', hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }
   ]));
 
-  // Expedientes de Visita de Obra Multimodal
-  const [siteVisits, setSiteVisits] = useState(() => loadStored(STORAGE_KEYS.SITE_VISITS, VISITA_TEMPLATES));
+  // Expedientes de Visita de Obra Multimodal (sin fotos de muestra, solo imágenes reales subidas)
+  const [siteVisits, setSiteVisits] = useState(() => {
+    const raw = loadStored(STORAGE_KEYS.SITE_VISITS, VISITA_TEMPLATES);
+    return (raw || []).map(v => ({
+      ...v,
+      capturas: (v.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')))
+    }));
+  });
 
   // Realtime & Offline Network State
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
@@ -89,6 +111,12 @@ export function AppProvider({ children }) {
   // RRHH (Employees) & Subcontractors State
   const [employees, setEmployees] = useState(() => loadStored(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
   const [subcontractors, setSubcontractors] = useState(() => loadStored(STORAGE_KEYS.SUBCONTRACTORS, INITIAL_SUBCONTRACTORS));
+
+  // Avisos Técnicos de Dirección de Obra
+  const [avisosTecnicos, setAvisosTecnicos] = useState(() => loadStored(STORAGE_KEYS.AVISOS_TECNICOS, INITIAL_AVISOS_TECNICOS));
+
+  // Presupuestos de Referencia / Entrenamiento Contextual IA (PDFs)
+  const [referenceBudgets, setReferenceBudgets] = useState(() => loadStored(STORAGE_KEYS.REFERENCE_BUDGETS, INITIAL_REFERENCE_BUDGETS));
 
   // Navigation State
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas, portal_obrero, empresa_config
@@ -112,6 +140,8 @@ export function AppProvider({ children }) {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SITE_VISITS, JSON.stringify(siteVisits)); }, [siteVisits]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees)); }, [employees]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRACTORS, JSON.stringify(subcontractors)); }, [subcontractors]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.AVISOS_TECNICOS, JSON.stringify(avisosTecnicos)); }, [avisosTecnicos]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.REFERENCE_BUDGETS, JSON.stringify(referenceBudgets)); }, [referenceBudgets]);
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(currentUser));
@@ -206,12 +236,18 @@ export function AppProvider({ children }) {
 
     const unsubAlert = realtimeSync.subscribe('ADMIN_ALERT_DISPATCHED', (payload) => {
       const { alert } = payload;
+      if (alert && alert.id) {
+        setAvisosTecnicos(prev => {
+          if (prev.some(a => a.id === alert.id)) return prev;
+          return [alert, ...prev];
+        });
+      }
       setActiveRealtimeAlert({
         type: 'admin_alert',
         msg: `⚠️ [Aviso Técnico] ${alert.titulo}: ${alert.descripcion}`,
         timestamp: Date.now()
       });
-      setTimeout(() => setActiveRealtimeAlert(null), 6000);
+      setTimeout(() => setActiveRealtimeAlert(null), 7000);
     });
 
     const unsubNetwork = realtimeSync.subscribe('NETWORK_STATUS_CHANGED', ({ isOnline: online }) => {
@@ -244,14 +280,19 @@ export function AppProvider({ children }) {
   };
 
   const updateAiConfig = (newAiConfig) => {
+    const sanitized = { ...newAiConfig };
+    if (sanitized.provider === 'google') {
+      if (sanitized.modelName) sanitized.modelName = normalizeGeminiModel(sanitized.modelName);
+      if (sanitized.model) sanitized.model = normalizeGeminiModel(sanitized.model);
+    }
     setEmpresaConfig(prev => ({
       ...prev,
       aiConfig: {
         ...(prev.aiConfig || {}),
-        ...newAiConfig
+        ...sanitized
       }
     }));
-    addAuditLog('CONFIG_IA_ACTUALIZADA', `Proveedor: ${newAiConfig.provider || empresaConfig.aiConfig?.provider}`);
+    addAuditLog('CONFIG_IA_ACTUALIZADA', `Proveedor: ${sanitized.provider || empresaConfig.aiConfig?.provider}`);
     showNotification('Configuración del Motor de IA guardada correctamente');
   };
 
@@ -271,15 +312,31 @@ export function AppProvider({ children }) {
       showNotification('La API Key de Anthropic debe comenzar por "sk-ant-".', 'error');
       return { success: false, error: 'Formato de API Key no válido para Anthropic' };
     }
+    if (provider === 'google' && !key.startsWith('AIza') && key.length < 25) {
+      showNotification('La API Key de Google Gemini suele comenzar por "AIzaSy..." y tener al menos 25 caracteres.', 'error');
+      return { success: false, error: 'Formato de API Key no válido para Google Gemini' };
+    }
 
-    // Ping handshake simulation
-    const latency = Math.floor(130 + Math.random() * 70);
+    const normalizedModel = provider === 'google' ? normalizeGeminiModel(modelName) : modelName;
+    let latency = Math.floor(130 + Math.random() * 70);
+
+    // If Google Gemini, run real ping test to Google API
+    if (provider === 'google') {
+      try {
+        const pingResult = await testGeminiConnection(key, normalizedModel);
+        latency = pingResult.latencyMs;
+      } catch (geminiErr) {
+        showNotification(geminiErr.message, 'error');
+        return { success: false, error: geminiErr.message };
+      }
+    }
+
     const testedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
     const updatedConfig = {
       provider,
       apiKey: key,
-      modelName,
+      modelName: normalizedModel,
       isActive: true,
       lastTestedAt: testedAt,
       status: 'connected',
@@ -291,13 +348,76 @@ export function AppProvider({ children }) {
       aiConfig: updatedConfig
     }));
 
-    addAuditLog('PING_MOTOR_IA', `Proveedor: ${provider.toUpperCase()} (${modelName}) - 200 OK (${latency}ms)`);
+    addAuditLog('PING_MOTOR_IA', `Proveedor: ${provider.toUpperCase()} (${normalizedModel}) - 200 OK (${latency}ms)`);
     showNotification(`¡Conexión con ${provider.toUpperCase()} (${modelName}) exitosa! Latencia: ${latency}ms`);
     return {
       success: true,
       latencyMs: latency,
       capabilities: ['Visión Multimodal (Fotos Obra)', 'Audio Whisper (Notas de Voz)', 'Function Calling (Tool Calling)', 'Partidas Base Precios JSON']
     };
+  };
+
+  // Reference Budgets (Few-Shot Contextual Training PDFs)
+  const addReferenceBudget = async (file, customTitle = '', tipoObra = 'Reforma General') => {
+    const val = validatePdfFile(file);
+    if (!val.valid) {
+      showNotification(val.error, 'error');
+      return { success: false, error: val.error };
+    }
+
+    try {
+      showNotification(`Extrayendo texto técnico y pliego de "${file.name}"...`);
+      const text = await extractTextFromPdfBlob(file);
+      const fileUrl = URL.createObjectURL(file);
+
+      const newBudget = {
+        id: `ref-pdf-${Date.now()}`,
+        name: customTitle || file.name,
+        file_url: fileUrl,
+        file_size: file.size,
+        is_active: true,
+        tipo_obra: tipoObra,
+        extracted_text: text,
+        created_at: new Date().toISOString().replace('T', ' ').substring(0, 16)
+      };
+
+      setReferenceBudgets(prev => [newBudget, ...prev]);
+      addAuditLog('PRESUPUESTO_REFERENCIA_ANADIDO', `Documento: ${newBudget.name} (${(file.size / 1024).toFixed(0)} KB)`);
+      showNotification(`✨ Presupuesto modelo "${newBudget.name}" cargado y activado para entrenamiento RAG.`);
+      return { success: true, budget: newBudget };
+    } catch (err) {
+      console.error('Error procesando PDF de referencia:', err);
+      showNotification('Error al leer el archivo PDF: ' + err.message, 'error');
+      return { success: false, error: err.message };
+    }
+  };
+
+  const toggleReferenceBudget = (id) => {
+    setReferenceBudgets(prev => prev.map(b => {
+      if (b.id === id) {
+        const nextState = !b.is_active;
+        showNotification(nextState ? `"${b.name}" activado como referencia de estilo.` : `"${b.name}" desactivado.`);
+        return { ...b, is_active: nextState };
+      }
+      return b;
+    }));
+  };
+
+  const deleteReferenceBudget = (id) => {
+    setReferenceBudgets(prev => {
+      const target = prev.find(b => b.id === id);
+      if (target?.file_url && target.file_url.startsWith('blob:')) {
+        try { URL.revokeObjectURL(target.file_url); } catch (e) {}
+      }
+      return prev.filter(b => b.id !== id);
+    });
+    addAuditLog('PRESUPUESTO_REFERENCIA_ELIMINADO', `ID: ${id}`);
+    showNotification('Presupuesto modelo eliminado.');
+  };
+
+  const updateReferenceBudgetText = (id, newText) => {
+    setReferenceBudgets(prev => prev.map(b => b.id === id ? { ...b, extracted_text: newText } : b));
+    showNotification('Texto técnico de referencia actualizado.');
   };
 
   const addAuditLog = (accion, recurso, valorAnterior = null, valorNuevo = null) => {
@@ -321,35 +441,149 @@ export function AppProvider({ children }) {
   };
 
   // Auth Functions
-  const login = (usernameOrEmail, password) => {
-    const clean = (usernameOrEmail || '').trim().toLowerCase();
+  // Auth Functions with Multi-Identifier & Robust Matching
+  const login = (usernameOrEmailOrPhone, password) => {
+    const rawInput = (usernameOrEmailOrPhone || '').trim();
     const cleanPass = (password || '').trim();
 
-    const user = users.find(u =>
-      u.username.toLowerCase() === clean ||
-      (u.email && u.email.toLowerCase() === clean)
-    );
-
-    if (!user) {
-      return { success: false, error: 'Usuario o correo no encontrado.' };
+    if (!rawInput) {
+      return { success: false, error: 'Por favor, introduce tu usuario, teléfono o DNI.' };
+    }
+    if (!cleanPass) {
+      return { success: false, error: 'Por favor, introduce tu contraseña.' };
     }
 
-    if (!user.isActive) {
-      return { success: false, error: 'Esta cuenta ha sido desactivada por el administrador.' };
+    const norm = (str) => (str || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const normInput = norm(rawInput);
+    const digitsInput = rawInput.replace(/\D/g, '');
+    const dniInput = rawInput.toUpperCase().replace(/[\s-]/g, '');
+
+    // 1. Direct match on users list
+    let matchedUser = users.find(u => {
+      const uNormName = norm(u.username);
+      const uNormEmail = norm(u.email);
+
+      // Match username or email
+      if (uNormName === normInput || (uNormEmail && uNormEmail === normInput)) {
+        return true;
+      }
+
+      // Match phone
+      if (digitsInput && digitsInput.length >= 7 && u.phone) {
+        const uDigits = u.phone.replace(/\D/g, '');
+        if (uDigits === digitsInput || uDigits.endsWith(digitsInput) || digitsInput.endsWith(uDigits)) {
+          return true;
+        }
+      }
+
+      return false;
+    });
+
+    // 2. Fallback: match via employees table (by DNI, Phone, or Full Name)
+    if (!matchedUser) {
+      const matchedEmployee = employees.find(emp => {
+        const empDni = (emp.dni || '').toUpperCase().replace(/[\s-]/g, '');
+        if (dniInput && empDni && empDni === dniInput) return true;
+
+        if (digitsInput && digitsInput.length >= 7 && emp.telefono) {
+          const empDigits = emp.telefono.replace(/\D/g, '');
+          if (empDigits === digitsInput || empDigits.endsWith(digitsInput) || digitsInput.endsWith(empDigits)) {
+            return true;
+          }
+        }
+
+        const empFullName = norm(`${emp.nombre} ${emp.apellidos}`);
+        if (empFullName === normInput || empFullName.replace(/\s+/g, '.') === normInput) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (matchedEmployee) {
+        // Find existing user for this employee
+        matchedUser = users.find(u =>
+          (matchedEmployee.usuarioId && u.id === matchedEmployee.usuarioId) ||
+          u.employeeId === matchedEmployee.id ||
+          (matchedEmployee.obreroId && u.obreroId === matchedEmployee.obreroId)
+        );
+
+        // If employee exists in plantilla but user was missing, auto-create on the fly
+        if (!matchedUser) {
+          const autoUsername = `${norm(matchedEmployee.nombre || 'operario')}.${norm(matchedEmployee.apellidos || 'obra')}`
+            .replace(/[^a-z0-9]/g, '.')
+            .replace(/\.+/g, '.');
+          const autoUserId = `user-obrero-${Date.now()}`;
+          const newAutoUser = {
+            id: autoUserId,
+            obreroId: matchedEmployee.obreroId || `obrero-${Date.now()}`,
+            employeeId: matchedEmployee.id,
+            username: autoUsername,
+            password: matchedEmployee.dni ? matchedEmployee.dni.toUpperCase() : 'obra2026',
+            role: 'obrero',
+            fullName: `${matchedEmployee.nombre} ${matchedEmployee.apellidos}`.trim(),
+            email: matchedEmployee.email || '',
+            trade: matchedEmployee.especialidad || 'Operario',
+            phone: matchedEmployee.telefono || '',
+            isActive: matchedEmployee.estado === 'activo',
+            createdAt: new Date().toISOString(),
+            lastLogin: null
+          };
+
+          setUsers(prev => [newAutoUser, ...prev]);
+          setEmployees(prev => prev.map(e => e.id === matchedEmployee.id ? { ...e, usuarioId: autoUserId } : e));
+          matchedUser = newAutoUser;
+        }
+      }
     }
 
-    if (user.password !== cleanPass) {
-      return { success: false, error: 'Contraseña incorrecta. Revisa tus credenciales.' };
+    // 3. Fallback: match via obreros table
+    if (!matchedUser) {
+      const matchedObrero = obreros.find(o => {
+        if (digitsInput && digitsInput.length >= 7 && o.telefono) {
+          const oDigits = o.telefono.replace(/\D/g, '');
+          if (oDigits === digitsInput || oDigits.endsWith(digitsInput) || digitsInput.endsWith(oDigits)) {
+            return true;
+          }
+        }
+        const oNorm = norm(o.nombre);
+        return oNorm === normInput || oNorm.replace(/\s+/g, '.') === normInput;
+      });
+
+      if (matchedObrero) {
+        matchedUser = users.find(u => u.obreroId === matchedObrero.id);
+      }
+    }
+
+    if (!matchedUser) {
+      return {
+        success: false,
+        error: `No encontramos ningún usuario, teléfono o DNI registrado con "${rawInput}". Revisa tus datos.`
+      };
+    }
+
+    if (!matchedUser.isActive) {
+      return {
+        success: false,
+        error: 'Esta cuenta ha sido desactivada por el administrador.'
+      };
+    }
+
+    if (matchedUser.password.trim() !== cleanPass) {
+      return {
+        success: false,
+        error: `Contraseña incorrecta para ${matchedUser.fullName}. Comprueba mayúsculas o contacta con la oficina.`
+      };
     }
 
     const updatedUser = {
-      ...user,
+      ...matchedUser,
       lastLogin: new Date().toISOString()
     };
 
-    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+    setUsers(prev => prev.map(u => u.id === matchedUser.id ? updatedUser : u));
     setCurrentUser(updatedUser);
-    showNotification(`¡Bienvenido, ${user.fullName}!`);
+    showNotification(`¡Bienvenido, ${matchedUser.fullName}!`);
     return { success: true, user: updatedUser };
   };
 
@@ -368,7 +602,14 @@ export function AppProvider({ children }) {
 
   // User Management (Admin CRUD)
   const addUser = ({ username, password, role = 'obrero', fullName, trade, phone, email }) => {
-    const cleanUsername = (username || '').trim().toLowerCase();
+    const cleanUsername = (username || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9.]/g, '')
+      .replace(/\.+/g, '.');
+
     if (!cleanUsername) return { success: false, error: 'El nombre de usuario es obligatorio.' };
     if (!fullName || !fullName.trim()) return { success: false, error: 'El nombre completo es obligatorio.' };
 
@@ -405,7 +646,7 @@ export function AppProvider({ children }) {
       id: newUserId,
       obreroId: associatedObreroId,
       username: cleanUsername,
-      password: (password || '123456').trim(),
+      password: (password || 'obra2026').trim(),
       role,
       fullName: fullName.trim(),
       trade: trade?.trim() || (role === 'admin' ? 'Dirección Técnica' : 'Albañilería'),
@@ -765,11 +1006,24 @@ export function AppProvider({ children }) {
   };
 
   const broadcastAdminAlert = (obraId, alertData) => {
+    const targetObra = obras.find(o => o.id === obraId);
     const newAlert = {
       ...alertData,
-      id: `alert-${Date.now()}`,
-      timestamp: new Date().toISOString()
+      id: alertData.id || `aviso-${Date.now()}`,
+      obraId: obraId || targetObra?.id || 'obra-general',
+      obraCodigo: targetObra?.codigo || alertData.obraCodigo || 'OBRA',
+      obraTitulo: targetObra?.titulo || alertData.obraTitulo || 'Obra General',
+      titulo: alertData.titulo || 'Instrucción Técnica / Seguridad',
+      descripcion: alertData.descripcion || '',
+      prioridad: alertData.prioridad || 'alta',
+      tipo: alertData.tipo || 'tecnico',
+      fecha: new Date().toISOString(),
+      emisor: alertData.emisor || (currentUser?.fullName ? `${currentUser.fullName} (Director de Obra)` : 'Manuel Gómez (Director de Obra)'),
+      leidoPor: alertData.leidoPor || [],
+      requiereConfirmacion: true
     };
+
+    setAvisosTecnicos(prev => [newAlert, ...prev]);
 
     realtimeSync.broadcast('ADMIN_ALERT_DISPATCHED', {
       obraId,
@@ -778,6 +1032,33 @@ export function AppProvider({ children }) {
 
     addAuditLog('ALERTA_TECNICA_DISPATCHED', `Aviso: ${newAlert.titulo}`);
     showNotification(`Aviso técnico enviado al canal móvil de los operarios.`);
+    return newAlert;
+  };
+
+  const marcarAvisoLeido = (avisoId, obreroIdentifier) => {
+    if (!avisoId || !obreroIdentifier) return;
+    setAvisosTecnicos(prev => prev.map(a => {
+      if (a.id === avisoId) {
+        const list = Array.isArray(a.leidoPor) ? a.leidoPor : [];
+        if (!list.includes(obreroIdentifier)) {
+          return { ...a, leidoPor: [...list, obreroIdentifier] };
+        }
+      }
+      return a;
+    }));
+    showNotification('Aviso técnico marcado como leído.', 'success');
+  };
+
+  const marcarTodosAvisosLeidos = (obreroIdentifier) => {
+    if (!obreroIdentifier) return;
+    setAvisosTecnicos(prev => prev.map(a => {
+      const list = Array.isArray(a.leidoPor) ? a.leidoPor : [];
+      if (!list.includes(obreroIdentifier)) {
+        return { ...a, leidoPor: [...list, obreroIdentifier] };
+      }
+      return a;
+    }));
+    showNotification('Todos los avisos técnicos han sido marcados como leídos.', 'success');
   };
 
   // ==========================================
@@ -804,7 +1085,8 @@ export function AppProvider({ children }) {
       visit,
       basePrecios,
       empresaConfig.aiConfig || {},
-      onProgress
+      onProgress,
+      referenceBudgets
     );
 
     setPresupuestos(prev => [generatedQuote, ...prev]);
@@ -971,27 +1253,131 @@ export function AppProvider({ children }) {
     showNotification('Factura de gasto/subcontrata añadida al libro de IVA soportado');
   };
 
-  // Obreros & Subcontratas review
+  // Obreros & Subcontratas review and scoring engine
   const addReviewObrero = (obreroId, review) => {
+    let newScoreValue = null;
+    let newCritValues = null;
+
     setObreros(prev => prev.map(o => {
       if (o.id === obreroId) {
         const prevResenas = o.ultimasResenas || [];
-        const newResenas = [{ ...review, id: `r-${Date.now()}`, fecha: new Date().toISOString().split('T')[0] }, ...prevResenas];
+        const isDirect = review.isDirectOverride !== false;
         
-        // Recalcular media
-        const sum = newResenas.reduce((acc, r) => acc + (Number(r.nota) || 5), 0);
-        const newMedia = Number((sum / newResenas.length).toFixed(1));
+        let newMedia;
+        let newCriterios;
+
+        if (review.criterios) {
+          if (isDirect) {
+            newCriterios = {
+              calidadAcabados: Number(Number(review.criterios.calidadAcabados ?? 5.0).toFixed(1)),
+              puntualidadPlazos: Number(Number(review.criterios.puntualidadPlazos ?? 5.0).toFixed(1)),
+              limpiezaSeguridad: Number(Number(review.criterios.limpiezaSeguridad ?? 5.0).toFixed(1)),
+              autonomiaProblemas: Number(Number(review.criterios.autonomiaProblemas ?? 5.0).toFixed(1)),
+            };
+            newMedia = review.nota !== undefined
+              ? Number(Number(review.nota).toFixed(1))
+              : Number(((newCriterios.calidadAcabados + newCriterios.puntualidadPlazos + newCriterios.limpiezaSeguridad + newCriterios.autonomiaProblemas) / 4).toFixed(1));
+          } else {
+            const prevCrit = o.criterios || { calidadAcabados: 5.0, puntualidadPlazos: 5.0, limpiezaSeguridad: 5.0, autonomiaProblemas: 5.0 };
+            const total = (prevResenas.length || 1) + 1;
+            newCriterios = {
+              calidadAcabados: Number(((prevCrit.calidadAcabados * (total - 1) + Number(review.criterios.calidadAcabados ?? 5)) / total).toFixed(1)),
+              puntualidadPlazos: Number(((prevCrit.puntualidadPlazos * (total - 1) + Number(review.criterios.puntualidadPlazos ?? 5)) / total).toFixed(1)),
+              limpiezaSeguridad: Number(((prevCrit.limpiezaSeguridad * (total - 1) + Number(review.criterios.limpiezaSeguridad ?? 5)) / total).toFixed(1)),
+              autonomiaProblemas: Number(((prevCrit.autonomiaProblemas * (total - 1) + Number(review.criterios.autonomiaProblemas ?? 5)) / total).toFixed(1)),
+            };
+            newMedia = Number(((newCriterios.calidadAcabados + newCriterios.puntualidadPlazos + newCriterios.limpiezaSeguridad + newCriterios.autonomiaProblemas) / 4).toFixed(1));
+          }
+        } else {
+          newMedia = Number(Number(review.nota || 5.0).toFixed(1));
+          newCriterios = {
+            calidadAcabados: newMedia,
+            puntualidadPlazos: newMedia,
+            limpiezaSeguridad: newMedia,
+            autonomiaProblemas: newMedia
+          };
+        }
+
+        const newReviewEntry = {
+          id: `r-${Date.now()}`,
+          obra: review.obra || 'Inspección de Obra',
+          fecha: review.fecha || new Date().toISOString().split('T')[0],
+          nota: newMedia,
+          comentario: review.comentario || 'Evaluación de calidad y rendimiento en obra.'
+        };
+
+        const newResenas = [newReviewEntry, ...prevResenas];
+        newScoreValue = newMedia;
+        newCritValues = newCriterios;
 
         return {
           ...o,
           calificacionMedia: newMedia,
+          criterios: newCriterios,
           obrasRealizadas: (o.obrasRealizadas || 0) + 1,
           ultimasResenas: newResenas
         };
       }
       return o;
     }));
-    showNotification('Calificación registrada y tenida en cuenta para futuras asignaciones');
+
+    if (newScoreValue !== null) {
+      setEmployees(prevEmp => prevEmp.map(emp => {
+        if (emp.obreroId === obreroId || emp.id === obreroId) {
+          return {
+            ...emp,
+            calificacionMedia: newScoreValue,
+            criterios: newCritValues || emp.criterios
+          };
+        }
+        return emp;
+      }));
+    }
+
+    showNotification(`Calificación de operario actualizada a ${newScoreValue}⭐`);
+  };
+
+  const updateObreroScoringDirect = (obreroId, newScore, customCriteria = null) => {
+    const scoreNum = Math.min(5, Math.max(1, Number(Number(newScore).toFixed(1))));
+    const updatedCrit = customCriteria || {
+      calidadAcabados: scoreNum,
+      puntualidadPlazos: scoreNum,
+      limpiezaSeguridad: scoreNum,
+      autonomiaProblemas: scoreNum
+    };
+
+    setObreros(prev => prev.map(o => {
+      if (o.id === obreroId) {
+        const prevResenas = o.ultimasResenas || [];
+        const newReview = {
+          id: `r-${Date.now()}`,
+          obra: 'Ajuste Dirección Técnica',
+          fecha: new Date().toISOString().split('T')[0],
+          nota: scoreNum,
+          comentario: `Scoring fijado por Dirección Técnica a ${scoreNum.toFixed(1)}⭐`
+        };
+        return {
+          ...o,
+          calificacionMedia: scoreNum,
+          criterios: updatedCrit,
+          ultimasResenas: [newReview, ...prevResenas]
+        };
+      }
+      return o;
+    }));
+
+    setEmployees(prev => prev.map(emp => {
+      if (emp.obreroId === obreroId || emp.id === obreroId) {
+        return {
+          ...emp,
+          calificacionMedia: scoreNum,
+          criterios: updatedCrit
+        };
+      }
+      return emp;
+    }));
+
+    showNotification(`Scoring de operario fijado en ${scoreNum.toFixed(1)}⭐`);
   };
 
   // ==========================================
@@ -1001,15 +1387,24 @@ export function AppProvider({ children }) {
     const empId = `emp-${Date.now()}`;
     const obreroId = `obrero-${Date.now()}`;
     let linkedUserId = null;
+    let createdUserRecord = null;
 
     if (userCreds?.createAccount || userCreds?.username) {
-      const generatedPass = userCreds.password || generateRandomPassword();
+      const norm = (str) => (str || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const rawUser = userCreds.username || `${norm(empData.nombre || 'operario')}.${norm(empData.apellidos || 'obra')}`;
+      const cleanUsername = rawUser
+        .replace(/[^a-z0-9.]/g, '')
+        .replace(/\.+/g, '.')
+        .replace(/^\.|\.$/g, '') || `obrero.${Date.now().toString().slice(-4)}`;
+
+      const finalPassword = (userCreds.password || 'obra2026').trim();
+
       const newU = {
         id: `user-obrero-${Date.now()}`,
         obreroId: obreroId,
         employeeId: empId,
-        username: userCreds.username || `${(empData.nombre || 'operario').toLowerCase().trim()}.${(empData.apellidos || 'obra').toLowerCase().trim()}`.replace(/\s+/g, '.'),
-        password: generatedPass,
+        username: cleanUsername,
+        password: finalPassword,
         role: 'obrero',
         fullName: `${empData.nombre || ''} ${empData.apellidos || ''}`.trim(),
         email: empData.email || '',
@@ -1021,6 +1416,7 @@ export function AppProvider({ children }) {
       };
       setUsers(prev => [newU, ...prev]);
       linkedUserId = newU.id;
+      createdUserRecord = newU;
     }
 
     const newEmp = {
@@ -1084,7 +1480,47 @@ export function AppProvider({ children }) {
 
     addAuditLog('ALTA_EMPLEADO', `${newEmp.nombre} ${newEmp.apellidos} (${newEmp.dni})`);
     showNotification(`Empleado "${newEmp.nombre} ${newEmp.apellidos}" dado de alta correctamente.`);
-    return newEmp;
+    return {
+      ...newEmp,
+      user: createdUserRecord,
+      credentials: createdUserRecord ? { username: createdUserRecord.username, password: createdUserRecord.password } : null
+    };
+  };
+
+  const createMobileAccountForEmployee = (employeeId, customPassword = 'obra2026') => {
+    const emp = employees.find(e => e.id === employeeId);
+    if (!emp) return { success: false, error: 'Empleado no encontrado' };
+
+    const norm = (str) => (str || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const cleanUser = `${norm(emp.nombre || 'operario')}.${norm(emp.apellidos || 'obra')}`
+      .replace(/[^a-z0-9.]/g, '')
+      .replace(/\.+/g, '.')
+      .replace(/^\.|\.$/g, '');
+
+    const pass = (customPassword || 'obra2026').trim();
+    const newUserId = `user-obrero-${Date.now()}`;
+
+    const newU = {
+      id: newUserId,
+      obreroId: emp.obreroId || `obrero-${Date.now()}`,
+      employeeId: emp.id,
+      username: cleanUser,
+      password: pass,
+      role: 'obrero',
+      fullName: `${emp.nombre} ${emp.apellidos}`.trim(),
+      email: emp.email || '',
+      trade: emp.especialidad || 'Operario de Obra',
+      phone: emp.telefono || '',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      lastLogin: null
+    };
+
+    setUsers(prev => [newU, ...prev]);
+    setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, usuarioId: newUserId } : e));
+    addAuditLog('CREACION_CUENTA_MOVIL', `Empleado: ${emp.nombre} ${emp.apellidos} - Usuario: ${cleanUser}`);
+    showNotification(`¡Acceso móvil creado para ${emp.nombre}! Usuario: ${cleanUser} | Clave: ${pass}`);
+    return { success: true, user: newU, credentials: { username: cleanUser, password: pass } };
   };
 
   const updateEmployee = (id, updates) => {
@@ -1237,15 +1673,25 @@ export function AppProvider({ children }) {
 
   const resetEmployeePassword = (employeeId, newPass) => {
     const emp = employees.find(e => e.id === employeeId);
-    if (!emp || !emp.usuarioId) {
-      showNotification('Este empleado no tiene usuario móvil vinculado.', 'error');
-      return { success: false, error: 'Sin usuario vinculado' };
+    if (!emp) return { success: false, error: 'Empleado no encontrado' };
+
+    let targetUserId = emp.usuarioId;
+    if (!targetUserId) {
+      const existingUser = users.find(u => u.employeeId === emp.id || u.obreroId === emp.obreroId);
+      if (existingUser) {
+        targetUserId = existingUser.id;
+        setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, usuarioId: existingUser.id } : e));
+      }
+    }
+
+    if (!targetUserId) {
+      return createMobileAccountForEmployee(employeeId, newPass);
     }
 
     const cleanPass = newPass.trim();
-    setUsers(prev => prev.map(u => u.id === emp.usuarioId ? { ...u, password: cleanPass } : u));
+    setUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, password: cleanPass } : u));
     addAuditLog('RESET_PASSWORD_EMPLEADO', `Empleado: ${emp.nombre} ${emp.apellidos}`);
-    showNotification(`Contraseña de ${emp.nombre} actualizada con éxito.`);
+    showNotification(`Contraseña de ${emp.nombre} actualizada con éxito: "${cleanPass}"`);
     return { success: true, password: cleanPass };
   };
 
@@ -1601,6 +2047,7 @@ export function AppProvider({ children }) {
       setSubcontratasPresupuestos(INITIAL_SUBCONTRATAS_PRESUPUESTOS);
       setEmployees(INITIAL_EMPLOYEES);
       setSubcontractors(INITIAL_SUBCONTRACTORS);
+      setAvisosTecnicos(INITIAL_AVISOS_TECNICOS);
       showNotification('Datos reiniciados a los valores de prueba');
     }
   };
@@ -1622,6 +2069,7 @@ export function AppProvider({ children }) {
       obreros,
       setObreros,
       addReviewObrero,
+      updateObreroScoringDirect,
       basePrecios,
       setBasePrecios,
       applySubcontrataPresupuesto,
@@ -1683,6 +2131,11 @@ export function AppProvider({ children }) {
       broadcastWorkerEvidence,
       broadcastAdminTask,
       broadcastAdminAlert,
+      // Avisos Técnicos de Dirección de Obra
+      avisosTecnicos,
+      setAvisosTecnicos,
+      marcarAvisoLeido,
+      marcarTodosAvisosLeidos,
       // Site Visits & AI Multimodal Quoting
       siteVisits,
       setSiteVisits,
@@ -1699,6 +2152,7 @@ export function AppProvider({ children }) {
       rehireEmployee,
       addEmployeeAbsence,
       resetEmployeePassword,
+      createMobileAccountForEmployee,
       // Subcontractors
       subcontractors,
       setSubcontractors,
@@ -1709,11 +2163,20 @@ export function AppProvider({ children }) {
       addSubcontractorInvoice,
       updateSubcontractorInvoiceStatus,
       addSubcontractorNote,
-      addSubcontractorReview
+      addSubcontractorReview,
+      // Reference Budgets (Few-Shot Contextual Training PDFs)
+      referenceBudgets,
+      addReferenceBudget,
+      toggleReferenceBudget,
+      deleteReferenceBudget,
+      updateReferenceBudgetText
     }}>
       {children}
     </AppContext.Provider>
   );
 }
 
-export const useApp = () => useContext(AppContext);
+export const useApp = () => {
+  const context = useContext(AppContext);
+  return context || {};
+};

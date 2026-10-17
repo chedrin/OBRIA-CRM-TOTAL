@@ -9,6 +9,8 @@
  * 5. Conversational voice/text refinement console (natural language modifications)
  */
 
+import { generateBudgetWithGemini, normalizeGeminiModel } from './geminiService';
+
 export const SYSTEM_PROMPT_PRESUPUESTADORA = `Eres el Motor Central de Presupuestación e Inteligencia Artificial de "ObraMaster", actuando como un Aparejador / Arquitecto Técnico Colegiado Senior y Estimador de Costes de Construcción en España (conforme a LOE Ley 38/1999, CTE y REBT).
 
 OBJETIVO PRINCIPAL:
@@ -53,29 +55,7 @@ export const VISITA_TEMPLATES = [
     plazoMeses: '3 meses',
     presupuestoEstimado: 48000,
     audioMuestra: 'Visita inicial en piso de 90 m2 en C/ Alcalá. Es un 3º piso antiguo sin ascensor pero con hueco en escalera para montacargas. Hay gotelé en paredes y techos, queremos alisarlo entero. El salón se une a la cocina tirando tabique de 4.8 metros. Dos baños completos: uno con plato de resina de 140x80 y otro con bañera a sustituir. Suelo de tarima laminada AC5 hidrófuga en toda la casa excepto baños y cocina con porcelánico 60x60. Instalación eléctrica nueva completa con cuadro de 8 circuitos y mecanismos Schneider. Falso techo de pladur con candileja para LED en salón.',
-    capturas: [
-      {
-        id: 'cap-1',
-        tipo: 'croquis',
-        titulo: 'Croquis a mano con cotas láser',
-        url: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=600&q=80',
-        notas: 'Superficie útil: 88.4 m². Salón-cocina: 38 m². Baño 1: 5.2 m². Baño 2: 4.1 m². Dormitorio pral: 14 m².'
-      },
-      {
-        id: 'cap-2',
-        tipo: 'foto_estado',
-        titulo: 'Estado actual salón y tabique cocina',
-        url: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=600&q=80',
-        notas: 'Tabique de ladrillo hueco sencillo a demoler. Falso techo existente en mal estado.'
-      },
-      {
-        id: 'cap-3',
-        tipo: 'foto_estado',
-        titulo: 'Cuadro eléctrico antiguo',
-        url: 'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f8?auto=format&fit=crop&w=600&q=80',
-        notas: 'Sin toma de tierra independiente, plomos antiguos de cerámica. Requiere cuadro nuevo REBT.'
-      }
-    ]
+    capturas: []
   },
   {
     id: 'visita-reforma-bano-suite',
@@ -88,22 +68,7 @@ export const VISITA_TEMPLATES = [
     plazoMeses: '3 semanas',
     presupuestoEstimado: 14500,
     audioMuestra: 'Reforma de dos cuartos húmedos. En el baño principal de 6 m2 queremos quitar la bañera y poner plato de ducha pizarra antracita enrasado a suelo de 160x80 con grifería termostática empotrada negra mate y mampara fija. Inodoro suspendido con bastidor empotrado Geberit. Mueble de lavabo suspendido de 120cm con doble seno. Alicatado porcelánico rectificado gran formato 60x120 imitación mármol Calacatta. En el aseo de 2.5 m2 inodoro compacto, lavabo sobre encimera de madera y papel vinílico decorativo.',
-    capturas: [
-      {
-        id: 'cap-4',
-        tipo: 'foto_estado',
-        titulo: 'Baño principal actual con bañera',
-        url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
-        notas: 'Bañera de chapa, alicatado años 80 con cenefa, tomas de plomo vistas.'
-      },
-      {
-        id: 'cap-5',
-        tipo: 'croquis',
-        titulo: 'Esquema de fontanería y plato',
-        url: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=600&q=80',
-        notas: 'Bajante general a 1.2m del desagüe de ducha. Caída suficiente para ducha enrasada.'
-      }
-    ]
+    capturas: []
   }
 ];
 
@@ -111,26 +76,29 @@ export const VISITA_TEMPLATES = [
  * Builds the multimodal payload for OpenAI / Anthropic / Gemini
  */
 export function buildMultimodalAiPayload(expediente, catalog, aiConfig) {
+  const realCapturas = (expediente.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
   const promptUser = `
 EXPEDIENTE DE VISITA DE OBRA:
 - Cliente: ${expediente.cliente || 'Particular'}
 - Dirección de Obra: ${expediente.direccion || 'Madrid'}
 - Calidades deseadas: ${expediente.calidades || 'Media-Alta'}
 - Margen comercial objetivo: ${expediente.margenGlobalPct || 30}%
-- Notas dictadas / Transcripción de audio in situ:
-"${expediente.audioTranscripcion || ''}"
+- Audio Transcrito / Notas dictadas in situ:
+"${expediente.audioTranscripcion || 'Sin notas de audio proporcionadas.'}"
 
 - Medidas tomadas en campo / Croquis:
 ${expediente.medidasNotas || 'Medidas estándar indicadas en la visita.'}
 
-- Documentos y Fotos adjuntas (${(expediente.capturas || []).length} archivos):
-${(expediente.capturas || []).map((c, i) => `${i + 1}. [${c.tipo}] ${c.titulo} - Notas: ${c.notas || ''}`).join('\n')}
+- Fotografías e Imágenes de Obra Subidas por el Usuario (${realCapturas.length} imágenes reales):
+${realCapturas.length > 0 
+  ? realCapturas.map((c, i) => `${i + 1}. [${c.tipo || 'foto'}] ${c.titulo} - Notas: ${c.notas || 'Evidencia fotográfica real aportada'}`).join('\n')
+  : 'Ninguna foto aportada. Generar el presupuesto exclusivamente a partir del audio transcrito y las anotaciones in situ.'}
 
 CATÁLOGO OFICIAL DE PRECIOS DE LA EMPRESA (Extracto disponible):
 ${(catalog || []).slice(0, 30).map(p => `- [${p.codigo}] (${p.capitulo}): ${p.concepto} | Coste subcontrata: ${p.costeSubcontrata}€/${p.unidad} | Margen: ${p.margenPct}% | PVP: ${p.precioVenta}€`).join('\n')}
 
 INSTRUCCIONES DE RESPUESTA:
-Genera un presupuesto técnico profesional estructurado por Capítulos. Asegúrate de incluir demoliciones, transporte a vertedero, partidas de albañilería, fontanería, electricidad y acabados con cantidades coherentes con las medidas del cliente.
+Genera un presupuesto técnico profesional estructurado por Capítulos. Asegúrate de incluir demoliciones, transporte a vertedero, partidas de albañilería, fontanería, electricidad y acabados con cantidades coherentes con las medidas y audio del cliente.
 `;
 
   return {
@@ -142,28 +110,89 @@ Genera un presupuesto técnico profesional estructurado por Capítulos. Asegúra
 /**
  * Processes the site visit expediente and compiles the hierarchical quote
  */
-export async function processSiteVisitExpediente(expediente, catalog, aiConfig, onProgress) {
+export async function processSiteVisitExpediente(expediente, catalog, aiConfig, onProgress, referenceBudgets = []) {
+  const activeRefs = (referenceBudgets || []).filter(b => b.is_active);
+
   if (onProgress) onProgress({ step: 1, label: 'Transcribiendo audios de visita y normalizando notas...' });
-  await new Promise(r => setTimeout(r, 600));
-
-  if (onProgress) onProgress({ step: 2, label: 'Analizando croquis con visión artificial y detectando demoliciones implícitas...' });
-  await new Promise(r => setTimeout(r, 700));
-
-  if (onProgress) onProgress({ step: 3, label: 'Cruzando partidas con la Base de Precios Oficial de la Empresa...' });
-  await new Promise(r => setTimeout(r, 800));
-
-  if (onProgress) onProgress({ step: 4, label: 'Estructurando presupuesto por capítulos y calculando márgenes...' });
   await new Promise(r => setTimeout(r, 500));
 
-  // Determine budget structure based on audio / parameters
-  const isVivienda = (expediente.audioTranscripcion || '').toLowerCase().includes('vivienda') ||
-                     (expediente.audioTranscripcion || '').toLowerCase().includes('piso') ||
-                     (expediente.audioTranscripcion || '').toLowerCase().includes('alcalá');
+  if (onProgress) onProgress({ step: 2, label: 'Analizando croquis con visión artificial y detectando demoliciones implícitas...' });
+  await new Promise(r => setTimeout(r, 600));
+
+  if (onProgress) onProgress({ step: 3, label: activeRefs.length > 0 ? `Aplicando Few-Shot RAG (${activeRefs.length} presupuestos modelo) y cruzando precios...` : 'Cruzando partidas con la Base de Precios Oficial de la Empresa...' });
+  await new Promise(r => setTimeout(r, 600));
+
+  if (onProgress) onProgress({ step: 4, label: 'Estructurando presupuesto por capítulos y calculando márgenes...' });
+  await new Promise(r => setTimeout(r, 400));
 
   const margen = Number(expediente.margenGlobalPct || 30);
   const tipoIva = Number(expediente.tipoIvaPct || 10);
 
   let rawChapters = [];
+  let generatedByGemini = false;
+
+  // 1. If Google Gemini is configured with a real API Key, call Gemini AI
+  if (aiConfig.apiKey && aiConfig.provider === 'google') {
+    try {
+      const realCapturas = (expediente.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
+      const combinedInput = [
+        expediente.audioTranscripcion ? `[AUDIO TRANSCRITO DE LA VISITA]:\n"${expediente.audioTranscripcion}"` : '',
+        expediente.medidasNotas ? `[MEDICIONES Y COTAS DICTADAS IN SITU]:\n${expediente.medidasNotas}` : '',
+        `[CALIDADES SOLICITADAS]: ${expediente.calidades || 'Media-Alta'}`,
+        realCapturas.length > 0
+          ? `[EVIDENCIAS FOTOGRÁFICAS REALES SUBIDAS POR EL USUARIO (${realCapturas.length})]:\n` + realCapturas.map((c, i) => `${i + 1}. [${c.tipo || 'foto'}] ${c.titulo} - Notas: ${c.notas || 'Evidencia gráfica aportada'}`).join('\n')
+          : `[EVIDENCIAS FOTOGRÁFICAS]: No se han adjuntado fotos de obra. Centrarse exclusivamente en el audio transcrito y las mediciones aportadas.`
+      ].filter(Boolean).join('\n\n');
+
+      const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || 'gemini-1.5-flash');
+      const promptUser = `
+EXPEDIENTE DE VISITA DE OBRA:
+- Cliente: ${expediente.cliente || 'Particular'}
+- Dirección: ${expediente.direccion || 'Madrid'}
+- Alcance / Dictado de Visita:
+"""
+${combinedInput}
+"""
+
+CATÁLOGO BASE DE PRECIOS DISPONIBLE:
+${(catalog || []).slice(0, 25).map(p => `- ${p.codigo}: ${p.concepto} | Coste sub: ${p.costeSubcontrata}€ | PVP: ${p.precioVenta}€ / ${p.unidad}`).join('\n')}
+
+Por favor, desglosa el presupuesto técnico completo respetando rigurosamente los presupuestos modelo de referencia de la empresa.`;
+
+      const aiResponse = await generateBudgetWithGemini({
+        promptUser,
+        apiKey: aiConfig.apiKey,
+        model: geminiModel,
+        temperature: 0.15,
+        referenceBudgets: activeRefs
+      });
+
+      if (aiResponse && aiResponse.capitulos && aiResponse.capitulos.length > 0) {
+        rawChapters = aiResponse.capitulos.map((cap, capIdx) => ({
+          id: `cap-${Date.now()}-${capIdx}`,
+          codigo: cap.codigo_capitulo || cap.codigo || String(capIdx + 1).padStart(2, '0'),
+          nombre: cap.nombre || cap.nombre_capitulo || `Capítulo ${capIdx + 1}`,
+          partidas: (cap.partidas || []).map(p => ({
+            codigo: p.codigo || `IA-${String(capIdx + 1).padStart(2, '0')}`,
+            concepto: p.titulo || p.concepto || p.descripcion || 'Partida técnica',
+            cantidad: Number(p.medicion || p.cantidad || 1),
+            unidad: p.unidad || 'ud',
+            costeUnitario: Number(p.precio_unitario_estimado ? (p.precio_unitario_estimado * 0.7).toFixed(2) : (p.costeUnitario || 20)),
+            margenPct: margen
+          }))
+        }));
+        generatedByGemini = true;
+      }
+    } catch (geminiErr) {
+      console.warn('Fallo llamada Gemini en visita, usando motor heurístico de contingencia:', geminiErr);
+    }
+  }
+
+  // 2. Fallback heuristic deterministic construction engine
+  if (rawChapters.length === 0) {
+    const isVivienda = (expediente.audioTranscripcion || '').toLowerCase().includes('vivienda') ||
+                       (expediente.audioTranscripcion || '').toLowerCase().includes('piso') ||
+                       (expediente.audioTranscripcion || '').toLowerCase().includes('alcalá');
 
   if (isVivienda) {
     rawChapters = [
@@ -253,6 +282,7 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
       }
     ];
   }
+  }
 
   // Calculate pricing
   const capitulosCalculados = rawChapters.map(cap => {
@@ -310,7 +340,9 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
     costeTotal,
     capitulos: capitulosCalculados,
     partidas: allPartidas,
-    aiGenerationSummary: `Generado automáticamente por el motor de IA a partir de visita técnica in situ (${expediente.capturas?.length || 2} evidencias analizadas y dictado transcrito). Detección de trabajos implícitos aplicada según LOE y normativa CTE.`,
+    aiGenerationSummary: generatedByGemini
+      ? `Generado por Google Gemini con entrenamiento contextual Few-Shot RAG (${activeRefs.length} presupuestos modelo aplicados) a partir de evidencias técnicas in situ.`
+      : `Generado mediante motor heurístico de construcción a partir de visita técnica in situ (${expediente.capturas?.length || 2} evidencias analizadas y dictado transcrito). Detección de trabajos implícitos aplicada según LOE y normativa CTE.`,
     historialRefinados: [
       {
         fecha: new Date().toLocaleTimeString().substring(0, 5),

@@ -99,7 +99,9 @@ export default function ObraDetail({ obraId, onBack }) {
   const [showNewAlertModal, setShowNewAlertModal] = useState(false);
   const [alertForm, setAlertForm] = useState({
     titulo: 'Instrucción Técnica / Seguridad',
-    descripcion: ''
+    descripcion: '',
+    tipo: 'seguridad',
+    prioridad: 'alta'
   });
 
   if (!obra) {
@@ -249,9 +251,18 @@ export default function ObraDetail({ obraId, onBack }) {
   const handleSaveNewAlert = (e) => {
     e.preventDefault();
     if (!alertForm.descripcion) return;
-    broadcastAdminAlert(obra.id, alertForm);
+    broadcastAdminAlert(obra.id, {
+      ...alertForm,
+      obraCodigo: obra.codigo,
+      obraTitulo: obra.titulo
+    });
     setShowNewAlertModal(false);
-    setAlertForm({ titulo: 'Instrucción Técnica / Seguridad', descripcion: '' });
+    setAlertForm({
+      titulo: 'Instrucción Técnica / Seguridad',
+      descripcion: '',
+      tipo: 'seguridad',
+      prioridad: 'alta'
+    });
   };
 
   return (
@@ -1445,6 +1456,33 @@ export default function ObraDetail({ obraId, onBack }) {
                   onChange={(e) => setAlertForm({ ...alertForm, titulo: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 block mb-1 font-bold">Tipo de Comunicado:</label>
+                  <select
+                    value={alertForm.tipo}
+                    onChange={(e) => setAlertForm({ ...alertForm, tipo: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400 font-semibold"
+                  >
+                    <option value="seguridad">🛡️ Seguridad / PRL</option>
+                    <option value="tecnico">📐 Instrucción Técnica</option>
+                    <option value="operativo">⚠️ Aviso Operativo</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-300 block mb-1 font-bold">Prioridad:</label>
+                  <select
+                    value={alertForm.prioridad}
+                    onChange={(e) => setAlertForm({ ...alertForm, prioridad: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400 font-semibold"
+                  >
+                    <option value="urgente">🔴 Urgente</option>
+                    <option value="alta">🟠 Alta</option>
+                    <option value="media">🟡 Normal / Media</option>
+                  </select>
+                </div>
               </div>
 
               <div>

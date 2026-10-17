@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic,
   MicOff,
@@ -12,25 +12,43 @@ import {
   FileAudio,
   Volume2,
   RotateCcw,
-  Clock
+  Clock,
+  Key,
+  ExternalLink,
+  Info,
+  ShieldAlert,
+  ChevronRight,
+  Settings,
+  Trash2
 } from 'lucide-react';
 import { transcribeAudio } from '../../services/aiAudioTextService';
 import { useApp } from '../../context/AppContext';
 
 export default function AudioVoiceRecorder({
   onTranscriptChange,
+  onTranscriptionComplete,
   initialTranscript = '',
-  placeholder = 'La transcripción del audio aparecerá aquí en tiempo real y podrás editarla...',
-  title = 'Grabación de Voz & Transcripción IA'
+  placeholder = 'La transcripción del audio aparecerá aquí en tiempo real y podrás editarla antes de generar partidas...',
+  title = 'Captura de Voz con Inteligencia Artificial (Whisper)'
 }) {
-  const { empresaConfig, showNotification } = useApp();
+  const { empresaConfig, showNotification, setActiveTab } = useApp();
+
+  const notifyTranscript = (text, blob = null) => {
+    if (onTranscriptChange) onTranscriptChange(text, blob);
+    if (onTranscriptionComplete) onTranscriptionComplete(text, blob);
+  };
 
   const [isRecording, setIsRecording] = useState(false);
+  const [isSimulatedRecording, setIsSimulatedRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState(initialTranscript);
+  const [liveSpeechText, setLiveSpeechText] = useState('');
   const [isEditing, setIsEditing] = useState(false);
-  const [audioSourceType, setAudioSourceType] = useState(null); // 'microphone', 'file', 'demo'
+  const [micVolume, setMicVolume] = useState(0); // 0 to 100%
+  const [micError, setMicError] = useState(null); // 'insecure_context' | 'permission_denied' | 'no_hardware' | null
+  const [showKeyGuideModal, setShowKeyGuideModal] = useState(false);
+  const [audioPreview, setAudioPreview] = useState(null); // { url, name, size }
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -38,6 +56,17 @@ export default function AudioVoiceRecorder({
   const canvasRef = useRef(null);
   const animationFrameRef = useRef(null);
   const fileInputRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const sourceRef = useRef(null);
+  const streamRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  const aiConfig = empresaConfig?.aiConfig || {};
+  const hasRealOpenAiKey =
+    aiConfig.apiKey &&
+    aiConfig.apiKey.startsWith('sk-') &&
+    !aiConfig.apiKey.includes('obramaster9876543210');
 
   // Sync initial transcript
   useEffect(() => {
@@ -46,86 +75,276 @@ export default function AudioVoiceRecorder({
     }
   }, [initialTranscript]);
 
-  // Waveform visualization while recording
-  useEffect(() => {
-    if (isRecording) {
-      let angle = 0;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-
-      const draw = () => {
-        angle += 0.18;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-        ctx.strokeStyle = '#f59e0b'; // Amber
-        ctx.lineWidth = 3;
-
-        for (let x = 0; x < canvas.width; x++) {
-          const y = canvas.height / 2 + Math.sin(x * 0.05 + angle) * 16 * Math.sin(angle * 0.5 + x * 0.02);
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        animationFrameRef.current = requestAnimationFrame(draw);
-      };
-      draw();
-    } else {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+  // Clean up AudioContext & MediaStream on unmount
+  const stopAudioTracks = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopAudioTracks();
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [stopAudioTracks]);
+
+  // Audio Visualization Loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    let simAngle = 0;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const barCount = 28;
+      const barWidth = Math.floor(width / barCount) - 2;
+
+      if (isRecording && analyserRef.current) {
+        // Real microphone frequency data
+        const analyser = analyserRef.current;
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+
+        // Calculate average volume level
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const volPct = Math.min(100, Math.round((avg / 128) * 100));
+        setMicVolume(volPct);
+
+        for (let i = 0; i < barCount; i++) {
+          const dataIndex = Math.floor((i / barCount) * dataArray.length);
+          const value = dataArray[dataIndex] || 0;
+          const percent = value / 255;
+          const barHeight = Math.max(4, percent * (height - 6));
+
+          const x = i * (barWidth + 2);
+          const y = (height - barHeight) / 2;
+
+          // Gradient: Amber -> Emerald for voice intensity
+          const gradient = ctx.createLinearGradient(0, height, 0, 0);
+          gradient.addColorStop(0, '#f59e0b'); // amber-500
+          gradient.addColorStop(0.7, '#fbbf24'); // amber-400
+          gradient.addColorStop(1, '#10b981'); // emerald-500
+
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.roundRect(x, y, barWidth, barHeight, 3);
+          ctx.fill();
+        }
+      } else if (isSimulatedRecording) {
+        // Simulated voice rhythm (natural cadence with peaks and pauses)
+        simAngle += 0.15;
+        const simVol = Math.round(30 + Math.sin(simAngle * 0.8) * 35);
+        setMicVolume(simVol);
+
+        for (let i = 0; i < barCount; i++) {
+          const wave = Math.sin(simAngle + i * 0.25) * Math.cos(simAngle * 0.5 + i * 0.1);
+          const percent = Math.abs(wave);
+          const barHeight = Math.max(4, percent * (height - 8));
+          const x = i * (barWidth + 2);
+          const y = (height - barHeight) / 2;
+
+          ctx.fillStyle = i % 2 === 0 ? '#f59e0b' : '#38bdf8';
+          ctx.beginPath();
+          ctx.roundRect(x, y, barWidth, barHeight, 3);
+          ctx.fill();
+        }
+      } else {
+        // Idle state: Subtle animated baseline dots
+        setMicVolume(0);
+        ctx.fillStyle = '#334155'; // slate-700
+        for (let i = 0; i < barCount; i++) {
+          const x = i * (barWidth + 2);
+          const y = height / 2 - 2;
+          ctx.beginPath();
+          ctx.roundRect(x, y, barWidth, 4, 2);
+          ctx.fill();
+        }
+      }
+
+      animationFrameRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [isRecording]);
+  }, [isRecording, isSimulatedRecording]);
 
-  // Start Live Microphone Recording with MediaRecorder
+  // Start Live Microphone Recording
   const handleStartRecording = async () => {
+    setMicError(null);
+    setLiveSpeechText('');
+
+    // Check secure context for local IP network
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!window.isSecureContext && !isLocalhost) {
+      setMicError('insecure_context');
+      showNotification('Conexión HTTP: El navegador exige HTTPS o localhost para activar el micrófono real.', 'error');
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMicError('insecure_context');
+      showNotification('El navegador no expone getUserMedia en este entorno.', 'error');
+      return;
+    }
+
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showNotification('Tu navegador no soporta captura de micrófono nativa. Usa la subida de audio.', 'error');
-        return;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      streamRef.current = stream;
+
+      // 1. Initialize AudioContext and AnalyserNode for the live sound wave
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = new AudioCtx();
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+          audioContextRef.current = audioCtx;
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          analyserRef.current = analyser;
+          const source = audioCtx.createMediaStreamSource(stream);
+          source.connect(analyser);
+          sourceRef.current = source;
+        }
+      } catch (audioCtxErr) {
+        console.warn('AudioContext visualization warning:', audioCtxErr);
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
+      // 2. Initialize browser SpeechRecognition for live speech-to-text
+      let fullSpeech = '';
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.lang = 'es-ES';
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.onresult = (event) => {
+            let interim = '';
+            for (let i = 0; i < event.results.length; i++) {
+              interim += event.results[i][0].transcript + ' ';
+            }
+            fullSpeech = interim;
+            setLiveSpeechText(interim);
+            setTranscript(interim);
+            notifyTranscript(interim, null);
+          };
+          recognition.onerror = (e) => {
+            console.warn('SpeechRecognition interim event:', e?.error);
+          };
+          recognition.start();
+          recognitionRef.current = recognition;
+        } catch (speechErr) {
+          console.warn('SpeechRecognition not available or failed:', speechErr);
+        }
+      }
 
+      // 3. Setup MediaRecorder for final audio blob
+      audioChunksRef.current = [];
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        stream.getTracks().forEach(track => track.stop());
-        await processAudioTranscription(audioBlob, 'microphone');
+        const previewUrl = URL.createObjectURL(audioBlob);
+        setAudioPreview({
+          url: previewUrl,
+          name: `Grabacion_${new Date().toLocaleTimeString().replace(/:/g, '-')}.webm`,
+          size: `${(audioBlob.size / 1024).toFixed(1)} KB`
+        });
+        stopAudioTracks();
+        await processAudioTranscription(audioBlob, 'microphone', fullSpeech);
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(250);
       setIsRecording(true);
+      setIsSimulatedRecording(false);
       setRecordSeconds(0);
-      setAudioSourceType('microphone');
 
       timerRef.current = setInterval(() => {
         setRecordSeconds(prev => prev + 1);
       }, 1000);
 
-      showNotification('🎙️ Grabando audio de obra... Habla con naturalidad.');
+      showNotification('🎙️ Micrófono conectado. Habla con claridad y observa las barras de sonido.');
     } catch (err) {
-      console.warn('Microphone permission or hardware error:', err);
-      showNotification('Permiso de micrófono denegado. Puedes subir un archivo de audio o usar la muestra.', 'error');
+      console.warn('Microphone error:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicError('permission_denied');
+        showNotification('Permiso de micrófono bloqueado. Desbloquéalo en el candado 🔒 de tu navegador.', 'error');
+      } else {
+        setMicError('no_hardware');
+        showNotification('No se ha detectado micrófono físico o está ocupado por otra app.', 'error');
+      }
     }
   };
 
-  // Stop Recording
+  // Start Simulated Voice Dictation (fallback for HTTP or when no mic)
+  const handleStartSimulatedRecording = () => {
+    setMicError(null);
+    setIsRecording(false);
+    setIsSimulatedRecording(true);
+    setRecordSeconds(0);
+
+    timerRef.current = setInterval(() => {
+      setRecordSeconds(prev => prev + 1);
+    }, 1000);
+
+    showNotification('▶️ Grabando simulación de voz de obra... Pulsa "Finalizar" para transcribir con IA.');
+  };
+
+  // Stop Recording (Physical or Simulated)
   const handleStopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
       setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
+    } else if (isSimulatedRecording) {
+      setIsSimulatedRecording(false);
+      const fakeBlob = new Blob(['simulated-audio-data'], { type: 'audio/webm' });
+      processAudioTranscription(fakeBlob, 'simulated', liveSpeechText);
     }
   };
 
@@ -134,32 +353,50 @@ export default function AudioVoiceRecorder({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setAudioSourceType('file');
-    showNotification(`Archivo "${file.name}" cargado. Transcribiendo con IA...`);
-    await processAudioTranscription(file, 'file');
+    // Reset input value so re-selecting same file works
+    e.target.value = '';
+
+    const previewUrl = URL.createObjectURL(file);
+    setAudioPreview({
+      url: previewUrl,
+      name: file.name,
+      size: `${(file.size / 1024).toFixed(1)} KB`
+    });
+
+    showNotification(`Archivo "${file.name}" cargado. Procesando transcripción...`);
+    await processAudioTranscription(file, 'file', '');
   };
 
-  // Load Demo Audio
-  const handleLoadDemoAudio = async () => {
-    setAudioSourceType('demo');
-    const demoBlob = new Blob(['sample-audio-data'], { type: 'audio/webm' });
-    await processAudioTranscription(demoBlob, 'demo');
+  const handleDiscardAudio = () => {
+    if (audioPreview?.url) {
+      try {
+        URL.revokeObjectURL(audioPreview.url);
+      } catch (e) {}
+    }
+    setAudioPreview(null);
+    setTranscript('');
+    notifyTranscript('', null);
+    showNotification('Audio descartado.');
   };
 
   // Transcribe and notify parent
-  const processAudioTranscription = async (blobOrFile, source) => {
+  const processAudioTranscription = async (blobOrFile, source, speechFallback = '') => {
     setIsTranscribing(true);
     try {
-      const res = await transcribeAudio(blobOrFile, empresaConfig?.aiConfig || {});
+      const res = await transcribeAudio(blobOrFile, aiConfig, speechFallback);
       if (res.success && res.text) {
         setTranscript(res.text);
-        if (onTranscriptChange) {
-          onTranscriptChange(res.text, blobOrFile);
-        }
-        showNotification('Transcripción completada con éxito. Revisa el texto antes de generar el presupuesto.');
+        notifyTranscript(res.text, blobOrFile);
+        showNotification(
+          res.source === 'whisper-api'
+            ? '✨ Audio transcribido por OpenAI Whisper Cloud con éxito.'
+            : res.source === 'browser-speech-recognition'
+            ? '🎙️ Audio transcribido mediante reconocimiento de voz del navegador.'
+            : '📝 Audio de obra procesado por el motor de IA.'
+        );
       }
     } catch (err) {
-      showNotification('Error al transcribir el audio.', 'error');
+      showNotification('Error al procesar la transcripción del audio.', 'error');
     } finally {
       setIsTranscribing(false);
     }
@@ -168,9 +405,7 @@ export default function AudioVoiceRecorder({
   const handleTextChange = (e) => {
     const val = e.target.value;
     setTranscript(val);
-    if (onTranscriptChange) {
-      onTranscriptChange(val, null);
-    }
+    notifyTranscript(val, null);
   };
 
   const formatTimer = (sec) => {
@@ -180,119 +415,260 @@ export default function AudioVoiceRecorder({
   };
 
   return (
-    <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4">
+    <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
       
-      {/* Title & Status */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <span className="text-xs font-bold text-white flex items-center gap-2">
-          <Volume2 className="w-4 h-4 text-amber-400" />
-          <span>{title}</span>
-        </span>
+      {/* 1. Header: Title & AI Cloud Engine Status */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/80 pb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <Volume2 className="w-4 h-4 stroke-[2.2]" />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-extrabold text-white leading-tight">{title}</h4>
+            <p className="text-[11px] text-slate-400">Captura por voz y normalización técnica</p>
+          </div>
+        </div>
 
-        <div className="flex items-center gap-2 text-[11px]">
-          {isRecording ? (
-            <span className="flex items-center gap-1.5 text-rose-400 font-bold animate-pulse">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-              <span>Grabando: {formatTimer(recordSeconds)}</span>
-            </span>
-          ) : isTranscribing ? (
-            <span className="flex items-center gap-1.5 text-indigo-400 font-bold">
-              <Sparkles className="w-3.5 h-3.5 animate-spin" />
-              <span>Transcribiendo con Whisper IA...</span>
+        {/* Engine Status Badge & Setup Helper */}
+        <div className="flex items-center gap-2">
+          {hasRealOpenAiKey ? (
+            <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Whisper Cloud Activo (OpenAI)
             </span>
           ) : (
-            <span className="text-slate-400 font-medium">Whisper STT Activo</span>
+            <button
+              type="button"
+              onClick={() => setShowKeyGuideModal(true)}
+              className="inline-flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-full transition"
+              title="Aprende cómo conectar tu API Key de OpenAI para Whisper nativo"
+            >
+              <Key className="w-3 h-3 text-amber-400" />
+              <span>Conectar API Key Whisper</span>
+              <Info className="w-3 h-3 text-amber-400/80" />
+            </button>
           )}
         </div>
       </div>
 
-      {/* Recording Waveform & Buttons */}
-      <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+      {/* 2. Recording Waveform Canvas & Control Buttons */}
+      <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
         
-        {/* Left: Waveform or Idle Graphic */}
-        <div className="w-full sm:w-1/2 flex items-center gap-3">
-          {isRecording ? (
-            <div className="w-full bg-slate-950 rounded-lg p-2 border border-amber-500/30 flex items-center justify-center">
-              <canvas ref={canvasRef} width={260} height={40} className="w-full h-10" />
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
+          
+          {/* Left: Dynamic Real Sound Waves */}
+          <div className="w-full lg:w-1/2 space-y-1.5">
+            <div className="bg-slate-950 rounded-xl p-2.5 border border-slate-800 flex flex-col justify-center">
+              <canvas
+                ref={canvasRef}
+                width={320}
+                height={48}
+                className="w-full h-12 rounded-lg"
+              />
             </div>
-          ) : (
-            <div className="w-full bg-slate-950/80 rounded-lg p-2.5 border border-slate-800 flex items-center gap-2 text-xs text-slate-400">
-              <Mic className="w-4 h-4 text-slate-500 shrink-0" />
-              <span className="truncate">Pulsa "Grabar Micrófono" o sube un archivo de voz</span>
-            </div>
-          )}
-        </div>
 
-        {/* Right: Controls */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {isRecording ? (
+            <div className="flex items-center justify-between px-1 text-[10px] font-mono text-slate-400">
+              <span className="flex items-center gap-1.5">
+                {isRecording ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="text-emerald-400 font-bold">Nivel Micrófono: {micVolume}%</span>
+                  </>
+                ) : isSimulatedRecording ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span className="text-amber-400 font-bold">Simulación Activa ({micVolume}%)</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-600"></span>
+                    <span>Detector de Sonido en Espera</span>
+                  </>
+                )}
+              </span>
+
+              {(isRecording || isSimulatedRecording) && (
+                <span className="text-rose-400 font-bold flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  <span>{formatTimer(recordSeconds)}</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex flex-wrap items-center justify-end gap-2 w-full lg:w-auto shrink-0">
+            
+            {isRecording || isSimulatedRecording ? (
+              <button
+                type="button"
+                onClick={handleStopRecording}
+                className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white font-black rounded-xl text-xs flex items-center gap-2 transition shadow-lg shadow-rose-600/30 animate-pulse"
+              >
+                <Square className="w-4 h-4 fill-white" />
+                <span>Finalizar y Transcribir</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleStartRecording}
+                className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 transition shadow-lg shadow-amber-500/20 active:scale-95"
+              >
+                <Mic className="w-4 h-4 stroke-[2.5]" />
+                <span>Grabar con Micrófono</span>
+              </button>
+            )}
+
+            {/* Simulation Button (Always Available fallback) */}
+            {!isRecording && !isSimulatedRecording && (
+              <button
+                type="button"
+                onClick={handleStartSimulatedRecording}
+                className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                title="Genera una simulación realista de voz si no tienes micrófono físico conectado"
+              >
+                <Play className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                <span>Simular Voz</span>
+              </button>
+            )}
+
+            {/* Upload Audio File */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
+              className="hidden"
+            />
             <button
               type="button"
-              onClick={handleStopRecording}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition shadow-lg shadow-rose-600/30"
+              onClick={() => {
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                  fileInputRef.current.click();
+                }
+              }}
+              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-amber-400/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+              title="Añadir archivo de audio grabado (mp3, wav, m4a, ogg, webm)"
             >
-              <Square className="w-3.5 h-3.5 fill-white" />
-              <span>Finalizar y Transcribir</span>
+              <Upload className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Añadir Audio</span>
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleStartRecording}
-              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 transition shadow-lg shadow-amber-500/20"
-            >
-              <Mic className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Grabar con Micrófono</span>
-            </button>
-          )}
+          </div>
 
-          {/* Upload Audio File */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-            title="Subir archivo m4a, mp3, wav"
-          >
-            <Upload className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Subir Audio</span>
-          </button>
-
-          {/* Quick Demo Sample Audio */}
-          <button
-            type="button"
-            onClick={handleLoadDemoAudio}
-            className="px-2.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-amber-400 border border-slate-800 rounded-xl text-xs font-semibold transition"
-            title="Cargar audio dictado de ejemplo"
-          >
-            <span>Ejemplo</span>
-          </button>
         </div>
+
+        {/* Audio Player Preview (if audio was recorded or uploaded) */}
+        {audioPreview && (
+          <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5 min-w-0 w-full sm:w-auto">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                <FileAudio className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-white font-bold truncate block">{audioPreview.name}</span>
+                <span className="text-[10px] text-slate-400 font-mono">{audioPreview.size} · Audio listo para procesar</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <audio src={audioPreview.url} controls className="h-8 w-full sm:w-60" />
+              <button
+                type="button"
+                onClick={handleDiscardAudio}
+                className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition shrink-0"
+                title="Descartar este archivo de audio"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Diagnostic Banner if mic error */}
+        {micError && (
+          <div className="bg-rose-950/30 border border-rose-500/40 p-3 rounded-xl text-xs space-y-2 animate-in fade-in">
+            <div className="flex items-start gap-2 text-rose-300 font-bold">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                {micError === 'insecure_context' && (
+                  <span>Restricción de Seguridad del Navegador (Conexión HTTP en Red Local)</span>
+                )}
+                {micError === 'permission_denied' && (
+                  <span>Permiso de Micrófono Bloqueado</span>
+                )}
+                {micError === 'no_hardware' && (
+                  <span>No se ha podido iniciar el micrófono físico</span>
+                )}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              {micError === 'insecure_context' && (
+                <>
+                  Los navegadores modernos (Chrome, Edge, Safari) bloquean la API de micrófono al navegar por IP local en HTTP (ej: <code>http://192.168.1.135:5173</code>). 
+                  Para usar tu micrófono real, abre la app desde <strong>http://localhost:5173</strong> en tu PC, o pulsa el botón <strong>"Simular Voz"</strong> para probar la transcripción y el generador de partidas de inmediato.
+                </>
+              )}
+              {micError === 'permission_denied' && (
+                <>
+                  Has bloqueado el micrófono en esta página. Pulsa en el <strong>icono del candado 🔒</strong> a la izquierda de la barra de direcciones de tu navegador, cambia el permiso de Micrófono a <strong>"Permitir"</strong> y recarga la página.
+                </>
+              )}
+              {micError === 'no_hardware' && (
+                <>
+                  Verifica que tu micrófono esté bien enchufado en Windows/móvil y que ninguna otra aplicación (Teams, Zoom, etc.) lo tenga bloqueado en exclusiva.
+                </>
+              )}
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleStartSimulatedRecording}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Usar Simulación de Voz de Obra</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 border border-slate-700 transition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Subir archivo mp3/m4a</span>
+              </button>
+            </div>
+          </div>
+        )}
 
       </div>
 
-      {/* Transcript Preview & Edit Area */}
+      {/* 3. Transcription Preview & Live Editing Box */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-[11px]">
-          <span className="font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Edit3 className="w-3 h-3 text-amber-400" />
-            <span>Transcripción Literal del Audio (Editable)</span>
+          <span className="font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+            <span>Transcripción del Audio (Editable en Vivo)</span>
           </span>
 
-          {transcript && (
-            <button
-              type="button"
-              onClick={() => setIsEditing(!isEditing)}
-              className="text-amber-400 hover:text-amber-300 font-semibold"
-            >
-              {isEditing ? 'Fijar Texto' : 'Modificar Términos'}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {transcript && (
+              <button
+                type="button"
+                onClick={() => setTranscript('')}
+                className="text-slate-500 hover:text-slate-300 text-[10px] transition"
+              >
+                Borrar
+              </button>
+            )}
+            {transcript && (
+              <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                {transcript.split(' ').filter(Boolean).length} palabras
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="relative">
@@ -301,23 +677,110 @@ export default function AudioVoiceRecorder({
             value={transcript}
             onChange={handleTextChange}
             placeholder={placeholder}
-            className="w-full bg-slate-900 border border-slate-800 focus:border-amber-500/60 rounded-xl p-3 text-xs text-white placeholder-slate-500 leading-relaxed focus:outline-none transition font-sans"
+            className="w-full bg-slate-900 border border-slate-800 focus:border-amber-500/60 rounded-xl p-3.5 text-xs text-white placeholder-slate-500 leading-relaxed focus:outline-none transition font-sans"
           ></textarea>
 
           {isTranscribing && (
-            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-amber-400">
-              <Sparkles className="w-4 h-4 animate-spin text-amber-400" />
-              <span>Transcribiendo audio con Inteligencia Artificial...</span>
+            <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm rounded-xl flex items-center justify-center gap-2.5 text-xs font-bold text-amber-400 border border-amber-500/40">
+              <Sparkles className="w-5 h-5 animate-spin text-amber-400" />
+              <span>Transcribiendo audio con Inteligencia Artificial (Whisper)...</span>
             </div>
           )}
         </div>
 
-        {transcript && (
-          <p className="text-[11px] text-slate-400 italic">
-            ✓ Texto listo. Puedes retocar mediciones o nombres antes de pulsar "Transformar con IA".
-          </p>
-        )}
+        <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+          <span>
+            {transcript ? (
+              <span className="text-amber-400/90 font-medium">
+                ✓ Transcripción lista. Puedes editar cualquier cifra antes de pulsar "Generar Partidas con IA".
+              </span>
+            ) : (
+              <span>Habla con naturalidad sobre partidas, mediciones, tabiques o demoliciones.</span>
+            )}
+          </span>
+        </div>
       </div>
+
+      {/* 4. Modal Guía: Cómo activar Whisper y la IA con API Key */}
+      {showKeyGuideModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-amber-500/40 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-white text-sm flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Cómo activar Whisper y la IA en ObraMaster</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowKeyGuideModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-slate-300 leading-relaxed text-[11px]">
+              <p>
+                ObraMaster integra el motor oficial de <strong>OpenAI Whisper</strong> (para transcribir la voz con máxima fidelidad en términos de construcción) y <strong>GPT-4o</strong> (para convertir esa voz en capítulos y partidas con precios).
+              </p>
+
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 font-bold">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center text-xs">1</span>
+                  <span>Obtén tu clave de OpenAI:</span>
+                </div>
+                <p className="text-slate-400 pl-7">
+                  Entra en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-amber-400 underline font-bold inline-flex items-center gap-0.5">platform.openai.com/api-keys <ExternalLink className="w-3 h-3" /></a> y crea una clave (empieza por <code>sk-</code>).
+                </p>
+              </div>
+
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 font-bold">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center text-xs">2</span>
+                  <span>Configúrala en ObraMaster:</span>
+                </div>
+                <p className="text-slate-400 pl-7">
+                  Ve a la pestaña <strong>Config. Fiscal & IA</strong> en el menú lateral izquierdo y accede a la sección <strong>Motor de Inteligencia Artificial</strong>.
+                </p>
+              </div>
+
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 font-bold">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center text-xs">3</span>
+                  <span>Prueba la conexión:</span>
+                </div>
+                <p className="text-slate-400 pl-7">
+                  Pega tu clave, selecciona el modelo <strong>GPT-4o</strong> y pulsa <strong>"Probar Conexión con Motor IA"</strong>. Quedará activado para siempre.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowKeyGuideModal(false)}
+                className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg"
+              >
+                Entendido
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowKeyGuideModal(false);
+                  if (setActiveTab) setActiveTab('empresa_config');
+                }}
+                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg transition flex items-center gap-1.5 shadow"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Ir a Configurar Clave Ahora</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );

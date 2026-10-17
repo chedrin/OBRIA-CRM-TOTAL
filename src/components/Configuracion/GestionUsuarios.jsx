@@ -36,11 +36,27 @@ export default function GestionUsuarios() {
     resetUserPassword,
     changeAdminPassword,
     generateRandomPassword,
+    createMobileAccountForEmployee,
     showNotification
   } = useApp();
 
   // Active Tab: obreros vs admins vs mi_perfil
   const [activeTab, setActiveTab] = useState('obreros');
+
+  // Compute clean normalized username
+  const computeUsername = (nombre, apellidos) => {
+    const raw = `${nombre || ''} ${apellidos || ''}`.trim();
+    if (!raw) return '';
+    return raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .join('.');
+  };
 
   // Form State: Nuevo Obrero
   const [showAddObreroModal, setShowAddObreroModal] = useState(false);
@@ -50,9 +66,13 @@ export default function GestionUsuarios() {
     especialidad: 'Albañilería & Alicatados',
     telefono: '',
     username: '',
-    password: '',
-    email: ''
+    password: 'obra2026',
+    email: '',
+    isCustomUsername: false
   });
+
+  // Modal de confirmación de credenciales
+  const [createdCredentialsModal, setCreatedCredentialsModal] = useState(null);
 
   // Form State: Nuevo Admin
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
@@ -77,35 +97,33 @@ export default function GestionUsuarios() {
 
   // Copied State
   const [copiedId, setCopiedId] = useState(null);
+  const [copiedCred, setCopiedCred] = useState(null);
 
   const obrerosList = users.filter(u => u.role === 'obrero');
   const adminsList = users.filter(u => u.role === 'admin');
 
-  // Generate suggested username from name
-  const handleNameChange = (e) => {
-    const val = e.target.value;
-    setObreroForm(prev => {
-      const generatedUser = val
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, '.');
-      return {
-        ...prev,
-        nombre: val,
-        username: prev.username ? prev.username : generatedUser
-      };
-    });
-  };
+  // Find employees that don't have mobile user credentials
+  const unlinkedEmployees = (employees || []).filter(e =>
+    e.estado === 'activo' &&
+    !users.some(u => u.id === e.usuarioId || u.employeeId === e.id || (e.obreroId && u.obreroId === e.obreroId))
+  );
 
   // Submit Nuevo Obrero
   const handleCreateObrero = (e) => {
     e.preventDefault();
     const fullName = `${obreroForm.nombre.trim()} ${obreroForm.apellidos.trim()}`.trim();
-    const pass = obreroForm.password || generateRandomPassword();
+    const cleanUser = (obreroForm.username || computeUsername(obreroForm.nombre, obreroForm.apellidos) || 'operario')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9.]/g, '')
+      .replace(/\.+/g, '.')
+      .replace(/^\.|\.$/g, '');
+
+    const pass = (obreroForm.password || 'obra2026').trim();
 
     const res = addUser({
-      username: obreroForm.username || obreroForm.nombre.toLowerCase().replace(/\s+/g, '.'),
+      username: cleanUser,
       password: pass,
       role: 'obrero',
       fullName,
@@ -141,14 +159,23 @@ export default function GestionUsuarios() {
       }
 
       setShowAddObreroModal(false);
+      setCreatedCredentialsModal({
+        fullName,
+        username: cleanUser,
+        password: pass,
+        phone: obreroForm.telefono || '',
+        dni: ''
+      });
+
       setObreroForm({
         nombre: '',
         apellidos: '',
         especialidad: 'Albañilería & Alicatados',
         telefono: '',
         username: '',
-        password: '',
-        email: ''
+        password: 'obra2026',
+        email: '',
+        isCustomUsername: false
       });
     } else {
       showNotification(res.error, 'error');
@@ -329,6 +356,34 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
               Pulsa <strong className="text-amber-400">"Copiar Datos"</strong> para enviar los datos de acceso por WhatsApp.
             </span>
           </div>
+
+          {unlinkedEmployees.length > 0 && (
+            <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="font-bold text-amber-300 block">
+                    {unlinkedEmployees.length} operario(s) dados de alta en RRHH no tienen cuenta móvil vinculada:
+                  </span>
+                  <span className="text-slate-400 text-[11px]">
+                    {unlinkedEmployees.map(e => `${e.nombre} ${e.apellidos}`).join(', ')}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  unlinkedEmployees.forEach(emp => {
+                    createMobileAccountForEmployee(emp.id, 'obra2026');
+                  });
+                }}
+                className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl transition text-xs shrink-0 shadow-md shadow-amber-500/20"
+              >
+                Activar Acceso Móvil ({unlinkedEmployees.length})
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {obrerosList.map((user) => (
@@ -609,7 +664,14 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                     required
                     placeholder="Ej: Carlos"
                     value={obreroForm.nombre}
-                    onChange={handleNameChange}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setObreroForm(prev => ({
+                        ...prev,
+                        nombre: val,
+                        username: prev.isCustomUsername ? prev.username : computeUsername(val, prev.apellidos)
+                      }));
+                    }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
                   />
                 </div>
@@ -620,7 +682,14 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                     required
                     placeholder="Ej: Ruiz Gómez"
                     value={obreroForm.apellidos}
-                    onChange={(e) => setObreroForm({ ...obreroForm, apellidos: e.target.value })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setObreroForm(prev => ({
+                        ...prev,
+                        apellidos: val,
+                        username: prev.isCustomUsername ? prev.username : computeUsername(prev.nombre, val)
+                      }));
+                    }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
                   />
                 </div>
@@ -664,38 +733,65 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-slate-400 block mb-1 font-semibold">Nombre de Usuario</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-400 font-semibold text-xs">Nombre de Usuario *</label>
+                      {obreroForm.isCustomUsername && (
+                        <button
+                          type="button"
+                          onClick={() => setObreroForm(prev => ({
+                            ...prev,
+                            isCustomUsername: false,
+                            username: computeUsername(prev.nombre, prev.apellidos)
+                          }))}
+                          className="text-[10px] text-amber-400 hover:underline"
+                        >
+                          Auto
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="text"
                       required
                       placeholder="ej: carlos.ruiz"
                       value={obreroForm.username}
-                      onChange={(e) => setObreroForm({ ...obreroForm, username: e.target.value.toLowerCase().replace(/\s+/g, '.') })}
+                      onChange={(e) => setObreroForm({ ...obreroForm, username: e.target.value.toLowerCase(), isCustomUsername: true })}
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono"
                     />
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-slate-400 font-semibold">Contraseña</label>
-                      <button
-                        type="button"
-                        onClick={() => setObreroForm({ ...obreroForm, password: generateRandomPassword() })}
-                        className="text-[10px] text-amber-400 hover:text-amber-300 font-bold"
-                      >
-                        ⚡ Generar
-                      </button>
+                      <label className="text-slate-400 font-semibold text-xs">Contraseña Móvil *</label>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setObreroForm({ ...obreroForm, password: 'obra2026' })}
+                          className="text-slate-400 hover:text-white text-[10px] bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700"
+                        >
+                          obra2026
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setObreroForm({ ...obreroForm, password: generateRandomPassword() })}
+                          className="text-amber-400 hover:text-amber-300 text-[10px] font-bold"
+                        >
+                          ⚡ Aleatoria
+                        </button>
+                      </div>
                     </div>
                     <input
                       type="text"
                       required
                       value={obreroForm.password}
                       onChange={(e) => setObreroForm({ ...obreroForm, password: e.target.value })}
-                      placeholder="Contraseña"
+                      placeholder="obra2026"
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-amber-400 font-mono font-bold"
                     />
                   </div>
                 </div>
+                <p className="text-[10px] text-slate-400">
+                  💡 El operario podrá identificarse en <code>/#empleados</code> con este <strong>usuario</strong>, con su <strong>número de móvil</strong> o con su <strong>DNI</strong>.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
@@ -863,6 +959,98 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN: CREDENCIALES GENERADAS */}
+      {createdCredentialsModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-emerald-500/40 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5">
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/30">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                ¡Operario Creado & Acceso Móvil Listo!
+              </span>
+              <h3 className="text-lg font-black text-white">{createdCredentialsModal.fullName}</h3>
+              <p className="text-xs text-slate-300">
+                El operario ya puede acceder inmediatamente a la app desde <code className="text-amber-400 font-mono">/#empleados</code>.
+              </p>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                <span className="text-slate-400">Enlace de la App:</span>
+                <code className="text-amber-400 font-mono font-bold">{window.location.origin}/#empleados</code>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Usuario móvil:</span>
+                <div className="flex items-center gap-1.5">
+                  <code className="text-white font-mono font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    {createdCredentialsModal.username}
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdCredentialsModal.username);
+                      setCopiedCred('user');
+                      setTimeout(() => setCopiedCred(null), 2500);
+                    }}
+                    className="p-1 text-slate-400 hover:text-white"
+                  >
+                    {copiedCred === 'user' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Contraseña:</span>
+                <div className="flex items-center gap-1.5">
+                  <code className="text-amber-400 font-mono font-black bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    {createdCredentialsModal.password}
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdCredentialsModal.password);
+                      setCopiedCred('pass');
+                      setTimeout(() => setCopiedCred(null), 2500);
+                    }}
+                    className="p-1 text-slate-400 hover:text-white"
+                  >
+                    {copiedCred === 'pass' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+              {createdCredentialsModal.phone && (
+                <div className="flex items-center justify-between pt-1 text-slate-400 border-t border-slate-800/60">
+                  <span>Teléfono móvil:</span>
+                  <span className="text-slate-300 font-mono">{createdCredentialsModal.phone}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                onClick={() => {
+                  const msg = `Hola ${createdCredentialsModal.fullName}, aquí tienes tus datos de acceso a la App de ObraMaster:\n\n🔗 Web Móvil: ${window.location.origin}/#empleados\n👤 Usuario: ${createdCredentialsModal.username}\n🔑 Contraseña: ${createdCredentialsModal.password}\n\n(También puedes identificarte con tu teléfono o DNI).\nRecuerda usar la opción 'Añadir a pantalla de inicio' en tu navegador para tenerla como app.`;
+                  navigator.clipboard.writeText(msg);
+                  setCopiedCred('whatsapp');
+                  showNotification('¡Mensaje copiado para enviar por WhatsApp o SMS!');
+                  setTimeout(() => setCopiedCred(null), 2500);
+                }}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition flex items-center justify-center gap-2 text-xs shadow-lg shadow-emerald-600/20"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>{copiedCred === 'whatsapp' ? '¡Mensaje Copiado!' : 'Copiar Mensaje para WhatsApp / SMS'}</span>
+              </button>
+
+              <button
+                onClick={() => setCreatedCredentialsModal(null)}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-2xl transition text-xs"
+              >
+                Entendido / Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

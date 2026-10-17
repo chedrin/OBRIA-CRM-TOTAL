@@ -23,73 +23,22 @@ import {
   HardHat
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-
-const PHOTO_PRESETS = [
-  {
-    id: 'bano_antiguo',
-    title: 'Baño Antiguo (Bañera a plato, azulejos 80s)',
-    url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80',
-    descripcion: 'Bañera de chapa 160cm, alicatado antiguo de gresite, bidé y sanitario con cisterna vista.',
-    tipo: 'Baño',
-    defaultAudio: 'Reforma integral de este baño de 5.5 m2. Demoler bañera antigua y alicatados con retirada a vertedero. Instalar plato de ducha de resina pizarra grafito 140x80 con mampara fija perfil negro. Inodoro suspendido con cisterna empotrada Geberit. Puntos de fontanería para mueble doble de 120cm. Alicatado porcelánico rectificado gran formato en paredes y suelo imitación madera. Techo de pladur verde hidrófugo con 4 focos LED.',
-    mediciones: { m2Paredes: 24, m2Suelo: 5.5, fontaneriaPuntos: 5, electricidadPuntos: 4 },
-    partidas: [
-      { id: 'gen-1', codigo: 'DEM-02', capitulo: 'Demoliciones', concepto: 'Picado de azulejos, desescombro de bañera y sanitarios con retirada en sacas a vertedero', cantidad: 29.5, unidad: 'm²', costeUnitario: 9.80, margenPct: 35, precioVenta: 13.23, total: 390.29 },
-      { id: 'gen-2', codigo: 'FON-01', capitulo: 'Fontanería', concepto: 'Instalación de fontanería multicapa empotrada para ducha, inodoro y lavabo doble', cantidad: 5, unidad: 'ud', costeUnitario: 65.00, margenPct: 25, precioVenta: 81.25, total: 406.25 },
-      { id: 'gen-3', codigo: 'FON-03', capitulo: 'Fontanería', concepto: 'Suministro e instalación de plato de ducha resina pizarra grafito 140x80 y mampara fija 100cm perfil negro', cantidad: 1, unidad: 'ud', costeUnitario: 140.00, margenPct: 30, precioVenta: 182.00, total: 182.00 },
-      { id: 'gen-4', codigo: 'FON-04', capitulo: 'Fontanería', concepto: 'Instalación de bastidor Geberit Duofix con cisterna empotrada e inodoro suspendido rimless', cantidad: 1, unidad: 'ud', costeUnitario: 160.00, margenPct: 25, precioVenta: 200.00, total: 200.00 },
-      { id: 'gen-5', codigo: 'ALB-02', capitulo: 'Albañilería', concepto: 'Falso techo continuo de pladur hidrófugo verde 13mm con perfiles y encintado', cantidad: 5.5, unidad: 'm²', costeUnitario: 24.00, margenPct: 30, precioVenta: 31.20, total: 171.60 },
-      { id: 'gen-6', codigo: 'ALI-01', capitulo: 'Revestimientos', concepto: 'Alicatado con porcelánico rectificado 60x120 imitación mármol calacatta con mortero cola C2TE', cantidad: 24, unidad: 'm²', costeUnitario: 26.00, margenPct: 30, precioVenta: 33.80, total: 811.20 },
-      { id: 'gen-7', codigo: 'ALI-02', capitulo: 'Revestimientos', concepto: 'Solado con porcelánico antideslizante imitación roble natural con juntas epoxi', cantidad: 5.5, unidad: 'm²', costeUnitario: 24.50, margenPct: 30, precioVenta: 31.85, total: 175.18 },
-      { id: 'gen-8', codigo: 'ELE-01', capitulo: 'Electricidad', concepto: 'Instalación de 4 downlights LED empotrados IP44 estancos y toma de corriente estanca para espejo', cantidad: 4, unidad: 'ud', costeUnitario: 32.00, margenPct: 25, precioVenta: 40.00, total: 160.00 },
-      { id: 'gen-9', codigo: 'PIN-02', capitulo: 'Pintura', concepto: 'Pintura plástica antimoho especial cuartos húmedos en techo', cantidad: 5.5, unidad: 'm²', costeUnitario: 7.50, margenPct: 30, precioVenta: 9.75, total: 53.63 }
-    ]
-  },
-  {
-    id: 'cocina_abierta',
-    title: 'Cocina Cerrada para Abrir al Salón',
-    url: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80',
-    descripcion: 'Tabique divisorio de 4 metros entre cocina y salón, muebles antiguos y suelo desgastado.',
-    tipo: 'Cocina',
-    defaultAudio: 'Reforma de cocina de 14 m² que queremos abrir por completo al salón. Hay que demoler tabique de ladrillo de 4.5 metros con contenedor en la calle. Diseñar isla central con tomas de fontanería para fregadero bajo encimera y lavavajillas, además de tomas de 25A para placa de inducción y horno. Suelo porcelánico gris rectificado 80x80 continuo nivelado con el salón. Techo de pladur con foseado perimetral para tira LED cálida.',
-    mediciones: { m2Paredes: 34, m2Suelo: 14, tabiqueDemolerM2: 12, electricidadPuntos: 8 },
-    partidas: [
-      { id: 'gen-10', codigo: 'DEM-01', capitulo: 'Demoliciones', concepto: 'Demolición de tabique divisorio de ladrillo hueco con medios manuales y carga de escombro', cantidad: 12, unidad: 'm²', costeUnitario: 12.50, margenPct: 35, precioVenta: 16.88, total: 202.56 },
-      { id: 'gen-11', codigo: 'DEM-02', capitulo: 'Demoliciones', concepto: 'Picado de azulejos perimetrales de cocina y retirada de muebles antiguos', cantidad: 34, unidad: 'm²', costeUnitario: 9.80, margenPct: 35, precioVenta: 13.23, total: 449.82 },
-      { id: 'gen-12', codigo: 'DEM-04', capitulo: 'Demoliciones', concepto: 'Contenedor de obra 5m³ con tasas municipales y canon de vertedero', cantidad: 2, unidad: 'ud', costeUnitario: 180.00, margenPct: 20, precioVenta: 216.00, total: 432.00 },
-      { id: 'gen-13', codigo: 'FON-01', capitulo: 'Fontanería', concepto: 'Nuevas líneas de fontanería multicapa por suelo para isla (fregadero, lavavajillas y desagües)', cantidad: 4, unidad: 'ud', costeUnitario: 65.00, margenPct: 25, precioVenta: 81.25, total: 325.00 },
-      { id: 'gen-14', codigo: 'ELE-02', capitulo: 'Electricidad', concepto: 'Circuitos de fuerza independientes 6mm² para inducción y horno + 6 tomas para electrodomésticos', cantidad: 8, unidad: 'ud', costeUnitario: 34.00, margenPct: 25, precioVenta: 42.50, total: 340.00 },
-      { id: 'gen-15', codigo: 'ALB-02', capitulo: 'Albañilería', concepto: 'Falso techo continuo de pladur con foseado decorativo para candileja LED indirecta', cantidad: 14, unidad: 'm²', costeUnitario: 24.00, margenPct: 30, precioVenta: 31.20, total: 436.80 },
-      { id: 'gen-16', codigo: 'ALI-02', capitulo: 'Revestimientos', concepto: 'Solado con porcelánico rectificado 80x80 imitación hormigón pulido nivelado con tarima de salón', cantidad: 14, unidad: 'm²', costeUnitario: 24.50, margenPct: 30, precioVenta: 31.85, total: 445.90 },
-      { id: 'gen-17', codigo: 'PIN-02', capitulo: 'Pintura', concepto: 'Pintura plástica superlavable mate especial cocinas en techos y paredes no alicatadas', cantidad: 28, unidad: 'm²', costeUnitario: 7.50, margenPct: 30, precioVenta: 9.75, total: 273.00 }
-    ]
-  },
-  {
-    id: 'piso_completo',
-    title: 'Reforma Integral Vivienda 85m² (Gotelé, Suelos, Puertas)',
-    url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80',
-    descripcion: 'Piso antiguo con gotelé en todas las estancias, puertas sapelly y suelos desgastados.',
-    tipo: 'Vivienda Integral',
-    defaultAudio: 'Reforma completa de piso de 85 m². Alisar gotelé en todo el piso aproximadamente 220 m² de paramentos verticales y techos. Instalación de tarima flotante laminada AC5 hidrófuga en toda la casa con rodapié lacado blanco. Sustitución de 6 puertas de paso por modelos macizos lacados en blanco con manillas magnéticas. Cuadro eléctrico nuevo según normativa REBT con boletín oficial de industria.',
-    mediciones: { m2AlisadoParedes: 220, m2Tarima: 75, puertasPaso: 6, cuadroElectrico: 1 },
-    partidas: [
-      { id: 'gen-20', codigo: 'PIN-01', capitulo: 'Pintura', concepto: 'Alisado de gotelé mediante tendido de dos manos de masilla, lijado con aspiración y fijador acrílico', cantidad: 220, unidad: 'm²', costeUnitario: 12.00, margenPct: 30, precioVenta: 15.60, total: 3432.00 },
-      { id: 'gen-21', codigo: 'PIN-02', capitulo: 'Pintura', concepto: 'Pintura plástica lisa lavable mate blanco puro en techos y paredes a dos manos', cantidad: 220, unidad: 'm²', costeUnitario: 7.50, margenPct: 30, precioVenta: 9.75, total: 2145.00 },
-      { id: 'gen-22', codigo: 'CAR-02', capitulo: 'Carpintería', concepto: 'Suministro e instalación de suelo laminado AC5 alta resistencia con base aislante acústica y rodapié lacado 9cm', cantidad: 75, unidad: 'm²', costeUnitario: 21.00, margenPct: 25, precioVenta: 26.25, total: 1968.75 },
-      { id: 'gen-23', codigo: 'CAR-01', capitulo: 'Carpintería', concepto: 'Suministro y montaje de puertas de paso macizas lacadas en blanco block 72.5cm con herrajes magnéticos', cantidad: 6, unidad: 'ud', costeUnitario: 240.00, margenPct: 22, precioVenta: 292.80, total: 1756.80 },
-      { id: 'gen-24', codigo: 'ELE-03', capitulo: 'Electricidad', concepto: 'Cuadro general de mando y protección con IGA, ID superinmunizado, 6 circuitos y boletín oficial CIE', cantidad: 1, unidad: 'ud', costeUnitario: 380.00, margenPct: 25, precioVenta: 475.00, total: 475.00 }
-    ]
-  }
-];
+import { processScopeWithAI } from '../../services/aiAudioTextService';
 
 export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
-  const { addPresupuesto, addObra, showNotification } = useApp();
+  const {
+    addPresupuesto,
+    addObra,
+    showNotification,
+    empresaConfig,
+    basePrecios,
+    referenceBudgets
+  } = useApp();
 
-  // Selected Preset or custom input
-  const [selectedPreset, setSelectedPreset] = useState(PHOTO_PRESETS[0]);
+  // User Uploaded Photos and Audio Transcript (No sample stock photos)
   const [customPhotos, setCustomPhotos] = useState([]);
   const [customPhotoUrl, setCustomPhotoUrl] = useState('');
-  const [audioTranscript, setAudioTranscript] = useState(PHOTO_PRESETS[0].defaultAudio);
+  const [audioTranscript, setAudioTranscript] = useState('Reforma integral de baño: demoler alicatados y bañera antigua con retirada a vertedero en sacas homologadas. Instalar plato de ducha de resina pizarra grafito 140x80 con mampara fija perfil negro. Inodoro suspendido Geberit. Puntos de fontanería multicapa y solado porcelánico rectificado.');
 
   // AI Training & Redaction Examples State
   const [showExamplesModal, setShowExamplesModal] = useState(false);
@@ -121,11 +70,15 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
           id: `usr-img-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           title: file.name,
           url: event.target.result,
-          descripcion: 'Foto subida por el usuario'
+          file: file,
+          descripcion: `Foto tomada en obra (${(file.size / 1024).toFixed(0)} KB)`
         }]);
       };
       reader.readAsDataURL(file);
     });
+    if (files.length > 0) {
+      showNotification(`📸 ${files.length} foto(s) de obra añadida(s).`);
+    }
   };
 
   const handleAddPhotoUrl = () => {
@@ -137,8 +90,16 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
       descripcion: 'Foto de obra vía enlace'
     }]);
     setCustomPhotoUrl('');
+    showNotification('Foto añadida correctamente.');
   };
-  const [obraTitulo, setObraTitulo] = useState('Reforma de Baño Suite C/ Serrano');
+
+  const handleDeleteCustomPhoto = (id, e) => {
+    if (e) e.stopPropagation();
+    setCustomPhotos(prev => prev.filter(p => p.id !== id));
+    showNotification('Foto eliminada.');
+  };
+
+  const [obraTitulo, setObraTitulo] = useState('Reforma Integral de Vivienda');
   const [clienteNombre, setClienteNombre] = useState('Dña. Victoria Méndez');
   const [clienteNif, setClienteNif] = useState('51904231S');
   const [clienteDireccion, setClienteDireccion] = useState('Calle Serrano 82, 4ºD, Madrid');
@@ -153,48 +114,76 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   // Editable partidas state once generated
   const [partidasList, setPartidasList] = useState([]);
 
-  const handleSelectPreset = (preset) => {
-    setSelectedPreset(preset);
-    setAudioTranscript(preset.defaultAudio);
-    if (preset.id === 'bano_antiguo') {
-      setObraTitulo('Reforma Integral Baño Suite C/ Serrano');
-      setClienteNombre('Dña. Victoria Méndez');
-    } else if (preset.id === 'cocina_abierta') {
-      setObraTitulo('Reforma Cocina Abierta con Isla Paseo Castellana');
-      setClienteNombre('D. Carlos Peñafiel');
-    } else {
-      setObraTitulo('Reforma Completa Vivienda C/ Alcalá');
-      setClienteNombre('Inmuebles & Viviendas Madrid SL');
-    }
-  };
-
-  const handleRunAiAnalysis = () => {
+  const handleRunAiAnalysis = async () => {
     setIsAnalyzing(true);
     setAnalysisStep(1);
 
-    setTimeout(() => setAnalysisStep(2), 700);
-    setTimeout(() => setAnalysisStep(3), 1500);
-    setTimeout(() => setAnalysisStep(4), 2200);
+    const photosText = customPhotos.length > 0
+      ? `[FOTOGRAFÍAS REALES SUBIDAS POR EL USUARIO (${customPhotos.length})]:\n` +
+        customPhotos.map((p, i) => `${i + 1}. ${p.title} - ${p.descripcion || 'Foto aportada por el usuario'}`).join('\n')
+      : '[FOTOGRAFÍAS]: No se han aportado fotos. Generar presupuesto estrictamente según el audio y texto.';
 
-    setTimeout(() => {
+    const combinedInput = [
+      audioTranscript ? `[AUDIO TRANSCRITO / NOTAS DE VOZ]:\n${audioTranscript}` : '',
+      photosText
+    ].filter(Boolean).join('\n\n');
+
+    if (!combinedInput.trim()) {
+      showNotification('Por favor, indica las instrucciones de obra en audio o texto antes de generar con IA.', 'error');
       setIsAnalyzing(false);
-      const chosenPartidas = selectedPreset.partidas.map(p => {
-        // Recalculate with chosen global margin
-        const coste = p.costeUnitario;
-        const pvp = Number((coste * (1 + margenGlobal / 100)).toFixed(2));
-        const tot = Number((pvp * p.cantidad).toFixed(2));
-        return {
-          ...p,
-          margenPct: margenGlobal,
-          precioVenta: pvp,
-          total: tot
-        };
+      return;
+    }
+
+    setTimeout(() => setAnalysisStep(2), 600);
+    setTimeout(() => setAnalysisStep(3), 1200);
+
+    try {
+      const aiResult = await processScopeWithAI(
+        combinedInput,
+        'presupuesto_obra',
+        null,
+        empresaConfig?.aiConfig || {},
+        basePrecios,
+        referenceBudgets,
+        customPhotos
+      );
+
+      setAnalysisStep(4);
+
+      const generatedItems = [];
+      (aiResult.capitulos || []).forEach(cap => {
+        (cap.partidas || []).forEach(part => {
+          const med = Number(part.medicion || part.cantidad || 1);
+          const pvp = Number(part.precioVenta || part.precio_unitario_estimado || part.precioUnitario || 25);
+          const coste = Number(part.costeUnitario || Number((pvp * 0.7).toFixed(2)));
+          const pvpWithMargin = Number((coste * (1 + margenGlobal / 100)).toFixed(2));
+          const tot = Number((pvpWithMargin * med).toFixed(2));
+
+          generatedItems.push({
+            id: part.id || `gen-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            codigo: part.codigo || 'GEN-01',
+            capitulo: cap.nombre_capitulo || cap.nombre || 'General',
+            concepto: part.concepto || part.titulo || part.descripcion,
+            cantidad: med,
+            unidad: part.unidad || 'ud',
+            costeUnitario: coste,
+            margenPct: margenGlobal,
+            precioVenta: pvpWithMargin,
+            total: tot
+          });
+        });
       });
 
-      setPartidasList(chosenPartidas);
+      setPartidasList(generatedItems);
       setGeneratedResult({
-        preset: selectedPreset,
-        mediciones: selectedPreset.mediciones
+        audio: audioTranscript,
+        photosCount: customPhotos.length,
+        resumen: aiResult.resumen_alcance || aiResult.resumen_obra,
+        mediciones: {
+          partidasGeneradas: generatedItems.length,
+          fotosAnalizadas: customPhotos.length,
+          margenAplicado: `${margenGlobal}%`
+        }
       });
 
       confetti({
@@ -202,8 +191,13 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         spread: 60,
         origin: { y: 0.6 }
       });
-      showNotification('¡Presupuesto generado con éxito por la IA!');
-    }, 2800);
+      showNotification('¡Presupuesto generado con éxito por la IA a partir de tus archivos y audio!');
+    } catch (err) {
+      console.error('Error generando presupuesto IA:', err);
+      showNotification(`Error de IA: ${err.message || 'No se pudieron generar las partidas'}`, 'error');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleUpdatePartidaCantidad = (id, newCant) => {
@@ -290,9 +284,11 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
                 <Camera className="w-4 h-4 text-amber-400" />
-                <span>1. Fotos del Estado Actual</span>
+                <span>1. Fotos de Obra (Archivos Subidos)</span>
               </h3>
-              <span className="text-[11px] text-slate-400">Subida propia / Plantillas</span>
+              <span className="text-[11px] text-amber-400/90 font-bold">
+                {customPhotos.length === 0 ? 'Sin fotos adjuntas' : `${customPhotos.length} ${customPhotos.length === 1 ? 'foto' : 'fotos'}`}
+              </span>
             </div>
 
             {/* Custom Photo File Input & Camera Button */}
@@ -328,70 +324,51 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
             </div>
 
             {/* User Uploaded Photos List */}
-            {customPhotos.length > 0 && (
-              <div className="space-y-1.5 pt-1">
-                <span className="text-[11px] text-amber-400 font-bold block">Fotos Subidas por el Usuario ({customPhotos.length}):</span>
-                <div className="grid grid-cols-3 gap-2">
-                  {customPhotos.map((item) => {
-                    const isSelected = selectedPreset.id === item.id;
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => setSelectedPreset(item)}
-                        className={`cursor-pointer rounded-xl overflow-hidden border-2 transition relative group ${
-                          isSelected ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        <img src={item.url} alt={item.title} className="w-full h-20 object-cover" />
-                        <div className="p-1 bg-slate-950 text-center">
-                          <span className="text-[9px] font-bold text-emerald-400 truncate block">{item.title}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+            {customPhotos.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-300 font-bold block">
+                    Fotos de la obra para análisis ({customPhotos.length}):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCustomPhotos([])}
+                    className="text-[10px] text-rose-400 hover:text-rose-300 underline"
+                  >
+                    Borrar todas
+                  </button>
                 </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {customPhotos.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950 relative group"
+                    >
+                      <img src={item.url} alt={item.title} className="w-full h-20 object-cover" />
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteCustomPhoto(item.id, e)}
+                        className="absolute top-1 right-1 w-5 h-5 rounded bg-rose-600/90 hover:bg-rose-600 text-white flex items-center justify-center transition shadow opacity-90 hover:opacity-100"
+                        title="Eliminar esta foto"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                      <div className="p-1 bg-slate-950 text-center truncate">
+                        <span className="text-[9px] font-bold text-amber-300 truncate block">{item.title}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="border border-dashed border-slate-800 rounded-xl p-4 text-center space-y-1 bg-slate-950/60">
+                <Camera className="w-6 h-6 text-slate-600 mx-auto" />
+                <span className="text-xs text-slate-300 font-medium block">Sin fotos de obra</span>
+                <p className="text-[11px] text-slate-500">
+                  La IA generará el presupuesto basándose exclusivamente en el audio transcrito y las notas técnicas.
+                </p>
               </div>
             )}
-
-            {/* Presets Gallery */}
-            <div className="space-y-1 pt-1">
-              <span className="text-[11px] text-slate-400 font-medium block">O elige una foto de muestra:</span>
-              <div className="grid grid-cols-3 gap-2">
-                {PHOTO_PRESETS.map((preset) => {
-                  const isSelected = selectedPreset.id === preset.id;
-                  return (
-                    <div
-                      key={preset.id}
-                      onClick={() => handleSelectPreset(preset)}
-                      className={`cursor-pointer rounded-xl overflow-hidden border-2 transition relative group ${
-                        isSelected ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={preset.url} alt={preset.title} className="w-full h-20 object-cover" />
-                      <div className="p-1.5 bg-slate-950 text-center">
-                        <span className="text-[10px] font-bold text-white truncate block">{preset.tipo}</span>
-                      </div>
-                      {isSelected && (
-                        <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">
-                          ✓
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Active Photo Preview */}
-            <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
-              <img src={selectedPreset.url} alt="Foto seleccionada" className="w-full h-44 object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent flex items-end p-3">
-                <div className="text-white">
-                  <span className="text-xs font-bold text-amber-400 block">{selectedPreset.title}</span>
-                  <p className="text-[11px] text-slate-300">{selectedPreset.descripcion}</p>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* 2. Audio Transcript Input Card & AI Style Examples Button */}

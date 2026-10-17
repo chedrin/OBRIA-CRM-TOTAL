@@ -24,11 +24,14 @@ import {
   ExternalLink,
   ChevronDown,
   Check,
-  FileText
+  FileText,
+  Bell,
+  ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import PwaInstallPrompt from './PwaInstallPrompt';
 import TaskProgressSelector from './TaskProgressSelector';
+import AvisosTecnicosModal from './AvisosTecnicosModal';
 
 export default function PortalObreroView() {
   const {
@@ -44,7 +47,9 @@ export default function PortalObreroView() {
     broadcastWorkerProgress,
     broadcastWorkerEvidence,
     isOnline,
-    offlineQueueLength
+    offlineQueueLength,
+    avisosTecnicos,
+    marcarAvisoLeido
   } = useApp();
 
   const isObreroLoggedIn = currentUser?.role === 'obrero';
@@ -73,6 +78,27 @@ export default function PortalObreroView() {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showHorasModal, setShowHorasModal] = useState(false);
+  const [showAvisosModal, setShowAvisosModal] = useState(false);
+
+  // Unread technical notices calculation for this worker
+  const obreroIdentifier = currentObrero?.username ||
+    currentObrero?.id ||
+    (currentObrero?.nombre ? currentObrero.nombre.toLowerCase().replace(/\s+/g, '.') : 'operario');
+
+  const isAvisoLeido = (aviso) => {
+    const list = Array.isArray(aviso.leidoPor) ? aviso.leidoPor : [];
+    return list.some(id =>
+      id === obreroIdentifier ||
+      id === currentObrero?.id ||
+      id === currentObrero?.nombre ||
+      id === currentObrero?.username
+    );
+  };
+
+  const unreadAvisos = (avisosTecnicos || []).filter(a => !isAvisoLeido(a));
+  const unreadAvisosCount = unreadAvisos.length;
+  const unreadAvisosObra = unreadAvisos.filter(a => a.obraId === activeObraId);
+  const unreadAvisosObraCount = unreadAvisosObra.length;
 
   // Hours and Stock logging
   const [horasTrabajadas, setHorasTrabajadas] = useState(8);
@@ -234,18 +260,34 @@ export default function PortalObreroView() {
             </div>
           </div>
 
-          <button
-            onClick={() => {
-              if (window.confirm('¿Deseas cerrar tu sesión?')) {
-                logout();
-              }
-            }}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
-            title="Cerrar sesión"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Salir</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAvisosModal(true)}
+              className="relative p-2 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
+              title="Avisos e Instrucciones Técnicas"
+            >
+              <Bell className="w-4 h-4" />
+              <span className="hidden sm:inline">Avisos</span>
+              {unreadAvisosCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-rose-500 text-white rounded-full text-[10px] font-black flex items-center justify-center animate-pulse">
+                  {unreadAvisosCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                if (window.confirm('¿Deseas cerrar tu sesión?')) {
+                  logout();
+                }
+              }}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Salir</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/50 p-4 rounded-2xl border border-slate-800">
@@ -274,6 +316,20 @@ export default function PortalObreroView() {
                 ))}
               </select>
             </div>
+
+            <button
+              onClick={() => setShowAvisosModal(true)}
+              className="relative px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition border border-slate-700"
+              title="Ver avisos técnicos recibidos"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>Avisos</span>
+              {unreadAvisosCount > 0 && (
+                <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black">
+                  {unreadAvisosCount}
+                </span>
+              )}
+            </button>
 
             <button
               onClick={() => setIsPhoneFrame(!isPhoneFrame)}
@@ -328,18 +384,33 @@ export default function PortalObreroView() {
                 </div>
               </div>
 
-              {/* Fichar Button */}
-              <button
-                onClick={() => {
-                  setFichadoEntrada(!fichadoEntrada);
-                  showNotification(fichadoEntrada ? 'Jornada finalizada y fichaje registrado.' : 'Jornada iniciada. ¡Buen día de trabajo!');
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shadow ${
-                  fichadoEntrada ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                }`}
-              >
-                {fichadoEntrada ? 'Fin Jornada' : 'Fichar Entrada'}
-              </button>
+              {/* Actions: Avisos & Fichar */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => setShowAvisosModal(true)}
+                  className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition"
+                  title="Avisos e Instrucciones Técnicas"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadAvisosCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
+                      {unreadAvisosCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setFichadoEntrada(!fichadoEntrada);
+                    showNotification(fichadoEntrada ? 'Jornada finalizada y fichaje registrado.' : 'Jornada iniciada. ¡Buen día de trabajo!');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shadow ${
+                    fichadoEntrada ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                  }`}
+                >
+                  {fichadoEntrada ? 'Fin Turno' : 'Fichar'}
+                </button>
+              </div>
             </div>
 
             {/* Realtime Connectivity Status Banner */}
@@ -355,36 +426,36 @@ export default function PortalObreroView() {
                   Modo Offline ({offlineQueueLength} pendientes)
                 </span>
               )}
-              <span className="text-[10px] text-slate-500 font-mono">Central Obra Conectada</span>
+              <span className="text-[10px] text-slate-500 font-mono">Central Conectada</span>
             </div>
 
             {/* Quick Actions in Jobsite */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 onClick={() => setShowPhotoModal(true)}
-                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
+                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 rounded-xl text-left transition space-y-1 group"
               >
                 <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition">
                   <Camera className="w-4 h-4" />
                 </div>
                 <span className="font-bold text-white text-[11px] block truncate">Foto Avance</span>
-                <span className="text-[9px] text-slate-400 block truncate">Evidencia de fase</span>
+                <span className="text-[9px] text-slate-400 block truncate">Evidencia</span>
               </button>
 
               <button
                 onClick={() => setShowVoiceModal(true)}
-                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
+                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/30 rounded-xl text-left transition space-y-1 group"
               >
                 <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition">
                   <Mic className="w-4 h-4" />
                 </div>
                 <span className="font-bold text-white text-[11px] block truncate">Nota de Voz</span>
-                <span className="text-[9px] text-slate-400 block truncate">Aviso por audio</span>
+                <span className="text-[9px] text-slate-400 block truncate">Audio IA</span>
               </button>
 
               <button
                 onClick={() => setShowHorasModal(true)}
-                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left transition space-y-1 group"
+                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/30 rounded-xl text-left transition space-y-1 group"
               >
                 <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition">
                   <Clock className="w-4 h-4" />
@@ -392,7 +463,60 @@ export default function PortalObreroView() {
                 <span className="font-bold text-white text-[11px] block truncate">Horas & Stock</span>
                 <span className="text-[9px] text-slate-400 block truncate">Imputar turno</span>
               </button>
+
+              <button
+                onClick={() => setShowAvisosModal(true)}
+                className={`p-2.5 bg-slate-950 hover:bg-slate-800 border rounded-xl text-left transition space-y-1 group relative ${
+                  unreadAvisosCount > 0 ? 'border-amber-500/50 bg-amber-500/5 shadow-md' : 'border-slate-800'
+                }`}
+              >
+                <div className="w-7 h-7 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-110 transition relative">
+                  <Bell className="w-4 h-4" />
+                  {unreadAvisosCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-[11px] block truncate">Avisos</span>
+                  {unreadAvisosCount > 0 && (
+                    <span className="text-[9px] font-black bg-rose-500 text-white px-1.5 rounded-full">
+                      {unreadAvisosCount}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[9px] text-slate-400 block truncate">Técnicos & PRL</span>
+              </button>
             </div>
+
+            {/* Unread Notice Banner for this Obra */}
+            {unreadAvisosObraCount > 0 && (
+              <div
+                onClick={() => setShowAvisosModal(true)}
+                className="bg-gradient-to-r from-amber-500/20 via-rose-500/15 to-amber-500/20 border border-amber-500/60 p-3 rounded-2xl cursor-pointer hover:border-amber-400 transition flex items-center justify-between gap-2.5 shadow-lg shadow-amber-500/10 animate-in fade-in"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 to-amber-500 text-white flex items-center justify-center font-black shrink-0 animate-pulse">
+                    <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-amber-300">
+                        {unreadAvisosObraCount} {unreadAvisosObraCount === 1 ? 'Aviso Técnico' : 'Avisos'} en esta obra
+                      </span>
+                      <span className="text-[9px] bg-rose-500 text-white font-bold px-1.5 py-0.2 rounded-full">
+                        Atención
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 truncate">
+                      {unreadAvisosObra[0]?.titulo}
+                    </p>
+                  </div>
+                </div>
+                <button className="text-[11px] font-bold text-amber-300 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-amber-500/40 shrink-0">
+                  Ver
+                </button>
+              </div>
+            )}
 
             {/* Work Selector */}
             <div className="space-y-1.5">
@@ -762,6 +886,14 @@ export default function PortalObreroView() {
           </div>
         </div>
       )}
+
+      {/* Modal Avisos Técnicos e Instrucciones de Dirección de Obra */}
+      <AvisosTecnicosModal
+        isOpen={showAvisosModal}
+        onClose={() => setShowAvisosModal(false)}
+        currentObrero={currentObrero}
+        currentObraId={activeObraId}
+      />
 
     </div>
   );

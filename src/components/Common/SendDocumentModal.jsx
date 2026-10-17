@@ -1,0 +1,368 @@
+import React, { useState } from 'react';
+import { useApp } from '../../context/AppContext';
+import {
+  Send,
+  CheckCircle2,
+  Share2,
+  X,
+  Phone,
+  Mail,
+  ExternalLink,
+  ShieldCheck,
+  FileCheck2,
+  Copy,
+  MessageSquare,
+  Sparkles,
+  AlertCircle,
+  RefreshCw,
+  Eye
+} from 'lucide-react';
+import confetti from 'canvas-confetti';
+import {
+  sendEmailDocument,
+  sendWhatsAppCloudMessage,
+  buildWhatsAppDirectUrl,
+  generateDocumentEmailHtml
+} from '../../services/documentDispatchService';
+
+export default function SendDocumentModal({
+  isOpen,
+  onClose,
+  document,
+  documentType = 'presupuesto', // 'presupuesto' | 'factura'
+  onSent
+}) {
+  const { empresaConfig, showNotification, addAuditLog, updatePresupuesto, updateFactura } = useApp();
+
+  if (!isOpen || !document) return null;
+
+  const isInvoice = documentType === 'factura';
+  const typeLabel = isInvoice ? 'Factura' : 'Presupuesto';
+  const docNumber = document.numero || 'DOC-001';
+  const docTitle = document.obraTitulo || document.titulo || 'Reforma';
+  const docClient = document.cliente || 'Cliente';
+  const totalConIva = isInvoice ? (document.totalFactura || document.totalConIva || 0) : (document.totalConIva || 0);
+  const baseImponible = document.baseImponible || 0;
+  const cuotaIva = isInvoice ? (document.cuotaIva || 0) : (document.cuotaIva || document.ivaImporte || 0);
+  const ivaPct = document.tipoIvaPct || 10;
+
+  // Channels: 'whatsapp' | 'email' | 'both'
+  const [channel, setChannel] = useState('both');
+  const [telefono, setTelefono] = useState(document.telefono || '+34 620 445 112');
+  const [email, setEmail] = useState(document.email || 'cliente@ejemplo.es');
+  const [whatsAppMethod, setWhatsAppMethod] = useState('direct'); // 'direct' (wa.me) | 'cloud' (Meta Cloud API)
+  const [isSending, setIsSending] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [showPreviewEmail, setShowPreviewEmail] = useState(false);
+
+  const signatureLink = isInvoice
+    ? `https://obramaster.app/facturas/${document.id || 'f-1'}/verifactu`
+    : `https://obramaster.app/presupuestos/${document.id || 'p-1'}/firmar-digital`;
+
+  const defaultMsg = isInvoice
+    ? `Hola ${docClient}, te adjuntamos la ${typeLabel} formal ${docNumber} por un importe de ${Number(totalConIva).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })} correspondiente a ${docTitle}.\n\nPuedes consultar el documento oficial y el código VeriFactu aquí:\n${signatureLink}\n\nQuedamos a tu entera disposición. Un cordial saludo,\n${empresaConfig.directorNombre || 'Director de Obra'} - ${empresaConfig.nombreEmpresa || 'ObraMaster'}`
+    : `Hola ${docClient}, te adjunto el ${typeLabel} técnico formal ${docNumber} para ${docTitle} por un importe total de ${Number(totalConIva).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}.\n\nPuedes revisarlo y firmarlo digitalmente con plena validez legal LOE en este enlace:\n${signatureLink}\n\nQuedo a tu disposición para cualquier duda o ajuste. Saludos cordiales,\n${empresaConfig.directorNombre || 'Director de Obra'} - ${empresaConfig.nombreEmpresa || 'ObraMaster'}`;
+
+  const [customMsg, setCustomMsg] = useState(defaultMsg);
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(signatureLink);
+    setCopiedLink(true);
+    showNotification('Enlace oficial copiado al portapapeles');
+    setTimeout(() => setCopiedLink(false), 3000);
+  };
+
+  const handleSend = async () => {
+    setIsSending(true);
+
+    const emailHtml = generateDocumentEmailHtml({
+      documentType,
+      documentNumber: docNumber,
+      documentTitle: docTitle,
+      clientName: docClient,
+      clientNif: document.nif || '',
+      totalAmount: totalConIva,
+      baseImponible,
+      cuotaIva,
+      ivaPct,
+      companyName: empresaConfig.nombreEmpresa || 'ObraMaster Construcción',
+      companyCif: empresaConfig.cif || 'B-84920184',
+      companyPhone: empresaConfig.telefono || '+34 910 234 567',
+      directorName: empresaConfig.directorNombre || 'Director de Obra',
+      actionUrl: signatureLink,
+      customNotes: 'Documento expedido formalmente por el departamento técnico.'
+    });
+
+    try {
+      const results = [];
+
+      // 1. Email dispatch
+      if (channel === 'email' || channel === 'both') {
+        const emailRes = await sendEmailDocument({
+          to: email,
+          subject: `${typeLabel} Oficial ${docNumber} - ${docTitle} (${empresaConfig.nombreEmpresa || 'ObraMaster'})`,
+          html: emailHtml
+        });
+        results.push(emailRes.message);
+      }
+
+      // 2. WhatsApp dispatch
+      if (channel === 'whatsapp' || channel === 'both') {
+        if (whatsAppMethod === 'cloud') {
+          const waRes = await sendWhatsAppCloudMessage({
+            phone: telefono,
+            messageText: customMsg
+          });
+          results.push(waRes.message);
+        } else {
+          // Direct wa.me link opened in new tab
+          const directUrl = buildWhatsAppDirectUrl({
+            phone: telefono,
+            messageText: customMsg
+          });
+          window.open(directUrl, '_blank');
+          results.push(`WhatsApp abierto en nueva pestaña para el número ${telefono}.`);
+        }
+      }
+
+      // Update state in app
+      const nowIso = new Date().toISOString().replace('T', ' ').substring(0, 16);
+      const envioData = {
+        fecha: nowIso,
+        canal: channel === 'whatsapp' ? 'WhatsApp' : channel === 'email' ? 'Email' : 'WhatsApp & Email',
+        destinatario: channel === 'email' ? email : telefono,
+        enlace: signatureLink,
+        estadoEnvio: 'entregado'
+      };
+
+      if (!isInvoice) {
+        updatePresupuesto(document.id, {
+          estado: 'enviado_cliente',
+          envioCliente: envioData
+        });
+        addAuditLog('PRESUPUESTO_ENVIADO', `${docNumber} enviado a ${docClient} vía ${envioData.canal}`);
+      } else {
+        if (updateFactura) {
+          updateFactura(document.id, {
+            envioCliente: envioData
+          });
+        }
+        addAuditLog('FACTURA_ENVIADA', `${docNumber} enviada a ${docClient} vía ${envioData.canal}`);
+      }
+
+      confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
+      showNotification(`✨ ¡${typeLabel} ${docNumber} enviado con éxito!`);
+
+      setIsSending(false);
+      onClose();
+      if (onSent) onSent();
+    } catch (err) {
+      console.error('Error enviando documento:', err);
+      setIsSending(false);
+      showNotification(`Error en el envío: ${err.message}`, 'error');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+      <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-xl shadow-2xl p-5 sm:p-6 space-y-4 text-slate-100 my-auto">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3.5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+              <Send className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-white text-base">Enviar {typeLabel} al Cliente</h3>
+              <p className="text-xs text-slate-400">{docNumber} · {docClient}</p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Amount & Legal Stamp Banner */}
+        <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950/40 border border-emerald-500/30 p-4 rounded-2xl flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Importe Total con IVA ({ivaPct}%)</span>
+            <span className="text-xl sm:text-2xl font-black text-white">
+              {Number(totalConIva).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+            </span>
+          </div>
+
+          <div className="text-right text-[11px] text-emerald-400 flex items-center gap-1.5 font-semibold bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl">
+            <ShieldCheck className="w-4 h-4" />
+            <span>{isInvoice ? 'VeriFactu Ready' : 'Firma Digital LOE'}</span>
+          </div>
+        </div>
+
+        {/* Channel Selection */}
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-slate-300 block">Canal de Envío:</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'text-emerald-400 border-emerald-500' },
+              { id: 'email', label: 'Email', icon: Mail, color: 'text-blue-400 border-blue-500' },
+              { id: 'both', label: 'Ambos Canales', icon: Share2, color: 'text-teal-400 border-teal-500' }
+            ].map(ch => {
+              const Icon = ch.icon;
+              const isSel = channel === ch.id;
+              return (
+                <button
+                  key={ch.id}
+                  type="button"
+                  onClick={() => setChannel(ch.id)}
+                  className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1.5 ${
+                    isSel
+                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/30'
+                      : 'bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-400'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-xs font-bold">{ch.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* WhatsApp Sending Method (if whatsapp selected) */}
+        {(channel === 'whatsapp' || channel === 'both') && (
+          <div className="bg-slate-950 border border-slate-800 p-3 rounded-2xl space-y-2 text-xs">
+            <span className="text-slate-400 font-semibold block">Modalidad de Envío de WhatsApp:</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setWhatsAppMethod('direct')}
+                className={`p-2 rounded-xl border text-left transition ${
+                  whatsAppMethod === 'direct'
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>WhatsApp Web / App</span>
+                </div>
+                <span className="text-[10px] text-slate-500 block mt-0.5">Sin coste · Apertura instantánea</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWhatsAppMethod('cloud')}
+                className={`p-2 rounded-xl border text-left transition ${
+                  whatsAppMethod === 'cloud'
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Meta Cloud API</span>
+                </div>
+                <span className="text-[10px] text-slate-500 block mt-0.5">Envío automatizado de servidor</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Contact Inputs */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div>
+            <label className="text-slate-400 block mb-1">Móvil del Cliente (WhatsApp):</label>
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2">
+              <Phone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <input
+                type="text"
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                className="w-full bg-transparent text-white focus:outline-none"
+                placeholder="+34 600 000 000"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-slate-400 block mb-1">Email del Cliente:</label>
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2">
+              <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-transparent text-white focus:outline-none"
+                placeholder="cliente@ejemplo.es"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Signature / Document Link Preview */}
+        <div className="bg-slate-950 border border-slate-800 p-3 rounded-2xl flex items-center justify-between gap-3 text-xs">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-500 block">Enlace de Firma con Trazabilidad:</span>
+            <span className="text-emerald-400 font-mono truncate block text-[11px]">{signatureLink}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg shrink-0 font-bold flex items-center gap-1 transition"
+          >
+            <Copy className="w-3 h-3" />
+            <span>{copiedLink ? '¡Copiado!' : 'Copiar'}</span>
+          </button>
+        </div>
+
+        {/* Message preview */}
+        <div>
+          <label className="text-slate-400 text-xs block mb-1">Texto del Mensaje de Envío:</label>
+          <textarea
+            rows="3"
+            value={customMsg}
+            onChange={(e) => setCustomMsg(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-400 font-sans"
+          ></textarea>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSending}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition"
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={isSending}
+            className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 disabled:opacity-50"
+          >
+            {isSending ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                <span>Enviando...</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4 fill-slate-950" />
+                <span>Enviar Documento Ahora</span>
+              </>
+            )}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
