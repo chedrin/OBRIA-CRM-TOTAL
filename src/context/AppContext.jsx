@@ -9,7 +9,9 @@ import {
   INITIAL_FACTURAS_PROVEEDORES,
   INITIAL_MENSAJES_INBOX,
   INITIAL_SUBCONTRATAS_PRESUPUESTOS,
-  INITIAL_USERS
+  INITIAL_USERS,
+  INITIAL_EMPLOYEES,
+  INITIAL_SUBCONTRACTORS
 } from '../data/initialData';
 import realtimeSync from '../services/realtimeSyncService';
 import {
@@ -33,7 +35,9 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'obracon_audit_logs_v1',
   USERS: 'obracon_users_v1',
   AUTH_USER: 'obracon_current_auth_user_v1',
-  SITE_VISITS: 'obracon_site_visits_v1'
+  SITE_VISITS: 'obracon_site_visits_v1',
+  EMPLOYEES: 'obracon_employees_v1',
+  SUBCONTRACTORS: 'obracon_subcontractors_v1'
 };
 
 function loadStored(key, fallback) {
@@ -72,6 +76,10 @@ export function AppProvider({ children }) {
   const [users, setUsers] = useState(() => loadStored(STORAGE_KEYS.USERS, INITIAL_USERS));
   const [currentUser, setCurrentUser] = useState(() => loadStored(STORAGE_KEYS.AUTH_USER, null));
 
+  // RRHH (Employees) & Subcontractors State
+  const [employees, setEmployees] = useState(() => loadStored(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
+  const [subcontractors, setSubcontractors] = useState(() => loadStored(STORAGE_KEYS.SUBCONTRACTORS, INITIAL_SUBCONTRACTORS));
+
   // Navigation State
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas, portal_obrero, empresa_config
   const [selectedObraId, setSelectedObraId] = useState(null);
@@ -92,6 +100,8 @@ export function AppProvider({ children }) {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs)); }, [auditLogs]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }, [users]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SITE_VISITS, JSON.stringify(siteVisits)); }, [siteVisits]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees)); }, [employees]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRACTORS, JSON.stringify(subcontractors)); }, [subcontractors]);
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(currentUser));
@@ -877,6 +887,492 @@ export function AppProvider({ children }) {
     showNotification('Calificación registrada y tenida en cuenta para futuras asignaciones');
   };
 
+  // ==========================================
+  // RRHH & NÓMINAS: GESTIÓN DE EMPLEADOS
+  // ==========================================
+  const addEmployee = (empData, userCreds = null) => {
+    const empId = `emp-${Date.now()}`;
+    const obreroId = `obrero-${Date.now()}`;
+    let linkedUserId = null;
+
+    if (userCreds?.createAccount || userCreds?.username) {
+      const generatedPass = userCreds.password || generateRandomPassword();
+      const newU = {
+        id: `user-obrero-${Date.now()}`,
+        obreroId: obreroId,
+        employeeId: empId,
+        username: userCreds.username || `${(empData.nombre || 'operario').toLowerCase().trim()}.${(empData.apellidos || 'obra').toLowerCase().trim()}`.replace(/\s+/g, '.'),
+        password: generatedPass,
+        role: 'obrero',
+        fullName: `${empData.nombre || ''} ${empData.apellidos || ''}`.trim(),
+        email: empData.email || '',
+        trade: empData.especialidad || 'Operario de Obra',
+        phone: empData.telefono || '',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        lastLogin: null
+      };
+      setUsers(prev => [newU, ...prev]);
+      linkedUserId = newU.id;
+    }
+
+    const newEmp = {
+      id: empId,
+      obreroId: obreroId,
+      usuarioId: linkedUserId,
+      nombre: empData.nombre || '',
+      apellidos: empData.apellidos || '',
+      dni: empData.dni || '',
+      naf: empData.naf || '',
+      fechaNacimiento: empData.fechaNacimiento || '1990-01-01',
+      direccion: empData.direccion || '',
+      telefono: empData.telefono || '',
+      email: empData.email || '',
+      iban: empData.iban || '',
+      categoria: empData.categoria || 'Oficial 1ª',
+      convenio: empData.convenio || 'Convenio General del Sector de la Construcción (Madrid)',
+      especialidad: empData.especialidad || 'Albañilería & Alicatados',
+      tipoContrato: empData.tipoContrato || 'indefinido',
+      jornadaHorasSemana: Number(empData.jornadaHorasSemana) || 40,
+      salarioBaseMensual: Number(empData.salarioBaseMensual) || 1600,
+      plusConvenio: Number(empData.plusConvenio) || 200,
+      precioHoraExtra: Number(empData.precioHoraExtra) || 17.50,
+      irpfPct: Number(empData.irpfPct) || 12.0,
+      situacionFamiliar: empData.situacionFamiliar || 'soltero',
+      hijosACargo: Number(empData.hijosACargo) || 0,
+      dependientesACargo: Number(empData.dependientesACargo) || 0,
+      discapacidadPct: Number(empData.discapacidadPct) || 0,
+      fechaAlta: empData.fechaAlta || new Date().toISOString().split('T')[0],
+      fechaBaja: null,
+      motivoBaja: null,
+      estado: empData.estado || 'activo',
+      diasTrabajadosMes: Number(empData.diasTrabajadosMes) || 21,
+      horasOrdinarias: Number(empData.horasOrdinarias) || 160,
+      horasExtras: Number(empData.horasExtras) || 0,
+      vacacionesAnualesTotal: 30,
+      vacacionesConsumidas: 0,
+      foto: empData.foto || 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=200&q=80',
+      ausencias: []
+    };
+
+    setEmployees(prev => [newEmp, ...prev]);
+
+    setObreros(prev => [{
+      id: obreroId,
+      nombre: `${newEmp.nombre} ${newEmp.apellidos}`.trim(),
+      puesto: `${newEmp.categoria} / ${newEmp.especialidad}`,
+      telefono: newEmp.telefono,
+      tipo: 'plantilla',
+      especialidad: newEmp.especialidad,
+      foto: newEmp.foto,
+      calificacionMedia: 5.0,
+      criterios: { calidadAcabados: 5, puntualidadPlazos: 5, autonomiaProblemas: 5, limpiezaSeguridad: 5 },
+      obrasRealizadas: 0,
+      horasRegistradasMes: newEmp.horasOrdinarias,
+      costeHora: Number((newEmp.salarioBaseMensual / 160).toFixed(2)),
+      estado: newEmp.estado,
+      recomendacionesIA: 'Alta reciente en plantilla.',
+      ultimasResenas: []
+    }, ...prev]);
+
+    addAuditLog('ALTA_EMPLEADO', `${newEmp.nombre} ${newEmp.apellidos} (${newEmp.dni})`);
+    showNotification(`Empleado "${newEmp.nombre} ${newEmp.apellidos}" dado de alta correctamente.`);
+    return newEmp;
+  };
+
+  const updateEmployee = (id, updates) => {
+    setEmployees(prev => prev.map(emp => {
+      if (emp.id === id) {
+        const updated = { ...emp, ...updates };
+
+        if (emp.usuarioId) {
+          setUsers(prevUsers => prevUsers.map(u => {
+            if (u.id === emp.usuarioId) {
+              return {
+                ...u,
+                fullName: `${updated.nombre} ${updated.apellidos}`.trim(),
+                phone: updated.telefono || u.phone,
+                email: updated.email || u.email,
+                trade: updated.especialidad || u.trade
+              };
+            }
+            return u;
+          }));
+        }
+
+        if (emp.obreroId) {
+          setObreros(prevObreros => prevObreros.map(o => {
+            if (o.id === emp.obreroId) {
+              return {
+                ...o,
+                nombre: `${updated.nombre} ${updated.apellidos}`.trim(),
+                puesto: `${updated.categoria} / ${updated.especialidad}`,
+                telefono: updated.telefono,
+                especialidad: updated.especialidad,
+                estado: updated.estado
+              };
+            }
+            return o;
+          }));
+        }
+
+        return updated;
+      }
+      return emp;
+    }));
+
+    addAuditLog('MODIFICACION_EMPLEADO', `ID Empleado: ${id}`);
+    showNotification('Ficha del empleado actualizada correctamente.');
+  };
+
+  const terminateEmployee = (id, { motivoBaja, fechaBaja, estado = 'baja' }) => {
+    const targetEmp = employees.find(e => e.id === id);
+    if (!targetEmp) return;
+
+    const fecha = fechaBaja || new Date().toISOString().split('T')[0];
+
+    setEmployees(prev => prev.map(emp => {
+      if (emp.id === id) {
+        return {
+          ...emp,
+          estado: estado,
+          fechaBaja: fecha,
+          motivoBaja: motivoBaja || 'Baja en plantilla'
+        };
+      }
+      return emp;
+    }));
+
+    if (targetEmp.obreroId) {
+      setObreros(prev => prev.map(o => o.id === targetEmp.obreroId ? { ...o, estado: 'baja' } : o));
+    }
+
+    if (targetEmp.usuarioId) {
+      setUsers(prevUsers => prevUsers.map(u => {
+        if (u.id === targetEmp.usuarioId) {
+          return { ...u, isActive: false };
+        }
+        return u;
+      }));
+    }
+
+    addAuditLog('BAJA_EMPLEADO', `${targetEmp.nombre} ${targetEmp.apellidos} - Motivo: ${motivoBaja}`);
+    showNotification(`Empleado tramitado en estado "${estado}". Acceso a App Móvil suspendido.`);
+  };
+
+  const rehireEmployee = (id) => {
+    const targetEmp = employees.find(e => e.id === id);
+    if (!targetEmp) return;
+
+    setEmployees(prev => prev.map(emp => {
+      if (emp.id === id) {
+        return {
+          ...emp,
+          estado: 'activo',
+          fechaBaja: null,
+          motivoBaja: null
+        };
+      }
+      return emp;
+    }));
+
+    if (targetEmp.obreroId) {
+      setObreros(prev => prev.map(o => o.id === targetEmp.obreroId ? { ...o, estado: 'activo' } : o));
+    }
+
+    if (targetEmp.usuarioId) {
+      setUsers(prevUsers => prevUsers.map(u => {
+        if (u.id === targetEmp.usuarioId) {
+          return { ...u, isActive: true };
+        }
+        return u;
+      }));
+    }
+
+    addAuditLog('REACTIVACION_EMPLEADO', `${targetEmp.nombre} ${targetEmp.apellidos}`);
+    showNotification(`Empleado reactivado con éxito. Acceso móvil restaurado.`);
+  };
+
+  const addEmployeeAbsence = (employeeId, absenceData) => {
+    const newAbsence = {
+      ...absenceData,
+      id: `abs-${Date.now()}`,
+      dias: Number(absenceData.dias) || 1,
+      estado: absenceData.estado || 'aprobado'
+    };
+
+    setEmployees(prev => prev.map(emp => {
+      if (emp.id === employeeId) {
+        const nuevasAusencias = [newAbsence, ...(emp.ausencias || [])];
+        let nuevasConsumidas = emp.vacacionesConsumidas || 0;
+        let nuevoEstado = emp.estado;
+
+        if (newAbsence.tipo === 'vacaciones') {
+          nuevasConsumidas = Math.min(emp.vacacionesAnualesTotal || 30, nuevasConsumidas + newAbsence.dias);
+          nuevoEstado = 'vacaciones';
+        } else if (newAbsence.tipo === 'baja_it') {
+          nuevoEstado = 'baja';
+        }
+
+        return {
+          ...emp,
+          ausencias: nuevasAusencias,
+          vacacionesConsumidas: nuevasConsumidas,
+          estado: nuevoEstado
+        };
+      }
+      return emp;
+    }));
+
+    addAuditLog('REGISTRO_AUSENCIA', `Empleado: ${employeeId} - Tipo: ${newAbsence.tipo}`);
+    showNotification(`Registro de ausencia (${newAbsence.tipo}) guardado con éxito.`);
+  };
+
+  const resetEmployeePassword = (employeeId, newPass) => {
+    const emp = employees.find(e => e.id === employeeId);
+    if (!emp || !emp.usuarioId) {
+      showNotification('Este empleado no tiene usuario móvil vinculado.', 'error');
+      return { success: false, error: 'Sin usuario vinculado' };
+    }
+
+    const cleanPass = newPass.trim();
+    setUsers(prev => prev.map(u => u.id === emp.usuarioId ? { ...u, password: cleanPass } : u));
+    addAuditLog('RESET_PASSWORD_EMPLEADO', `Empleado: ${emp.nombre} ${emp.apellidos}`);
+    showNotification(`Contraseña de ${emp.nombre} actualizada con éxito.`);
+    return { success: true, password: cleanPass };
+  };
+
+  // ==========================================
+  // SUBCONTRATAS & GREMIOS: GESTIÓN INTEGRAL
+  // ==========================================
+  const addSubcontractor = (subData) => {
+    const newSub = {
+      ...subData,
+      id: `sub-${Date.now()}`,
+      razonSocial: subData.razonSocial || '',
+      nombreComercial: subData.nombreComercial || subData.razonSocial || '',
+      cif: subData.cif || '',
+      gremio: subData.gremio || 'Instalaciones',
+      personaContacto: subData.personaContacto || '',
+      telefono: subData.telefono || '',
+      telefonoUrgencias: subData.telefonoUrgencias || subData.telefono || '',
+      email: subData.email || '',
+      direccion: subData.direccion || '',
+      prl: {
+        seguroRCCompania: subData.prl?.seguroRCCompania || 'Compañía Aseguradora',
+        seguroRCPoliza: subData.prl?.seguroRCPoliza || 'POL-RC',
+        seguroRCSuma: Number(subData.prl?.seguroRCSuma) || 300000,
+        seguroRCFechaCaducidad: subData.prl?.seguroRCFechaCaducidad || '2027-12-31',
+        certificadoAEAT: subData.prl?.certificadoAEAT || 'vigente',
+        certificadoTGSS: subData.prl?.certificadoTGSS || 'vigente',
+        aptoEntrarObra: subData.prl?.aptoEntrarObra !== undefined ? subData.prl.aptoEntrarObra : true
+      },
+      scoring: {
+        media: 5.0,
+        totalResenas: 0,
+        criterios: {
+          puntualidad: 5.0,
+          calidad: 5.0,
+          limpieza: 5.0,
+          trato: 5.0
+        }
+      },
+      notasInternas: [],
+      presupuestosVinculados: [],
+      facturasRecibidas: []
+    };
+
+    setSubcontractors(prev => [newSub, ...prev]);
+    addAuditLog('ALTA_SUBCONTRATA', `${newSub.razonSocial} (CIF: ${newSub.cif})`);
+    showNotification(`Subcontrata "${newSub.razonSocial}" dada de alta correctamente.`);
+    return newSub;
+  };
+
+  const updateSubcontractor = (id, updates) => {
+    setSubcontractors(prev => prev.map(s => {
+      if (s.id === id) {
+        return { ...s, ...updates };
+      }
+      return s;
+    }));
+    addAuditLog('MODIFICACION_SUBCONTRATA', `ID: ${id}`);
+    showNotification('Ficha de subcontratista actualizada.');
+  };
+
+  const addSubcontractorBudget = (subId, budgetData) => {
+    const newBud = {
+      ...budgetData,
+      id: `spres-${Date.now()}`,
+      fecha: budgetData.fecha || new Date().toISOString().split('T')[0],
+      estado: budgetData.estado || 'recibido',
+      importeSubcontrata: Number(budgetData.importeSubcontrata) || 0,
+      partidas: budgetData.partidas || []
+    };
+
+    setSubcontractors(prev => prev.map(s => {
+      if (s.id === subId) {
+        return {
+          ...s,
+          presupuestosVinculados: [newBud, ...(s.presupuestosVinculados || [])]
+        };
+      }
+      return s;
+    }));
+
+    showNotification(`Presupuesto de subcontrata vinculado con éxito.`);
+    return newBud;
+  };
+
+  const updateSubcontractorBudgetStatus = (subId, budgetId, newStatus) => {
+    setSubcontractors(prev => prev.map(s => {
+      if (s.id === subId) {
+        const updatedBudgets = (s.presupuestosVinculados || []).map(b => b.id === budgetId ? { ...b, estado: newStatus } : b);
+        return { ...s, presupuestosVinculados: updatedBudgets };
+      }
+      return s;
+    }));
+    showNotification(`Estado de presupuesto actualizado a: ${newStatus}`);
+  };
+
+  const addSubcontractorInvoice = (subId, invoiceData) => {
+    const sub = subcontractors.find(s => s.id === subId);
+    if (!sub) return;
+
+    const baseImp = Number(invoiceData.baseImponible) || 0;
+    const ivaPct = Number(invoiceData.ivaPct) || 21;
+    const totalCalc = Number((baseImp * (1 + ivaPct / 100)).toFixed(2));
+
+    let desviacion = 0;
+    if (invoiceData.presupuestoVinculadoId) {
+      const bud = (sub.presupuestosVinculados || []).find(b => b.id === invoiceData.presupuestoVinculadoId);
+      if (bud && bud.importeSubcontrata) {
+        desviacion = Number((baseImp - bud.importeSubcontrata).toFixed(2));
+      }
+    }
+
+    const newInv = {
+      id: `sfac-${Date.now()}`,
+      numero: invoiceData.numero || `FAC-SUB-${Date.now().toString().slice(-4)}`,
+      obraId: invoiceData.obraId || '',
+      obraTitulo: invoiceData.obraTitulo || 'Obra Asignada',
+      presupuestoVinculadoId: invoiceData.presupuestoVinculadoId || null,
+      fechaEmision: invoiceData.fechaEmision || new Date().toISOString().split('T')[0],
+      fechaVencimiento: invoiceData.fechaVencimiento || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      baseImponible: baseImp,
+      ivaPct: ivaPct,
+      total: totalCalc,
+      estadoPago: invoiceData.estadoPago || 'pendiente',
+      desviacionSobrePresupuesto: desviacion
+    };
+
+    setSubcontractors(prev => prev.map(s => {
+      if (s.id === subId) {
+        return {
+          ...s,
+          facturasRecibidas: [newInv, ...(s.facturasRecibidas || [])]
+        };
+      }
+      return s;
+    }));
+
+    addFacturaProveedor({
+      numero: newInv.numero,
+      proveedor: sub.razonSocial,
+      cif: sub.cif,
+      concepto: `Subcontratación ${sub.gremio} - ${newInv.obraTitulo}`,
+      fecha: newInv.fechaEmision,
+      baseImponible: baseImp,
+      tipoIvaPct: ivaPct,
+      cuotaIva: Number((baseImp * (ivaPct / 100)).toFixed(2)),
+      retencionIrpfPct: 0,
+      cuotaRetencion: 0,
+      totalFactura: totalCalc,
+      estadoPago: newInv.estadoPago === 'pagado' ? 'pagada' : 'pendiente',
+      deducibleIva: true,
+      deducibleIrpf: true
+    });
+
+    if (desviacion > 0) {
+      showNotification(`⚠️ Factura de subcontrata con SOBRECOSTE de +${desviacion}€ sobre presupuesto.`);
+    } else {
+      showNotification('Factura de subcontrata registrada y contabilizada en compras.');
+    }
+  };
+
+  const updateSubcontractorInvoiceStatus = (subId, invoiceId, newStatus) => {
+    setSubcontractors(prev => prev.map(s => {
+      if (s.id === subId) {
+        const updated = (s.facturasRecibidas || []).map(f => f.id === invoiceId ? { ...f, estadoPago: newStatus } : f);
+        return { ...s, facturasRecibidas: updated };
+      }
+      return s;
+    }));
+    showNotification(`Factura de subcontrata marcada como ${newStatus}.`);
+  };
+
+  const addSubcontractorNote = (subId, texto, autor = 'Dirección Técnica') => {
+    const newNote = {
+      id: `not-${Date.now()}`,
+      fecha: new Date().toISOString().split('T')[0],
+      autor,
+      texto
+    };
+
+    setSubcontractors(prev => prev.map(s => {
+      if (s.id === subId) {
+        return {
+          ...s,
+          notasInternas: [newNote, ...(s.notasInternas || [])]
+        };
+      }
+      return s;
+    }));
+
+    showNotification('Nota confidencial agregada a la bitácora de la subcontrata.');
+  };
+
+  const addSubcontractorReview = (subId, { puntualidad, calidad, limpieza, trato, comentario, obraTitulo }) => {
+    setSubcontractors(prev => prev.map(s => {
+      if (s.id === subId) {
+        const prevCrit = s.scoring?.criterios || { puntualidad: 5, calidad: 5, limpieza: 5, trato: 5 };
+        const total = (s.scoring?.totalResenas || 0) + 1;
+
+        const newPunt = Number(((prevCrit.puntualidad * (total - 1) + Number(puntualidad)) / total).toFixed(1));
+        const newCal = Number(((prevCrit.calidad * (total - 1) + Number(calidad)) / total).toFixed(1));
+        const newLimp = Number(((prevCrit.limpieza * (total - 1) + Number(limpieza)) / total).toFixed(1));
+        const newTrato = Number(((prevCrit.trato * (total - 1) + Number(trato)) / total).toFixed(1));
+        const newMedia = Number(((newPunt + newCal + newLimp + newTrato) / 4).toFixed(1));
+
+        const updatedScoring = {
+          media: newMedia,
+          totalResenas: total,
+          criterios: {
+            puntualidad: newPunt,
+            calidad: newCal,
+            limpieza: newLimp,
+            trato: newTrato
+          }
+        };
+
+        const nuevaNota = comentario ? [{
+          id: `not-rev-${Date.now()}`,
+          fecha: new Date().toISOString().split('T')[0],
+          autor: 'Evaluación de Obra',
+          texto: `[Obra: ${obraTitulo || 'General'}] Valoración: ${newMedia}⭐ - ${comentario}`
+        }] : [];
+
+        return {
+          ...s,
+          scoring: updatedScoring,
+          notasInternas: [...nuevaNota, ...(s.notasInternas || [])]
+        };
+      }
+      return s;
+    }));
+
+    showNotification('Evaluación de subcontrata registrada y scoring actualizado.');
+  };
+
   // Subcontractor Quote Application & Price Database Auto-update with configured margin!
   const applySubcontrataPresupuesto = (subPresupuestoId, partidasToUpdate, globalMargin = null) => {
     setBasePrecios(prevBase => {
@@ -927,7 +1423,6 @@ export function AppProvider({ children }) {
     if (!msg) return;
 
     if (accionTipo === 'aplicar_necesidades_obra') {
-      // Add each calculated need to the obra's material list
       const items = msg.analisisIA?.necesidadesCalculadas || [];
       items.forEach(item => {
         addMaterialToObra(obraId, {
@@ -939,7 +1434,6 @@ export function AppProvider({ children }) {
         });
       });
     } else if (accionTipo === 'crear_partida_presupuesto') {
-      // Add to obra's presupuesto as an extra partida
       const targetObra = obras.find(o => o.id === obraId);
       if (targetObra && targetObra.presupuestoId) {
         const pres = presupuestos.find(p => p.id === targetObra.presupuestoId);
@@ -998,6 +1492,8 @@ export function AppProvider({ children }) {
       setFacturasProveedores(INITIAL_FACTURAS_PROVEEDORES);
       setMensajesInbox(INITIAL_MENSAJES_INBOX);
       setSubcontratasPresupuestos(INITIAL_SUBCONTRATAS_PRESUPUESTOS);
+      setEmployees(INITIAL_EMPLOYEES);
+      setSubcontractors(INITIAL_SUBCONTRACTORS);
       showNotification('Datos reiniciados a los valores de prueba');
     }
   };
@@ -1086,7 +1582,27 @@ export function AppProvider({ children }) {
       addSiteVisit,
       generateQuoteFromSiteVisit,
       refineQuoteWithVoiceCommand,
-      approveAndSendQuote
+      approveAndSendQuote,
+      // RRHH & Employees
+      employees,
+      setEmployees,
+      addEmployee,
+      updateEmployee,
+      terminateEmployee,
+      rehireEmployee,
+      addEmployeeAbsence,
+      resetEmployeePassword,
+      // Subcontractors
+      subcontractors,
+      setSubcontractors,
+      addSubcontractor,
+      updateSubcontractor,
+      addSubcontractorBudget,
+      updateSubcontractorBudgetStatus,
+      addSubcontractorInvoice,
+      updateSubcontractorInvoiceStatus,
+      addSubcontractorNote,
+      addSubcontractorReview
     }}>
       {children}
     </AppContext.Provider>

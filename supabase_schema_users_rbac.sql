@@ -366,3 +366,201 @@ CREATE POLICY admin_full_quotes ON public.quotes FOR ALL USING (is_admin()) WITH
 CREATE POLICY admin_full_captures ON public.site_visit_captures FOR ALL USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY worker_read_assigned_projects ON public.projects FOR SELECT USING (true);
 
+-- =========================================================================
+-- 14. TABLA DE EMPLEADOS Y PERSONAL LABORAL (RRHH & NÓMINAS)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.employees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.users(id) ON DELETE SET NULL, -- Vinculación con credencial de acceso móvil
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  dni_nie VARCHAR(20) UNIQUE NOT NULL,
+  naf_ss VARCHAR(30), -- Número de afiliación a la Seguridad Social
+  birth_date DATE,
+  address TEXT,
+  phone VARCHAR(30),
+  email VARCHAR(100),
+  iban VARCHAR(34), -- Cuenta para liquidación de nóminas
+  professional_category VARCHAR(50) NOT NULL DEFAULT 'Oficial 1ª', -- Oficial 1ª, Oficial 2ª, Peón Especialista, Peón Ordinario, Encargado
+  labor_agreement VARCHAR(150) DEFAULT 'Convenio General del Sector de la Construcción',
+  main_trade VARCHAR(100) NOT NULL, -- Albañilería, Pladur, Pintura, Fontanería, etc.
+  contract_type VARCHAR(30) NOT NULL DEFAULT 'indefinido' CHECK (contract_type IN ('indefinido', 'fijo_discontinuo', 'temporal', 'practicas')),
+  weekly_hours NUMERIC(4,2) DEFAULT 40.00,
+  monthly_base_salary NUMERIC(10,2) NOT NULL DEFAULT 1600.00,
+  convenio_bonus NUMERIC(10,2) DEFAULT 200.00,
+  overtime_hourly_rate NUMERIC(6,2) DEFAULT 17.50,
+  irpf_retention_pct NUMERIC(4,2) DEFAULT 12.00, -- Retención según Modelo 145
+  family_situation VARCHAR(30) DEFAULT 'soltero' CHECK (family_situation IN ('soltero', 'casado', 'monoparental')),
+  dependent_children INT DEFAULT 0,
+  dependent_elders INT DEFAULT 0,
+  disability_pct NUMERIC(4,2) DEFAULT 0.00,
+  hire_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  termination_date DATE,
+  termination_reason TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK (status IN ('activo', 'vacaciones', 'baja', 'despedido')),
+  annual_vacation_days INT DEFAULT 30,
+  used_vacation_days NUMERIC(4,1) DEFAULT 0,
+  avatar_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_employees_dni ON public.employees(dni_nie);
+CREATE INDEX IF NOT EXISTS idx_employees_status ON public.employees(status);
+CREATE INDEX IF NOT EXISTS idx_employees_user_id ON public.employees(user_id);
+
+DROP TRIGGER IF EXISTS trigger_employees_updated_at ON public.employees;
+CREATE TRIGGER trigger_employees_updated_at
+BEFORE UPDATE ON public.employees
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- =========================================================================
+-- 15. TABLA DE AUSENCIAS, VACACIONES Y BAJAS MÉDICAS (IT)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.employee_absences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  absence_type VARCHAR(30) NOT NULL CHECK (absence_type IN ('vacaciones', 'baja_it', 'permiso_retribuido', 'excedencia')),
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  days_count INT NOT NULL DEFAULT 1,
+  reason TEXT,
+  medical_report_url TEXT,
+  status VARCHAR(20) DEFAULT 'aprobado' CHECK (status IN ('solicitado', 'aprobado', 'rechazado', 'disfrutado')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_absences_employee ON public.employee_absences(employee_id, start_date);
+
+-- =========================================================================
+-- 16. TABLA DE SUBCONTRATAS Y GREMIOS EXTERNOS
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.subcontractors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  legal_name VARCHAR(150) NOT NULL, -- Razón Social
+  commercial_name VARCHAR(150),
+  cif_nif VARCHAR(20) UNIQUE NOT NULL,
+  trade VARCHAR(100) NOT NULL, -- Gremio
+  contact_person VARCHAR(100),
+  phone VARCHAR(30),
+  emergency_phone VARCHAR(30), -- Teléfono de urgencias 24h en obra
+  email VARCHAR(100),
+  fiscal_address TEXT,
+  -- Prevención de Riesgos Laborales (PRL - Ley 32/2006)
+  insurance_company VARCHAR(100),
+  insurance_policy_number VARCHAR(100),
+  insurance_insured_sum NUMERIC(12,2) DEFAULT 300000.00,
+  insurance_expiry_date DATE NOT NULL, -- Fecha de vencimiento del seguro RC
+  aeat_status VARCHAR(20) DEFAULT 'vigente' CHECK (aeat_status IN ('vigente', 'caducado', 'pendiente')),
+  tgss_status VARCHAR(20) DEFAULT 'vigente' CHECK (tgss_status IN ('vigente', 'caducado', 'pendiente')),
+  is_approved_for_site BOOLEAN DEFAULT true, -- Semáforo de aptitud para entrar en obra
+  rating_average NUMERIC(3,2) DEFAULT 5.00,
+  reviews_count INT DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_subcontractors_cif ON public.subcontractors(cif_nif);
+CREATE INDEX IF NOT EXISTS idx_subcontractors_trade ON public.subcontractors(trade);
+CREATE INDEX IF NOT EXISTS idx_subcontractors_insurance_expiry ON public.subcontractors(insurance_expiry_date);
+
+DROP TRIGGER IF EXISTS trigger_subcontractors_updated_at ON public.subcontractors;
+CREATE TRIGGER trigger_subcontractors_updated_at
+BEFORE UPDATE ON public.subcontractors
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- =========================================================================
+-- 17. TABLA DE PRESUPUESTOS DE SUBCONTRATAS VINCULADOS A OBRAS
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.subcontractor_budgets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subcontractor_id UUID NOT NULL REFERENCES public.subcontractors(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+  quote_number VARCHAR(50),
+  issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  total_amount NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+  status VARCHAR(20) NOT NULL DEFAULT 'recibido' CHECK (status IN ('recibido', 'en_negociacion', 'aprobado', 'rechazado')),
+  pdf_quote_url TEXT,
+  breakdown_items JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_sub_budgets_project ON public.subcontractor_budgets(project_id);
+
+-- =========================================================================
+-- 18. TABLA DE FACTURAS DE SUBCONTRATAS Y CONTROL DE DESVIACIONES
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.subcontractor_invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subcontractor_id UUID NOT NULL REFERENCES public.subcontractors(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+  budget_id UUID REFERENCES public.subcontractor_budgets(id) ON DELETE SET NULL,
+  invoice_number VARCHAR(50) NOT NULL,
+  issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  due_date DATE NOT NULL,
+  tax_base NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+  vat_pct NUMERIC(4,2) DEFAULT 21.00,
+  total_amount NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+  budget_deviation NUMERIC(12,2) DEFAULT 0.00, -- Desviación o sobrecoste respecto al presupuesto aprobado
+  payment_status VARCHAR(20) NOT NULL DEFAULT 'pendiente' CHECK (payment_status IN ('pendiente', 'pagado', 'bloqueado')),
+  payment_date DATE,
+  invoice_file_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_sub_invoices_subcontractor ON public.subcontractor_invoices(subcontractor_id);
+CREATE INDEX IF NOT EXISTS idx_sub_invoices_payment ON public.subcontractor_invoices(payment_status);
+
+-- =========================================================================
+-- 19. TABLA DE EVALUACIONES CONTINUAS (SCORING) DE SUBCONTRATAS
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.subcontractor_reviews (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subcontractor_id UUID NOT NULL REFERENCES public.subcontractors(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+  punctuality_score NUMERIC(2,1) CHECK (punctuality_score BETWEEN 1 AND 5),
+  technical_quality_score NUMERIC(2,1) CHECK (technical_quality_score BETWEEN 1 AND 5),
+  cleanliness_score NUMERIC(2,1) CHECK (cleanliness_score BETWEEN 1 AND 5),
+  cooperation_score NUMERIC(2,1) CHECK (cooperation_score BETWEEN 1 AND 5),
+  average_score NUMERIC(3,2) NOT NULL,
+  confidential_comment TEXT,
+  evaluator_name VARCHAR(100),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- =========================================================================
+-- 20. HABILITACIÓN RLS Y PUBLICACIÓN REALTIME
+-- =========================================================================
+
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_absences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subcontractors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subcontractor_budgets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subcontractor_invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subcontractor_reviews ENABLE ROW LEVEL SECURITY;
+
+-- Políticas Admin
+CREATE POLICY admin_full_employees ON public.employees FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY admin_full_absences ON public.employee_absences FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY admin_full_subcontractors ON public.subcontractors FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY admin_full_sub_budgets ON public.subcontractor_budgets FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY admin_full_sub_invoices ON public.subcontractor_invoices FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY admin_full_sub_reviews ON public.subcontractor_reviews FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+
+-- Operarios solo leen sus propios datos laborales
+CREATE POLICY worker_read_own_employee_record ON public.employees FOR SELECT USING (user_id = auth.uid());
+
+-- Realtime publication
+ALTER PUBLICATION supabase_realtime ADD TABLE public.employees;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.subcontractors;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.subcontractor_invoices;
+
+

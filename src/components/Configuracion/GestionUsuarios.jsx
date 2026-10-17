@@ -26,6 +26,8 @@ import {
 export default function GestionUsuarios() {
   const {
     users,
+    employees = [],
+    addEmployee,
     currentUser,
     addUser,
     updateUser,
@@ -113,6 +115,31 @@ export default function GestionUsuarios() {
     });
 
     if (res.success) {
+      // Sincronizar automáticamente con la ficha de empleado en RRHH si no existe
+      const existingEmp = (employees || []).find(e => 
+        (e.nombre.toLowerCase() === obreroForm.nombre.trim().toLowerCase() && 
+         e.apellidos.toLowerCase() === obreroForm.apellidos.trim().toLowerCase()) ||
+        e.usuarioId === res.user?.id
+      );
+
+      if (!existingEmp && addEmployee) {
+        addEmployee({
+          nombre: obreroForm.nombre.trim(),
+          apellidos: obreroForm.apellidos.trim(),
+          especialidad: obreroForm.especialidad,
+          telefono: obreroForm.telefono,
+          email: obreroForm.email,
+          dni: `DNI-${Math.floor(10000000 + Math.random() * 90000000)}K`,
+          categoria: 'Oficial 1ª',
+          tipoContrato: 'indefinido',
+          salarioBaseMensual: 1750,
+          plusConvenio: 200,
+          estado: 'activo'
+        }, {
+          createAccount: false // Ya creado por addUser
+        });
+      }
+
       setShowAddObreroModal(false);
       setObreroForm({
         nombre: '',

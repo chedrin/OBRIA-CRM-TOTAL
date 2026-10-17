@@ -40,8 +40,8 @@ export default function Navbar() {
     { id: 'presupuestos', label: 'Presupuestos IA', icon: Calculator, isSpecial: true },
     { id: 'facturas', label: 'Facturación', icon: Receipt },
     { id: 'gestoria', label: 'Gestoría & Trimestres', icon: FileSpreadsheet },
-    { id: 'obreros', label: 'Obreros & Calificación', icon: Users },
-    { id: 'subcontratas', label: 'Subcontratas & Precios', icon: Percent, badge: pendingSubPresCount, badgeColor: 'bg-indigo-500' },
+    { id: 'obreros', label: 'RRHH & Nóminas', icon: Users },
+    { id: 'subcontratas', label: 'Subcontratas & PRL', icon: Percent, badge: pendingSubPresCount, badgeColor: 'bg-indigo-500' },
     { id: 'portal_obrero', label: 'App Móvil Obrero', icon: Smartphone, badgeColor: 'bg-emerald-500' },
     { id: 'empresa_config', label: 'Config. Fiscal', icon: ShieldCheck, isSpecial: true },
   ];

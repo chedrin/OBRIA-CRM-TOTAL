@@ -840,6 +840,7 @@ export const INITIAL_USERS = [
   {
     id: 'user-obrero-1',
     obreroId: 'obrero-1',
+    employeeId: 'emp-1',
     username: 'pedro.gomez',
     password: 'pedro123',
     role: 'obrero',
@@ -854,6 +855,7 @@ export const INITIAL_USERS = [
   {
     id: 'user-obrero-2',
     obreroId: 'obrero-2',
+    employeeId: 'emp-2',
     username: 'mario.silva',
     password: 'mario123',
     role: 'obrero',
@@ -868,6 +870,7 @@ export const INITIAL_USERS = [
   {
     id: 'user-obrero-3',
     obreroId: 'obrero-3',
+    employeeId: 'emp-3',
     username: 'ionut.radu',
     password: 'ionut123',
     role: 'obrero',
@@ -878,5 +881,476 @@ export const INITIAL_USERS = [
     isActive: true,
     createdAt: '2026-03-01T08:00:00Z',
     lastLogin: '2026-10-15T18:15:00Z'
+  },
+  {
+    id: 'user-obrero-4',
+    obreroId: 'obrero-4',
+    employeeId: 'emp-4',
+    username: 'antonio.morales',
+    password: 'antonio123',
+    role: 'obrero',
+    fullName: 'Antonio Morales Vega',
+    email: 'antonio.morales@obramaster.es',
+    trade: 'Pintura & Revestimientos',
+    phone: '+34 644 556 677',
+    isActive: true,
+    createdAt: '2026-04-10T08:00:00Z',
+    lastLogin: '2026-10-09T14:10:00Z'
   }
 ];
+
+export const INITIAL_EMPLOYEES = [
+  {
+    id: 'emp-1',
+    obreroId: 'obrero-1',
+    usuarioId: 'user-obrero-1',
+    nombre: 'Pedro',
+    apellidos: 'Gómez Castillo',
+    dni: '47123984K',
+    naf: '28 12345678 90',
+    fechaNacimiento: '1984-06-12',
+    direccion: 'Calle Alcalá 142, 2ºB, Madrid',
+    telefono: '+34 611 223 344',
+    email: 'pedro.gomez@obramaster.es',
+    iban: 'ES76 2100 0418 4502 0005 1122',
+    categoria: 'Oficial 1ª',
+    convenio: 'Convenio General del Sector de la Construcción (Madrid)',
+    especialidad: 'Albañilería & Alicatados Porcelánicos',
+    tipoContrato: 'indefinido',
+    jornadaHorasSemana: 40,
+    salarioBaseMensual: 1850.00,
+    plusConvenio: 220.00,
+    precioHoraExtra: 18.50,
+    irpfPct: 14.0,
+    situacionFamiliar: 'casado',
+    hijosACargo: 2,
+    dependientesACargo: 0,
+    discapacidadPct: 0,
+    fechaAlta: '2024-02-01',
+    fechaBaja: null,
+    motivoBaja: null,
+    estado: 'activo',
+    diasTrabajadosMes: 21,
+    horasOrdinarias: 160,
+    horasExtras: 8,
+    vacacionesAnualesTotal: 30,
+    vacacionesConsumidas: 12,
+    foto: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=200&q=80',
+    ausencias: [
+      { id: 'abs-101', tipo: 'vacaciones', fechaInicio: '2026-08-01', fechaFin: '2026-08-12', dias: 12, motivo: 'Vacaciones estivales', estado: 'disfrutado' }
+    ]
+  },
+  {
+    id: 'emp-2',
+    obreroId: 'obrero-2',
+    usuarioId: 'user-obrero-2',
+    nombre: 'Mario',
+    apellidos: 'Silva Santos',
+    dni: '51982341M',
+    naf: '28 98765432 11',
+    fechaNacimiento: '1992-11-23',
+    direccion: 'Avenida de Oporto 33, 4ºA, Madrid',
+    telefono: '+34 622 334 455',
+    email: 'mario.silva@obramaster.es',
+    iban: 'ES91 0049 1500 0512 3456 7890',
+    categoria: 'Peón Especialista',
+    convenio: 'Convenio General del Sector de la Construcción (Madrid)',
+    especialidad: 'Demoliciones & Carga',
+    tipoContrato: 'indefinido',
+    jornadaHorasSemana: 40,
+    salarioBaseMensual: 1480.00,
+    plusConvenio: 180.00,
+    precioHoraExtra: 15.00,
+    irpfPct: 10.0,
+    situacionFamiliar: 'soltero',
+    hijosACargo: 0,
+    dependientesACargo: 0,
+    discapacidadPct: 0,
+    fechaAlta: '2024-05-15',
+    fechaBaja: null,
+    motivoBaja: null,
+    estado: 'activo',
+    diasTrabajadosMes: 22,
+    horasOrdinarias: 160,
+    horasExtras: 14,
+    vacacionesAnualesTotal: 30,
+    vacacionesConsumidas: 8,
+    foto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    ausencias: [
+      { id: 'abs-201', tipo: 'vacaciones', fechaInicio: '2026-07-15', fechaFin: '2026-07-22', dias: 8, motivo: 'Semana festiva', estado: 'disfrutado' }
+    ]
+  },
+  {
+    id: 'emp-3',
+    obreroId: 'obrero-3',
+    usuarioId: 'user-obrero-3',
+    nombre: 'Ionut',
+    apellidos: 'Radu',
+    dni: 'Y2345678X',
+    naf: '28 55443322 88',
+    fechaNacimiento: '1987-03-05',
+    direccion: 'Calle Marcelino Álvarez 8, Bajo, Madrid',
+    telefono: '+34 633 445 566',
+    email: 'ionut.radu@obramaster.es',
+    iban: 'ES23 0182 1234 5602 0123 4567',
+    categoria: 'Oficial 1ª',
+    convenio: 'Convenio General del Sector de la Construcción (Madrid)',
+    especialidad: 'Yesos & Pladur',
+    tipoContrato: 'fijo_discontinuo',
+    jornadaHorasSemana: 40,
+    salarioBaseMensual: 1920.00,
+    plusConvenio: 240.00,
+    precioHoraExtra: 19.00,
+    irpfPct: 15.0,
+    situacionFamiliar: 'casado',
+    hijosACargo: 1,
+    dependientesACargo: 0,
+    discapacidadPct: 0,
+    fechaAlta: '2024-03-01',
+    fechaBaja: null,
+    motivoBaja: null,
+    estado: 'activo',
+    diasTrabajadosMes: 20,
+    horasOrdinarias: 152,
+    horasExtras: 4,
+    vacacionesAnualesTotal: 30,
+    vacacionesConsumidas: 15,
+    foto: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+    ausencias: [
+      { id: 'abs-301', tipo: 'vacaciones', fechaInicio: '2026-08-10', fechaFin: '2026-08-25', dias: 15, motivo: 'Vacaciones de verano', estado: 'disfrutado' }
+    ]
+  },
+  {
+    id: 'emp-4',
+    obreroId: 'obrero-4',
+    usuarioId: 'user-obrero-4',
+    nombre: 'Antonio',
+    apellidos: 'Morales Vega',
+    dni: '09876543Z',
+    naf: '28 66778899 44',
+    fechaNacimiento: '1989-09-18',
+    direccion: 'Calle Toledo 94, 1º Izq, Madrid',
+    telefono: '+34 644 556 677',
+    email: 'antonio.morales@obramaster.es',
+    iban: 'ES45 2038 9876 5400 1234 5678',
+    categoria: 'Oficial 2ª',
+    convenio: 'Convenio General del Sector de la Construcción (Madrid)',
+    especialidad: 'Pintura & Revestimientos',
+    tipoContrato: 'temporal',
+    jornadaHorasSemana: 40,
+    salarioBaseMensual: 1620.00,
+    plusConvenio: 190.00,
+    precioHoraExtra: 16.50,
+    irpfPct: 12.0,
+    situacionFamiliar: 'soltero',
+    hijosACargo: 0,
+    dependientesACargo: 0,
+    discapacidadPct: 0,
+    fechaAlta: '2025-06-01',
+    fechaBaja: null,
+    motivoBaja: null,
+    estado: 'vacaciones',
+    diasTrabajadosMes: 10,
+    horasOrdinarias: 80,
+    horasExtras: 0,
+    vacacionesAnualesTotal: 30,
+    vacacionesConsumidas: 22,
+    foto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    ausencias: [
+      { id: 'abs-401', tipo: 'vacaciones', fechaInicio: '2026-10-10', fechaFin: '2026-10-24', dias: 14, motivo: 'Vacaciones pactadas de otoño', estado: 'aprobado' }
+    ]
+  },
+  {
+    id: 'emp-5',
+    obreroId: 'obrero-5',
+    usuarioId: null,
+    nombre: 'José Luis',
+    apellidos: 'Navarro Rivas',
+    dni: '33445566T',
+    naf: '28 11223344 55',
+    fechaNacimiento: '1979-01-30',
+    direccion: 'Paseo de Extremadura 77, Madrid',
+    telefono: '+34 655 667 788',
+    email: 'joseluis.navarro@gmail.com',
+    iban: 'ES67 0081 2233 4400 5566 7788',
+    categoria: 'Peón Ordinario',
+    convenio: 'Convenio General del Sector de la Construcción (Madrid)',
+    especialidad: 'Peonaje y Desescombro',
+    tipoContrato: 'indefinido',
+    jornadaHorasSemana: 40,
+    salarioBaseMensual: 1350.00,
+    plusConvenio: 150.00,
+    precioHoraExtra: 14.00,
+    irpfPct: 8.0,
+    situacionFamiliar: 'soltero',
+    hijosACargo: 0,
+    dependientesACargo: 0,
+    discapacidadPct: 0,
+    fechaAlta: '2024-01-10',
+    fechaBaja: '2026-09-30',
+    motivoBaja: 'Fin de obra y rescisión de mutuo acuerdo con liquidación total',
+    estado: 'baja',
+    diasTrabajadosMes: 0,
+    horasOrdinarias: 0,
+    horasExtras: 0,
+    vacacionesAnualesTotal: 30,
+    vacacionesConsumidas: 22.5,
+    foto: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=200&q=80',
+    ausencias: []
+  }
+];
+
+export const INITIAL_SUBCONTRACTORS = [
+  {
+    id: 'sub-1',
+    razonSocial: 'ElectroSur Instalaciones SL',
+    nombreComercial: 'ElectroSur',
+    cif: 'B84561234',
+    gremio: 'Electricidad y Climatización',
+    personaContacto: 'Sergio Navas (Jefe Técnico)',
+    telefono: '+34 91 555 7788',
+    telefonoUrgencias: '+34 600 112 233',
+    email: 'proyectos@electrosur.es',
+    direccion: 'Pol. Ind. Cobo Calleja, C/ Manuel Cobo 44, Fuenlabrada, Madrid',
+    prl: {
+      seguroRCCompania: 'Mapfre Empresas',
+      seguroRCPoliza: 'RC-9821345-M',
+      seguroRCSuma: 600000,
+      seguroRCFechaCaducidad: '2027-04-15', // Vigente 🟢
+      certificadoAEAT: 'vigente',
+      certificadoTGSS: 'vigente',
+      aptoEntrarObra: true
+    },
+    scoring: {
+      media: 4.8,
+      totalResenas: 14,
+      criterios: {
+        puntualidad: 4.7,
+        calidad: 4.9,
+        limpieza: 4.6,
+        trato: 5.0
+      }
+    },
+    notasInternas: [
+      { id: 'not-101', fecha: '2026-10-12', autor: 'Manuel (Director)', texto: 'Excelente disposición para atender incidencias urgentes en menos de 2h. Siempre emiten boletines CIE en 24h.' },
+      { id: 'not-102', fecha: '2026-09-02', autor: 'Manuel (Director)', texto: 'Negociado descuento adicional del 5% si el volumen anual supera los 30.000€.' }
+    ],
+    presupuestosVinculados: [
+      {
+        id: 'spres-101',
+        obraId: 'obra-1',
+        obraTitulo: 'Reforma Integral Ático Velázquez',
+        fecha: '2026-08-25',
+        importeSubcontrata: 2260.00,
+        estado: 'aprobado',
+        partidas: [
+          { codigo: 'ELE-01', concepto: 'Instalación eléctrica completa REBT', importe: 1785.00 },
+          { codigo: 'ELE-03', concepto: 'Cuadro general IGA y boletín CIE', importe: 475.00 }
+        ]
+      },
+      {
+        id: 'spres-102',
+        obraId: 'obra-2',
+        obraTitulo: 'Reforma Cocina y 2 Baños Av. Bruselas',
+        fecha: '2026-09-20',
+        importeSubcontrata: 1420.00,
+        estado: 'aprobado',
+        partidas: [
+          { codigo: 'ELE-02', concepto: 'Circuitos cocina e iluminación foseada', importe: 1420.00 }
+        ]
+      }
+    ],
+    facturasRecibidas: [
+      {
+        id: 'sfac-101',
+        numero: 'FAC-ES-2026-089',
+        obraId: 'obra-1',
+        obraTitulo: 'Reforma Integral Ático Velázquez',
+        presupuestoVinculadoId: 'spres-101',
+        fechaEmision: '2026-10-10',
+        fechaVencimiento: '2026-11-10',
+        baseImponible: 2260.00,
+        ivaPct: 21,
+        total: 2734.60,
+        estadoPago: 'pagado',
+        desviacionSobrePresupuesto: 0
+      }
+    ]
+  },
+  {
+    id: 'sub-2',
+    razonSocial: 'ClimaTec Fontanería y Climatización SL',
+    nombreComercial: 'ClimaTec',
+    cif: 'B85994421',
+    gremio: 'Fontanería y Climatización',
+    personaContacto: 'David Aranda',
+    telefono: '+34 91 444 3322',
+    telefonoUrgencias: '+34 655 443 322',
+    email: 'proyectos@climatec.es',
+    direccion: 'Calle Artesanos 12, Getafe, Madrid',
+    prl: {
+      seguroRCCompania: 'Allianz Seguros',
+      seguroRCPoliza: 'AL-443322-C',
+      seguroRCSuma: 450000,
+      seguroRCFechaCaducidad: '2026-11-05', // 🟡 Alerta: caduca en menos de 20 días!
+      certificadoAEAT: 'vigente',
+      certificadoTGSS: 'vigente',
+      aptoEntrarObra: true
+    },
+    scoring: {
+      media: 4.4,
+      totalResenas: 9,
+      criterios: {
+        puntualidad: 4.1,
+        calidad: 4.7,
+        limpieza: 4.3,
+        trato: 4.6
+      }
+    },
+    notasInternas: [
+      { id: 'not-201', fecha: '2026-10-05', autor: 'Manuel (Director)', texto: 'Técnicamente muy solventes en suelo radiante y aerotermia. En obra de Av. Bruselas facturaron 180€ de más por rozas extra; revisar siempre mediciones antes de pagar.' }
+    ],
+    presupuestosVinculados: [
+      {
+        id: 'spres-201',
+        obraId: 'obra-2',
+        obraTitulo: 'Reforma Cocina y 2 Baños Av. Bruselas',
+        fecha: '2026-09-22',
+        importeSubcontrata: 1850.00,
+        estado: 'aprobado',
+        partidas: [
+          { codigo: 'FON-01', concepto: 'Fontanería multicapa y colectores cocina/baños', importe: 1450.00 },
+          { codigo: 'FON-03', concepto: 'Montaje de 2 platos de ducha resina', importe: 400.00 }
+        ]
+      }
+    ],
+    facturasRecibidas: [
+      {
+        id: 'sfac-201',
+        numero: 'FAC-CLIM-2026-042',
+        obraId: 'obra-2',
+        obraTitulo: 'Reforma Cocina y 2 Baños Av. Bruselas',
+        presupuestoVinculadoId: 'spres-201',
+        fechaEmision: '2026-10-15',
+        fechaVencimiento: '2026-11-15',
+        baseImponible: 2030.00, // Desviación de +180€ sobre los 1850€ presupuestados!
+        ivaPct: 21,
+        total: 2456.30,
+        estadoPago: 'pendiente',
+        desviacionSobrePresupuesto: 180.00
+      }
+    ]
+  },
+  {
+    id: 'sub-3',
+    razonSocial: 'DecorPint Madrid SL',
+    nombreComercial: 'DecorPint',
+    cif: 'B89112233',
+    gremio: 'Pintura y Revestimientos',
+    personaContacto: 'Roberto Alcaide',
+    telefono: '+34 91 888 9900',
+    telefonoUrgencias: '+34 677 889 900',
+    email: 'presupuestos@decorpint.com',
+    direccion: 'Avenida de la Albufera 120, Madrid',
+    prl: {
+      seguroRCCompania: 'Axa Seguros',
+      seguroRCPoliza: 'AX-889922-P',
+      seguroRCSuma: 300000,
+      seguroRCFechaCaducidad: '2027-01-20', // Vigente 🟢
+      certificadoAEAT: 'vigente',
+      certificadoTGSS: 'vigente',
+      aptoEntrarObra: true
+    },
+    scoring: {
+      media: 4.8,
+      totalResenas: 11,
+      criterios: {
+        puntualidad: 4.8,
+        calidad: 4.9,
+        limpieza: 4.9,
+        trato: 4.7
+      }
+    },
+    notasInternas: [
+      { id: 'not-301', fecha: '2026-08-30', autor: 'Manuel (Director)', texto: 'Máxima finura en alisados con luz rasante. Protegen suelos con cartón y plástico sin dejar salpicaduras.' }
+    ],
+    presupuestosVinculados: [
+      {
+        id: 'spres-301',
+        obraId: 'obra-1',
+        obraTitulo: 'Reforma Integral Ático Velázquez',
+        fecha: '2026-08-28',
+        importeSubcontrata: 3276.00,
+        estado: 'aprobado',
+        partidas: [
+          { codigo: 'PIN-01', concepto: 'Alisado de gotelé y pintura plástica lavable mate', importe: 3276.00 }
+        ]
+      }
+    ],
+    facturasRecibidas: [
+      {
+        id: 'sfac-301',
+        numero: 'FAC-DP-2026-118',
+        obraId: 'obra-1',
+        obraTitulo: 'Reforma Integral Ático Velázquez',
+        presupuestoVinculadoId: 'spres-301',
+        fechaEmision: '2026-09-28',
+        fechaVencimiento: '2026-10-28',
+        baseImponible: 3276.00,
+        ivaPct: 21,
+        total: 3963.96,
+        estadoPago: 'pagado',
+        desviacionSobrePresupuesto: 0
+      }
+    ]
+  },
+  {
+    id: 'sub-4',
+    razonSocial: 'Carpintería y Maderas Robles SL',
+    nombreComercial: 'Carpintería Robles',
+    cif: 'B81234990',
+    gremio: 'Carpintería y Maderas',
+    personaContacto: 'Carlos Robles',
+    telefono: '+34 91 776 6554',
+    telefonoUrgencias: '+34 611 776 655',
+    email: 'carlos@carpinteriarobles.es',
+    direccion: 'Carretera de Toledo Km 18, Fuenlabrada, Madrid',
+    prl: {
+      seguroRCCompania: 'Generali Seguros',
+      seguroRCPoliza: 'GN-123456-R',
+      seguroRCSuma: 300000,
+      seguroRCFechaCaducidad: '2026-09-15', // 🔴 Caducado y Bloqueado
+      certificadoAEAT: 'vigente',
+      certificadoTGSS: 'pendiente',
+      aptoEntrarObra: false
+    },
+    scoring: {
+      media: 4.1,
+      totalResenas: 7,
+      criterios: {
+        puntualidad: 3.8,
+        calidad: 4.5,
+        limpieza: 4.0,
+        trato: 4.2
+      }
+    },
+    notasInternas: [
+      { id: 'not-401', fecha: '2026-10-01', autor: 'Manuel (Director)', texto: '⚠️ ATENCIÓN: Póliza de Seguro RC vencida desde el 15/09/2026. Prohibido permitir su acceso a ninguna obra hasta que envíen el recibo bancario en vigor.' }
+    ],
+    presupuestosVinculados: [
+      {
+        id: 'spres-401',
+        obraId: 'obra-1',
+        obraTitulo: 'Reforma Integral Ático Velázquez',
+        fecha: '2026-08-26',
+        importeSubcontrata: 2231.25,
+        estado: 'en_negociacion',
+        partidas: [
+          { codigo: 'CAR-02', concepto: 'Instalación de tarima AC5 y rodapié', importe: 2231.25 }
+        ]
+      }
+    ],
+    facturasRecibidas: []
+  }
+];
+
