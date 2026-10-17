@@ -16,5 +16,18 @@
   "bugs": {
     "url": "https://github.com/chedrin/necesito-una-aplicacion-para-un-construc/issues"
   },
-  "homepage": "https://github.com/chedrin/necesito-una-aplicacion-para-un-construc#readme"
+  "homepage": "https://github.com/chedrin/necesito-una-aplicacion-para-un-construc#readme",
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.2",
+    "canvas-confetti": "^1.9.4",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^1.59.0",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
 }
