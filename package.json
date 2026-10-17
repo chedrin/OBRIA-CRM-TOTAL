@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "cp index.src.html index.html && vite build && cp -r dist/* ."
   },
   "repository": {
     "type": "git",
