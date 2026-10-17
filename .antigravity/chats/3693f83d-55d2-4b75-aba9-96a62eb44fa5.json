@@ -3,19 +3,19 @@
   "name": "Necesito una aplicación para un constructor",
   "createdAt": "2026-10-17T08:52:37.702Z",
   "filename": "3693f83d-55d2-4b75-aba9-96a62eb44fa5.json",
-  "geminiStarted": false,
+  "geminiStarted": true,
   "messages": [
     {
       "id": "36742320-35f8-4dd9-bbcf-0b848e582dc6",
       "role": "user",
       "content": "Necesito una aplicación para un constructor de obras y reformas, que controle el seguimiento de sus obras, que reciba por audio o mail las necesidades de sus clientes y de sus obreros y calcule las necesidades de cada obra, que a partir de fotos y audio genere un presupuesto utilizando inteligencia artificial. Que pueda pasar de presupuesto a factura de forma fácil y que prepare toda la documentación de trimestres y demás para enviar a la gestoría. Que según los trabajos realizados por los obreros les califique y tenga en cuenta para posteriores trabajos. Que si recibe presupuestos de las subcontratas de electricidad, pintores, carpinteros, lo analice y cambie los precios en la base de datos de precios junto con el margen que le configuremos para cada partida o trabajo.",
-      "status": "pending",
+      "status": "cancelled",
       "model": "gemini-3.8-flash-high",
       "client_type": "gemini-bridge",
       "parent_message_id": null,
       "created_at": "2026-10-17T08:59:14.034Z",
       "sender": "ios",
-      "is_cancelled": false
+      "is_cancelled": true
     }
   ]
 }
