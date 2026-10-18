@@ -192,7 +192,7 @@ function fileToPart(file) {
 }
 
 // Invocadores por Proveedor
-async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096 }) {
+async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json" }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!effectiveKey) throw new Error("API Key no configurada para Google Gemini.");
 
@@ -204,7 +204,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
     contents,
     ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
     generationConfig: {
-      responseMimeType: "application/json",
+      ...(responseMimeType ? { responseMimeType } : {}),
       temperature,
       maxOutputTokens: maxTokens
     }
@@ -366,10 +366,19 @@ async function transcribeAudioUnified({ audioFile, config }) {
       body: payloadBuffer
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      return data.text || "";
+    const rawText = await res.text();
+    let data = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      throw new Error(`Error en servicio Whisper OpenAI (${res.status}): ${rawText || "Sin respuesta"}`);
     }
+
+    if (!res.ok) {
+      throw new Error(`OpenAI Whisper (${res.status}): ${data.error?.message || rawText}`);
+    }
+
+    return data.text || "";
   }
 
   // 2. Si el proveedor es Google Gemini o se tiene GEMINI_API_KEY / clave AIza...
@@ -380,20 +389,28 @@ async function transcribeAudioUnified({ audioFile, config }) {
 Eres un transcriptor experto en construcción y arquitectura técnica de "ObraMaster".
 Escucha el audio adjunto y transcribe fielmente todo lo dicho en español, corrigiendo términos de obra (alicatados, rozas, falsos techos, etc.).
 
-Devuelve estrictamente un JSON:
-{
-  "transcripcion": "Texto fiel y literal en español"
-}
+Devuelve estrictamente un JSON válido con esta estructura exacta:
+{"transcripcion": "Texto fiel y literal en español"}
 `;
     const rawText = await callGeminiProvider({
       apiKey: geminiKey || process.env.GEMINI_API_KEY,
       model: config.model || "gemini-1.5-flash",
       contents: [{ role: "user", parts: [{ text: promptText }, part] }],
-      temperature: 0.1
+      temperature: 0.1,
+      responseMimeType: "application/json"
     });
 
-    const parsed = JSON.parse(cleanJsonOutput(rawText));
-    return parsed.transcripcion || parsed.texto || "";
+    try {
+      const cleaned = cleanJsonOutput(rawText);
+      if (!cleaned || cleaned === "{}") {
+        return rawText ? rawText.trim() : "";
+      }
+      const parsed = JSON.parse(cleaned);
+      return parsed.transcripcion || parsed.texto || rawText.trim() || "";
+    } catch (parseErr) {
+      console.warn("[Backend Gemini Transcribe] Fallo al parsear JSON, usando texto raw:", parseErr.message);
+      return rawText ? rawText.trim() : "";
+    }
   }
 
   // Fallback seguro si no hay motor de audio directo para Anthropic/OpenRouter sin Whisper
