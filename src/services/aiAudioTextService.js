@@ -62,6 +62,7 @@ export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallba
       }
     } catch (bErr) {
       console.warn('Error en el servicio de transcripción backend:', bErr.message);
+      throw new Error(bErr.message || 'Error al transcribir el audio. Verifica tu API Key en Ajustes de IA.');
     }
   }
 
@@ -74,7 +75,7 @@ export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallba
     };
   }
 
-  throw new Error('No se pudo procesar el archivo de audio. Por favor verifica que el backend de IA esté activo.');
+  throw new Error('No se pudo procesar el archivo de audio. Por favor verifica que tu API Key de IA esté configurada en Ajustes.');
 }
 
 /**
@@ -102,29 +103,25 @@ export async function processScopeWithAI(
 
   const activeRefs = (referenceBudgets || []).filter(b => b.is_active);
 
-  // 0. Probar primero con el Backend Local Multimodal (http://localhost:3000)
+  // 0. Probar primero con el Backend de Producción
   try {
-    const backendStatus = await checkBackendStatus();
-    if (backendStatus.isAvailable) {
-      console.log('ObraMaster AI: Procesando presupuesto a través del Backend Proxy seguro (http://localhost:3000)...');
-      const validPhotos = (customPhotos || []).map(p => p.file || p.blob).filter(Boolean);
-      const audioFiles = audioBlob ? [audioBlob] : [];
+    const validPhotos = (customPhotos || []).map(p => p.file || p.blob).filter(Boolean);
+    const audioFiles = audioBlob ? [audioBlob] : [];
 
-      const backendResult = await generateBudgetViaBackend({
-        fotos: validPhotos,
-        audios: audioFiles,
-        dictado: inputText,
-        basePrecios,
-        referenceBudgets: activeRefs,
-        customApiKey: aiConfig.apiKey
-      });
+    const backendResult = await generateBudgetViaBackend({
+      fotos: validPhotos,
+      audios: audioFiles,
+      dictado: inputText,
+      basePrecios,
+      referenceBudgets: activeRefs,
+      customApiKey: aiConfig.apiKey
+    });
 
-      if (backendResult && (backendResult.capitulos?.length > 0 || backendResult.conceptos?.length > 0)) {
-        return sanitizeStructuredOutput(backendResult, inputText);
-      }
+    if (backendResult && (backendResult.capitulos?.length > 0 || backendResult.conceptos?.length > 0)) {
+      return sanitizeStructuredOutput(backendResult, inputText);
     }
   } catch (backendErr) {
-    console.warn('Backend proxy no disponible o falló, recurriendo a conexión cliente directa:', backendErr.message);
+    console.warn('Backend de IA devolvió error o no está disponible, pasando a cliente:', backendErr.message);
   }
 
   const effectiveSystemPrompt = activeRefs.length > 0
@@ -236,7 +233,6 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
   }
 
   // 4. Technical Rule-Based Construction Engine (Deterministic Fallback)
-  // Parses quantities, areas, materials, and maps to standard technical specs
   await new Promise(r => setTimeout(r, 900));
   return parseTextToConstructionSpecs(inputText, basePrecios);
 }
