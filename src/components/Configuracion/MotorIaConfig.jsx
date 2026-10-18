@@ -304,13 +304,13 @@ export default function MotorIaConfig() {
               <span className={`w-2.5 h-2.5 rounded-full ${backendInfo.isAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
               <span className="font-bold text-white text-xs">
                 {backendInfo.isAvailable
-                  ? `Servidor Backend Proxy Activo (http://localhost:${backendInfo.details?.port || 3000})`
-                  : 'Servidor Backend Proxy Local'}
+                  ? 'Servidor Backend Proxy Activo (Producción / API Proxy)'
+                  : 'Servidor Backend Proxy API'}
               </span>
               <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
                 backendInfo.isAvailable ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
               }`}>
-                {backendInfo.isAvailable ? 'CONECTADO · CLAVE EN .ENV' : 'NO DETECTADO EN PUERTO 3000'}
+                {backendInfo.isAvailable ? 'CONECTADO · PROXY SEGURO' : 'NO DETECTADO'}
               </span>
             </div>
 
