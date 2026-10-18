@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { normalizeGeminiModel } from '../../services/geminiService';
+import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS } from '../../services/geminiService';
 import { checkBackendStatus, getBackendAiSettings, updateBackendAiSettings, testBackendAiConnection } from '../../services/backendAiService';
 import {
   Sparkles,
@@ -31,12 +31,8 @@ const PROVIDERS = [
     name: 'Google Gemini',
     logo: '✨',
     badge: 'Multimodal Nativo',
-    defaultModel: 'gemini-1.5-flash',
-    models: [
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Recomendado · Ultrarrápido)', speed: 'Ultrarrápido', context: '1M tokens' },
-      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Razonamiento de Mediciones)', speed: 'Rápido', context: '2M tokens' },
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Última Generación Google)', speed: 'Ultrarrápido', context: '1M tokens' }
-    ],
+    defaultModel: DEFAULT_GEMINI_MODEL,
+    models: GEMINI_MODELS,
     keyPrefix: 'AIza',
     helpUrl: 'https://aistudio.google.com/app/apikey'
   },
@@ -73,9 +69,9 @@ const PROVIDERS = [
     name: 'OpenRouter',
     logo: '🌐',
     badge: 'Multi-Modelo Universal',
-    defaultModel: 'google/gemini-flash-1.5',
+    defaultModel: 'google/gemini-2.5-flash',
     models: [
-      { id: 'google/gemini-flash-1.5', label: 'Gemini Flash 1.5 (Vía OpenRouter)', speed: 'Ultrarrápido', context: '1M tokens' },
+      { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (Vía OpenRouter)', speed: 'Ultrarrápido', context: '1M tokens' },
       { id: 'openai/gpt-4o', label: 'GPT-4o (Vía OpenRouter)', speed: 'Muy Rápido', context: '128k' },
       { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Vía OpenRouter)', speed: 'Rápido', context: '200k' },
       { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3 (Vía OpenRouter)', speed: 'Rápido', context: '64k' }
@@ -90,7 +86,7 @@ export default function MotorIaConfig() {
 
   const [provider, setProvider] = useState('google');
   const [apiKey, setApiKey] = useState('');
-  const [modelName, setModelName] = useState('gemini-1.5-flash');
+  const [modelName, setModelName] = useState(DEFAULT_GEMINI_MODEL);
   const [temperature, setTemperature] = useState(0.15);
   const [maxTokens, setMaxTokens] = useState(4096);
   const [showKey, setShowKey] = useState(false);
@@ -158,9 +154,9 @@ export default function MotorIaConfig() {
       setTesting(false);
       setTestResult({
         success: false,
-        error: err.message
+        error: 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.'
       });
-      showNotification(`Error al conectar con ${selectedProviderObj.name}: ${err.message}`, 'error');
+      showNotification('No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.', 'error');
     }
   };
 
@@ -434,7 +430,7 @@ export default function MotorIaConfig() {
                 <span className="font-bold">
                   {testResult.success
                     ? `¡Conexión Exitosa con ${selectedProviderObj.name}! (HTTP 200 OK)`
-                    : `Error al conectar con la API: ${testResult.error}`}
+                    : testResult.error}
                 </span>
               </div>
               {testResult.success && (

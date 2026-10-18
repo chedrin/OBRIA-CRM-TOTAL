@@ -8,7 +8,7 @@
  * 4. Audit logging of raw inputs and refined AI outputs (ai_inputs_log)
  */
 
-import { generateBudgetWithGemini, normalizeGeminiModel } from './geminiService';
+import { generateBudgetWithGemini, normalizeGeminiModel, DEFAULT_GEMINI_MODEL, USER_FRIENDLY_AI_ERROR } from './geminiService';
 import { buildFewShotReferenceContext, buildGeminiSystemPromptWithReferences } from './referenceBudgetService';
 import { checkBackendStatus, transcribeAudioViaBackend, generateBudgetViaBackend, getBackendAiSettings } from './backendAiService';
 
@@ -47,8 +47,6 @@ FORMATO DE SALIDA (ESTRICTO JSON):
 
 /**
  * Transcribes audio via OpenAI Whisper API or client fallback
- * @param {Blob|File} audioBlob - Audio file recorded or uploaded
- * @param {Object} aiConfig - User's configured AI settings
  */
 export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallback = '') {
   let apiKey = (aiConfig.apiKey || '').trim();
@@ -73,7 +71,7 @@ export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallba
       }
     } catch (bErr) {
       console.warn('Error en el servicio de transcripción backend:', bErr.message);
-      throw new Error(bErr.message || 'Error al transcribir el audio. Verifica tu API Key en Ajustes de IA.');
+      throw new Error(USER_FRIENDLY_AI_ERROR);
     }
   }
 
@@ -86,17 +84,11 @@ export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallba
     };
   }
 
-  throw new Error('No se pudo procesar el archivo de audio. Por favor verifica que tu API Key de IA esté configurada en Ajustes.');
+  throw new Error(USER_FRIENDLY_AI_ERROR);
 }
 
 /**
  * Transforms raw transcribed or pasted text into structured technical line items
- * @param {string} inputText - Raw transcript or pasted email
- * @param {string} contextType - 'presupuesto_obra' | 'email_cliente' | 'nota_voz' | 'peticion_libre'
- * @param {string} projectId - Target project ID if any
- * @param {Object} aiConfig - AI settings from AppContext
- * @param {Array} basePrecios - Company price master catalog
- * @param {Array} [referenceBudgets=[]] - Reference historical budgets for Few-Shot RAG
  */
 export async function processScopeWithAI(
   inputText,
@@ -179,8 +171,6 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
         const contentStr = data.choices[0]?.message?.content;
         const parsed = JSON.parse(contentStr);
         return sanitizeStructuredOutput(parsed, inputText);
-      } else {
-        console.warn('OpenAI Chat Completion error, switching to specialized engineering engine.');
       }
     } catch (err) {
       console.warn('Error connecting to OpenAI LLM:', err);
@@ -225,7 +215,7 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
   // 3. If Google Gemini API Key is available
   if (aiConfig.apiKey && aiConfig.provider === 'google') {
     try {
-      const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || 'gemini-1.5-flash');
+      const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || DEFAULT_GEMINI_MODEL);
       const parsed = await generateBudgetWithGemini({
         promptUser,
         systemPrompt: effectiveSystemPrompt,
@@ -239,7 +229,7 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
       }
     } catch (err) {
       console.error('Error connecting to Google Gemini API:', err);
-      throw err;
+      throw new Error(USER_FRIENDLY_AI_ERROR);
     }
   }
 
