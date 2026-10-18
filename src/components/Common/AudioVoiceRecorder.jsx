@@ -70,9 +70,7 @@ export default function AudioVoiceRecorder({
 
   // Sync initial transcript
   useEffect(() => {
-    if (initialTranscript) {
-      setTranscript(initialTranscript);
-    }
+    setTranscript(initialTranscript || '');
   }, [initialTranscript]);
 
   // Clean up AudioContext & MediaStream on unmount

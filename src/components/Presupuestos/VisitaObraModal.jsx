@@ -32,6 +32,7 @@ import {
 import { VISITA_TEMPLATES } from '../../services/siteVisitAIService';
 import confetti from 'canvas-confetti';
 import { processScopeWithAI, transcribeAudio } from '../../services/aiAudioTextService';
+import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
 
 export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const {
@@ -64,240 +65,14 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
   // Audio Recording & Text Input State
   const [audioFile, setAudioFile] = useState(null);
-  const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
-  const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioTranscript, setAudioTranscript] = useState(VISITA_TEMPLATES[0].audioMuestra);
   const [complementaryText, setComplementaryText] = useState('');
-
-  const recordingTimerRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const audioFileInputRef = useRef(null);
-
-  // Limpiar timers y streams al desmontar
-  useEffect(() => {
-    return () => {
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      if (audioPreviewUrl) {
-        try { URL.revokeObjectURL(audioPreviewUrl); } catch {}
-      }
-    };
-  }, [audioPreviewUrl]);
-
-  // Subir archivo de audio desde el dispositivo (.mp3, .wav, .m4a, .ogg, .webm)
-  const handleAudioFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    if (audioPreviewUrl) {
-      try { URL.revokeObjectURL(audioPreviewUrl); } catch {}
-    }
-
-    const preview = URL.createObjectURL(file);
-    setAudioFile(file);
-    setAudioPreviewUrl(preview);
-    setIsManualMode(true);
-    showNotification(`🎙️ Audio "${file.name}" cargado. Transcribiendo con IA...`);
-
-    // Transcribir automáticamente con IA al cargar el archivo
-    await handleTranscribeAudio(file);
-  };
-
-  // Transcribir audio a texto mediante IA (Gemini / Whisper / Backend)
-  const handleTranscribeAudio = async (targetFile = null) => {
-    const fileToProcess = targetFile || audioFile;
-    if (!fileToProcess) {
-      showNotification('Primero debes grabar con micrófono o subir un archivo de audio.', 'error');
-      return;
-    }
-
-    setIsTranscribingAudio(true);
-    try {
-      const res = await transcribeAudio(fileToProcess, empresaConfig?.aiConfig || {});
-      if (res && res.text) {
-        setAudioTranscript(res.text);
-        setIsManualMode(true);
-        showNotification('✨ Audio transcribido con éxito por la Inteligencia Artificial.');
-      } else {
-        showNotification('No se detectó voz clara en el audio.', 'error');
-      }
-    } catch (err) {
-      console.error('Error al transcribir audio:', err);
-      showNotification(`Error al transcribir: ${err.message || 'Fallo de conexión'}`, 'error');
-    } finally {
-      setIsTranscribingAudio(false);
-    }
-  };
-
-  // Descartar audio cargado
-  const handleDiscardAudio = () => {
-    if (audioPreviewUrl) {
-      try { URL.revokeObjectURL(audioPreviewUrl); } catch {}
-    }
-    setAudioFile(null);
-    setAudioPreviewUrl(null);
-    showNotification('Audio descartado.');
-  };
-
-  // Grabar audio con micrófono del dispositivo
-  const handleStartRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
-      const mr = new MediaRecorder(stream);
-      mediaRecorderRef.current = mr;
-
-      mr.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
-      mr.onstop = async () => {
-        const mimeType = mr.mimeType || 'audio/webm';
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        const ext = mimeType.includes('mp4') ? 'm4a' : 'webm';
-        const recordedFile = new File([blob], `grabacion-visita-${Date.now()}.${ext}`, { type: mimeType });
-
-        if (audioPreviewUrl) {
-          try { URL.revokeObjectURL(audioPreviewUrl); } catch {}
-        }
-        const preview = URL.createObjectURL(blob);
-        setAudioFile(recordedFile);
-        setAudioPreviewUrl(preview);
-        setIsManualMode(true);
-
-        stream.getTracks().forEach(t => t.stop());
-        await handleTranscribeAudio(recordedFile);
-      };
-
-      mr.start(250);
-      setIsRecording(true);
-      setRecordingSeconds(0);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds(s => s + 1);
-      }, 1000);
-      showNotification('🎙️ Grabando audio de la visita...');
-    } catch (err) {
-      console.error('Error al acceder al micrófono:', err);
-      showNotification('No se pudo acceder al micrófono. Comprueba los permisos en tu navegador o sube un archivo de audio.', 'error');
-    }
-  };
-
-  const handleStopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-    }
-  };
-
-  // Quick Scope Transform with AI
-  const handleTransformWithAI = async () => {
-    const realUploadedCapturas = (capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
-    const capturasNotes = realUploadedCapturas.length > 0
-      ? `[FOTOGRAFÍAS REALES SUBIDAS (${realUploadedCapturas.length})]:\n` + realUploadedCapturas.map((c, i) => `${i + 1}. ${c.titulo} - ${c.notas || 'Evidencia fotográfica real'}`).join('\n')
-      : '';
-
-    const combinedInput = [
-      audioTranscript ? `[AUDIO TRANSCRITO DE LA VISITA]:\n${audioTranscript}` : '',
-      complementaryText ? `[ANOTACIONES Y MEDICIONES IN SITU]:\n${complementaryText}` : '',
-      capturasNotes
-    ].filter(Boolean).join('\n\n');
-
-    if (!combinedInput.trim()) {
-      showNotification('Por favor, graba un audio o escribe notas técnicas antes de procesar con IA.', 'error');
-      return;
-    }
-
-    setIsProcessing(true);
-    setCurrentStep(2);
-    setStepLabel(activeRefBudgets.length > 0 
-      ? `Analizando pliegos (${activeRefBudgets.length} modelos de referencia RAG) y generando partidas...`
-      : 'Analizando requerimientos técnicos y generando partidas normalizadas...');
-
-    try {
-      const aiResult = await processScopeWithAI(
-        combinedInput,
-        'visita_obra',
-        null,
-        empresaConfig?.aiConfig || {},
-        basePrecios,
-        referenceBudgets
-      );
-
-      // Convert chapters & items into full quote line items
-      const allItems = [];
-      (aiResult.capitulos || []).forEach(cap => {
-        (cap.partidas || []).forEach(part => {
-          const med = Number(part.cantidad || part.medicion) || 1;
-          const pvp = Number(part.precioUnitario || part.precio_unitario_estimado || part.precioVenta) || 50;
-          const cost = Number(part.costeUnitario) || Number((pvp * 0.7).toFixed(2));
-          const tot = Number(part.total || part.total_estimado) || Number((med * pvp).toFixed(2));
-
-          allItems.push({
-            id: part.id || `par-vis-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-            codigo: part.codigo || 'GEN-01',
-            capitulo: cap.nombre_capitulo || cap.nombre || 'General',
-            concepto: part.concepto || part.titulo || part.descripcion || 'Partida técnica',
-            unidad: part.unidad || 'ud',
-            cantidad: med,
-            costeUnitario: cost,
-            precioVenta: pvp,
-            margenPct: Number(margenObjetivo) || 30,
-            total: tot
-          });
-        });
-      });
-
-      const subtotal = allItems.reduce((s, it) => s + (it.total || 0), 0);
-      const ivaAmt = Number((subtotal * (tipoIva / 100)).toFixed(2));
-      const totalConIva = Number((subtotal + ivaAmt).toFixed(2));
-
-      const newQuote = addPresupuesto({
-        numero: `PRES-IA-${Date.now().toString().slice(-4)}`,
-        obraTitulo: obraTitulo || 'Presupuesto de Visita de Obra',
-        cliente: clienteNombre || 'Cliente de Visita',
-        telefono: clienteTelefono || '+34 600 000 000',
-        email: clienteEmail || 'cliente@ejemplo.es',
-        direccion: direccion || 'Dirección de obra',
-        calidades: calidades || 'Estándar / Calidad Media',
-        plazoMeses: plazoDeseado || 2,
-        margenGlobalPct: margenObjetivo || 30,
-        tipoIvaPct: tipoIva || 10,
-        baseImponible: Number(subtotal.toFixed(2)),
-        ivaImporte: ivaAmt,
-        totalConIva: totalConIva,
-        partidas: allItems,
-        notas: `Generado mediante Captura Multimodal IA (Audio + Texto in situ).\n\nResumen: ${aiResult.resumen_alcance || ''}\n\nPliego Técnico: ${aiResult.redaccion_tecnica_estilo || ''}`,
-        resumenEjecutivo: aiResult.resumen_alcance,
-        redaccionPliego: aiResult.redaccion_tecnica_estilo
-      });
-
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-      showNotification('✨ ¡Presupuesto generado con partidas normalizadas por IA!');
-      setIsProcessing(false);
-      onClose();
-      if (onQuoteCreated) {
-        onQuoteCreated(newQuote);
-      }
-    } catch (err) {
-      console.error('Error transforming scope to quote:', err);
-      setIsProcessing(false);
-      showNotification(`Error de IA: ${err.message || 'Fallo al procesar las partidas'}`, 'error');
-    }
-  };
 
   // Captures (Only real uploaded photos from device / camera)
   const [capturas, setCapturas] = useState([]);
   const [customPhotoUrl, setCustomPhotoUrl] = useState('');
   const [customPhotoTitle, setCustomPhotoTitle] = useState('');
   const photoFileInputRef = useRef(null);
-  const audioDirectFileInputRef = useRef(null);
 
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false);
@@ -571,213 +346,47 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               </div>
             </div>
 
-            {/* In Situ Multimodal Capture Section (Audio + Transcripción IA + Mediciones) */}
-            <div className="bg-slate-950 border border-slate-800 p-4 sm:p-5 rounded-2xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-                    <Mic className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-white text-xs sm:text-sm flex items-center gap-2 flex-wrap">
-                      <span>1. Captura de Audio de Visita y Transcripción con IA</span>
-                      <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
-                        Whisper & Gemini
-                      </span>
-                      {activeRefBudgets.length > 0 && (
-                        <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                          <span>🧠 {activeRefBudgets.length} PDFs Modelo</span>
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-[11px] text-slate-400">
-                      Graba la explicación de la obra o añade un archivo de audio para que la IA lo transcriba a texto automáticamente.
-                    </p>
-                  </div>
-                </div>
+            {/* In Situ Multimodal Capture Section (Audio Voice Recorder + Mediciones) */}
+            <div className="space-y-4">
+              <AudioVoiceRecorder
+                title="1. Captura de Audio de Visita y Transcripción con IA"
+                initialTranscript={audioTranscript}
+                placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio' para transcribir la explicación de la obra. La transcripción de la visita aparecerá aquí y podrás editarla..."
+                onTranscriptChange={(text, blob) => {
+                  setAudioTranscript(text);
+                  if (blob) setAudioFile(blob);
+                  setIsManualMode(true);
+                }}
+              />
 
-                {/* Botones de Acción de Audio Perfectamente Alineados */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Botón 1: Grabar con Micrófono */}
-                  {isRecording ? (
+              {/* Entrada por Texto / Mediciones In Situ */}
+              <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Mediciones Láser & Anotaciones Complementarias In Situ</span>
+                  </span>
+                  {complementaryText && (
                     <button
                       type="button"
-                      onClick={handleStopRecording}
-                      className="px-3.5 py-2 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white font-black rounded-xl text-xs flex items-center gap-2 transition shadow-lg shadow-rose-600/30 animate-pulse"
+                      onClick={() => setComplementaryText('')}
+                      className="text-[10px] text-slate-500 hover:text-rose-400 transition"
                     >
-                      <Square className="w-3.5 h-3.5 fill-white" />
-                      <span>Detener Grabación ({recordingSeconds}s)</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleStartRecording}
-                      className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition active:scale-95 shadow-md shadow-amber-500/20"
-                    >
-                      <Mic className="w-3.5 h-3.5 stroke-[2.5]" />
-                      <span>Grabar Micrófono</span>
-                    </button>
-                  )}
-
-                  {/* Input oculto para subir archivo de audio */}
-                  <input
-                    type="file"
-                    ref={audioFileInputRef}
-                    onChange={handleAudioFileUpload}
-                    accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm"
-                    className="hidden"
-                  />
-
-                  {/* Botón 2: Añadir Audio */}
-                  <button
-                    type="button"
-                    onClick={() => audioFileInputRef.current?.click()}
-                    className="px-3.5 py-2 bg-slate-850 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700 hover:border-amber-400/50 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm"
-                    title="Subir un archivo de audio grabado (.mp3, .m4a, .wav, .ogg)"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Añadir Audio</span>
-                  </button>
-
-                  {/* Botón 3: Transcribir a Texto por IA */}
-                  <button
-                    type="button"
-                    onClick={() => handleTranscribeAudio()}
-                    disabled={isTranscribingAudio || (!audioFile && !audioTranscript)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
-                      isTranscribingAudio
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-wait'
-                        : audioFile
-                        ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 active:scale-95'
-                        : 'bg-slate-900 text-slate-500 border border-slate-800 cursor-not-allowed'
-                    }`}
-                    title="Enviar el audio cargado a la IA para transcribirlo a texto"
-                  >
-                    <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isTranscribingAudio ? 'animate-spin' : ''}`} />
-                    <span>{isTranscribingAudio ? 'Transcribiendo...' : 'Transcribir a Texto por IA'}</span>
-                  </button>
-
-                  {/* Botón 4: Descartar Audio si existe */}
-                  {audioFile && (
-                    <button
-                      type="button"
-                      onClick={handleDiscardAudio}
-                      className="p-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl text-xs transition"
-                      title="Descartar este audio"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      Limpiar notas
                     </button>
                   )}
                 </div>
-              </div>
 
-              {/* Reproductor de Audio si hay un archivo grabado o subido */}
-              {audioPreviewUrl && (
-                <div className="bg-slate-900 border border-amber-500/30 p-3 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                      <FileAudio className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 text-left">
-                      <p className="text-xs font-bold text-white truncate">{audioFile?.name || 'Grabación de Visita'}</p>
-                      <p className="text-[10px] text-slate-400">
-                        {audioFile?.size ? `${(audioFile.size / 1024).toFixed(1)} KB` : 'Grabado en navegador'} · Listo para procesar con IA
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <audio controls src={audioPreviewUrl} className="h-8 max-w-[260px] w-full" />
-                    <button
-                      type="button"
-                      onClick={() => handleTranscribeAudio()}
-                      disabled={isTranscribingAudio}
-                      className="px-3 py-1.5 bg-amber-500 text-slate-950 hover:bg-amber-400 font-black rounded-lg text-[11px] flex items-center gap-1 shrink-0 transition shadow-sm active:scale-95"
-                    >
-                      <Sparkles className="w-3 h-3 fill-slate-950" />
-                      <span>{isTranscribingAudio ? 'Transcribiendo...' : 'Transcribir'}</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Grid 2 Columnas: A. Audio Transcrito / Dictado y B. Mediciones y Anotaciones In Situ */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Columna A: Audio Transcrito */}
-                <div className="space-y-2 flex flex-col">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-amber-400" />
-                      <span>A. Audio Transcrito / Dictado Técnico</span>
-                    </span>
-                    {audioTranscript && (
-                      <button
-                        type="button"
-                        onClick={() => setAudioTranscript('')}
-                        className="text-[10px] text-slate-500 hover:text-rose-400 transition"
-                      >
-                        Limpiar transcripción
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-2xl p-3 min-h-[170px]">
-                    <textarea
-                      rows="6"
-                      value={audioTranscript}
-                      onChange={(e) => {
-                        setAudioTranscript(e.target.value);
-                        setIsManualMode(true);
-                      }}
-                      placeholder="Pulsa 'Grabar Micrófono' o 'Añadir Audio' y luego 'Transcribir a Texto por IA'. También puedes escribir o retocar el dictado aquí..."
-                      className="w-full flex-1 bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none resize-none font-sans"
-                    ></textarea>
-
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                      <span>{audioTranscript ? `${audioTranscript.length} caracteres` : 'Sin audio transcrito'}</span>
-                      <span className="text-amber-400/80 text-[10px]">
-                        {isTranscribingAudio ? 'Transcribiendo con IA...' : 'Editable por el usuario'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Columna B: Entrada por Texto / Mediciones In Situ */}
-                <div className="space-y-2 flex flex-col">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-blue-400" />
-                      <span>B. Mediciones Láser & Notas In Situ</span>
-                    </span>
-                    {complementaryText && (
-                      <button
-                        type="button"
-                        onClick={() => setComplementaryText('')}
-                        className="text-[10px] text-slate-500 hover:text-rose-400 transition"
-                      >
-                        Limpiar notas
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-2xl p-3 min-h-[170px]">
-                    <textarea
-                      rows="6"
-                      value={complementaryText}
-                      onChange={(e) => {
-                        setComplementaryText(e.target.value);
-                        setIsManualMode(true);
-                      }}
-                      placeholder="Anotaciones complementarias in situ:&#10;• Dimensiones: 4.20m x 2.80m (altura 2.50m)&#10;• Alicatar hasta el techo con porcelánico rectificado&#10;• Falso techo de pladur verde con 4 puntos de luz LED&#10;• Reubicar bajante y colocar inodoro suspendido..."
-                      className="w-full flex-1 bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none resize-none font-sans"
-                    ></textarea>
-
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                      <span>{complementaryText.length} caracteres</span>
-                      <span className="text-blue-400/80 text-[10px]">Complementa el audio para la IA</span>
-                    </div>
-                  </div>
-                </div>
+                <textarea
+                  rows="3"
+                  value={complementaryText}
+                  onChange={(e) => {
+                    setComplementaryText(e.target.value);
+                    setIsManualMode(true);
+                  }}
+                  placeholder="Anotaciones complementarias in situ:&#10;• Dimensiones: 4.20m x 2.80m (altura 2.50m)&#10;• Alicatar hasta el techo con porcelánico rectificado&#10;• Falso techo de pladur verde con 4 puntos de luz LED..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/60 transition"
+                ></textarea>
               </div>
             </div>
 
