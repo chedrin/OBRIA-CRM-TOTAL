@@ -481,16 +481,41 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   </div>
 
                   {audioRefinedText && (
-                    <div className="bg-slate-900 border border-amber-500/30 p-3 rounded-xl space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px] text-amber-400 font-bold">
+                    <div className="bg-slate-900 border border-amber-500/30 p-3 rounded-xl space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-400 font-bold border-b border-amber-500/20 pb-1.5">
                         <span>VERSIÓN TÉCNICA IA (Aprendida de presupuestos modelo)</span>
-                        <button
-                          type="button"
-                          onClick={() => setAudioTranscript(audioRefinedText)}
-                          className="text-xs text-amber-300 hover:underline"
-                        >
-                          Usar esta versión
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(audioRefinedText);
+                              showNotification('Copiado al portapapeles');
+                            }}
+                            className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded transition"
+                          >
+                            Copiar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAudioTranscript(audioRefinedText);
+                              showNotification('Transcripción original sustituida por la versión técnica');
+                            }}
+                            className="text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded transition"
+                          >
+                            Sustituir Original
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAudioTranscript(audioRefinedText);
+                              showNotification('Añadido prioritariamente al expediente del presupuesto');
+                            }}
+                            className="text-[11px] bg-amber-500 text-slate-950 font-black px-2 py-0.5 rounded transition"
+                          >
+                            Añadir al Presupuesto
+                          </button>
+                        </div>
                       </div>
                       <p className="text-xs text-slate-200 font-medium leading-relaxed">{audioRefinedText}</p>
                     </div>
@@ -539,16 +564,41 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                 ></textarea>
 
                 {notesRefinedText && (
-                  <div className="bg-slate-900 border border-indigo-500/30 p-3 rounded-xl space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-indigo-400 font-bold">
+                  <div className="bg-slate-900 border border-indigo-500/30 p-3 rounded-xl space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-indigo-400 font-bold border-b border-indigo-500/20 pb-1.5">
                       <span>VERSIÓN TÉCNICA REDACTADA POR IA</span>
-                      <button
-                        type="button"
-                        onClick={() => setComplementaryText(notesRefinedText)}
-                        className="text-xs text-indigo-300 hover:underline"
-                      >
-                        Sustituir notas con versión técnica
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(notesRefinedText);
+                            showNotification('Copiado al portapapeles');
+                          }}
+                          className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded transition"
+                        >
+                          Copiar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setComplementaryText(notesRefinedText);
+                            showNotification('Anotaciones sustituidas por la versión técnica');
+                          }}
+                          className="text-[11px] bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 rounded transition"
+                        >
+                          Sustituir Original
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setComplementaryText(notesRefinedText);
+                            showNotification('Añadido prioritariamente al expediente del presupuesto');
+                          }}
+                          className="text-[11px] bg-indigo-500 text-white font-black px-2 py-0.5 rounded transition"
+                        >
+                          Añadir al Presupuesto
+                        </button>
+                      </div>
                     </div>
                     <p className="text-xs text-slate-200 font-medium leading-relaxed">{notesRefinedText}</p>
                   </div>

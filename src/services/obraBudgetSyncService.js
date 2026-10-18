@@ -195,6 +195,84 @@ export function calculateGlobalProjectProgress(fases) {
  * @param {Array} presupuestos - Lista de presupuestos
  * @returns {Array} Obras reparadas con vinculación canónica 1:1
  */
+/**
+ * Calculates AI scheduling analytics for an obra:
+ * - Fin previsto, Días restantes, Estado de riesgo (En plazo 🟢, Riesgo de retraso 🟡, Retraso crítico 🔴)
+ * - Capacity analysis & next available start date for new projects
+ */
+export function calculateObraScheduling(obra, allObras = []) {
+  const today = new Date();
+  const fechaInicio = obra.fechaInicio ? new Date(obra.fechaInicio) : new Date();
+
+  // Total estimated days from phases or default
+  const duracionPrevistaDias = obra.fases?.length > 0
+    ? obra.fases.reduce((sum, f) => sum + (Number(f.dias) || 5), 0)
+    : 45;
+
+  let fechaFin = obra.fechaFinEstimada ? new Date(obra.fechaFinEstimada) : new Date(fechaInicio.getTime() + duracionPrevistaDias * 86400000);
+
+  const totalDaysMs = fechaFin.getTime() - fechaInicio.getTime();
+  const totalDays = Math.max(1, Math.round(totalDaysMs / 86400000));
+
+  const elapsedDaysMs = today.getTime() - fechaInicio.getTime();
+  const elapsedDays = Math.max(0, Math.round(elapsedDaysMs / 86400000));
+  const diasRestantes = Math.max(0, Math.round((fechaFin.getTime() - today.getTime()) / 86400000));
+
+  const progreso = Number(obra.progreso) || 0;
+  const expectedProgreso = Math.min(100, Math.round((elapsedDays / totalDays) * 100));
+
+  let estadoRiesgo = '🟢 En plazo';
+  let riesgoLevel = 'low'; // low, medium, high
+
+  if (progreso < 100) {
+    if (diasRestantes <= 0 || (expectedProgreso - progreso) > 30) {
+      estadoRiesgo = '🔴 Retraso crítico detectado';
+      riesgoLevel = 'high';
+    } else if ((expectedProgreso - progreso) > 15) {
+      estadoRiesgo = '🟡 Riesgo de retraso';
+      riesgoLevel = 'medium';
+    }
+  } else {
+    estadoRiesgo = '🟢 Finalizada en plazo';
+    riesgoLevel = 'low';
+  }
+
+  // Operarios asignados
+  const operariosAsignados = obra.operariosAsignados || 3;
+
+  // Calculate global next available date across all active obras
+  const activeObras = (allObras || []).filter(o => o.estado === 'en_curso');
+  let maxFinMs = today.getTime();
+  activeObras.forEach(o => {
+    if (o.fechaFinEstimada) {
+      const f = new Date(o.fechaFinEstimada).getTime();
+      if (f > maxFinMs) maxFinMs = f;
+    }
+  });
+  const nextAvailableDate = new Date(maxFinMs + 86400000);
+
+  const formatDate = (d) => {
+    try {
+      return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (e) {
+      return d.toISOString().split('T')[0];
+    }
+  };
+
+  return {
+    fechaInicioFormatted: formatDate(fechaInicio),
+    fechaFinFormatted: formatDate(fechaFin),
+    duracionPrevistaDias: totalDays,
+    diasRestantes,
+    operariosAsignados,
+    progreso,
+    expectedProgreso,
+    estadoRiesgo,
+    riesgoLevel,
+    proximaFechaDisponibleFormatted: formatDate(nextAvailableDate)
+  };
+}
+
 export function repairAndSyncObrasWithBudgets(obras, presupuestos) {
   if (!obras || obras.length === 0) return [];
 
