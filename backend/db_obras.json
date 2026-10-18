@@ -44,7 +44,7 @@
             "progreso": 100,
             "estado": "completada",
             "asignadoA": "Mario Silva",
-            "completedAt": "2026-10-18T08:26:38.280Z"
+            "completedAt": "2026-10-18T10:46:02.111Z"
           },
           {
             "id": "t-2",
@@ -59,7 +59,7 @@
             "progreso": 100,
             "estado": "completada",
             "asignadoA": "Mario Silva",
-            "completedAt": "2026-10-18T08:26:38.293Z"
+            "completedAt": "2026-10-18T10:46:02.111Z"
           },
           {
             "id": "t-3",
@@ -74,7 +74,7 @@
             "progreso": 100,
             "estado": "completada",
             "asignadoA": "Mario Silva",
-            "completedAt": "2026-10-18T08:26:38.293Z"
+            "completedAt": "2026-10-18T10:46:02.111Z"
           }
         ]
       },
@@ -119,7 +119,7 @@
             "progreso": 100,
             "estado": "completada",
             "asignadoA": "Ionut Radu",
-            "completedAt": "2026-10-18T08:26:38.293Z"
+            "completedAt": "2026-10-18T10:46:02.111Z"
           }
         ]
       },
@@ -149,7 +149,7 @@
             "progreso": 100,
             "estado": "completada",
             "asignadoA": "ClimaTec Subcontrata",
-            "completedAt": "2026-10-18T08:26:38.293Z"
+            "completedAt": "2026-10-18T10:46:02.111Z"
           },
           {
             "id": "t-7",
@@ -164,7 +164,7 @@
             "progreso": 100,
             "estado": "completada",
             "asignadoA": "ClimaTec Subcontrata",
-            "completedAt": "2026-10-18T08:26:38.293Z"
+            "completedAt": "2026-10-18T10:46:02.111Z"
           }
         ]
       },
@@ -405,7 +405,7 @@
     "_syncSourceOfTruth": {
       "presupuestoNumero": "PRES-2026-001",
       "totalPartidas": 12,
-      "syncedAt": "2026-10-18T08:26:38.294Z"
+      "syncedAt": "2026-10-18T10:46:02.111Z"
     }
   },
   {
@@ -453,7 +453,7 @@
             "progreso": 100,
             "estado": "completada",
             "asignadoA": "Mario Silva",
-            "completedAt": "2026-10-18T08:26:38.294Z"
+            "completedAt": "2026-10-18T10:46:02.111Z"
           }
         ]
       },
@@ -573,7 +573,7 @@
     "_syncSourceOfTruth": {
       "presupuestoNumero": "PRES-2026-002",
       "totalPartidas": 3,
-      "syncedAt": "2026-10-18T08:26:38.294Z"
+      "syncedAt": "2026-10-18T10:46:02.111Z"
     }
   },
   {
