@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "index.js",
+  "main": "backend/server.js",
   "scripts": {
+    "start": "node backend/server.js",
     "dev": "vite",
     "build": "vite build",
     "server": "node backend/server.js",
