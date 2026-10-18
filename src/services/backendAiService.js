@@ -42,8 +42,13 @@ export async function checkBackendStatus() {
 export async function getBackendAiSettings() {
   try {
     const res = await fetch(`${BACKEND_BASE_URL}/settings/ai`);
-    if (res.ok) {
-      return await res.json();
+    const rawText = await res.text();
+    if (res.ok && rawText) {
+      try {
+        return JSON.parse(rawText);
+      } catch (err) {
+        console.warn('Respuesta no JSON al obtener configuración de IA:', rawText);
+      }
     }
   } catch (err) {
     console.warn('Error al obtener configuración de IA del backend:', err);
@@ -61,13 +66,22 @@ export async function updateBackendAiSettings(newSettings) {
     body: JSON.stringify(newSettings)
   });
 
-  if (!res.ok) {
-    let errMsg = res.statusText;
-    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
-    throw new Error(`Error al guardar configuración de IA: ${errMsg}`);
+  const rawText = await res.text();
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Error al guardar configuración de IA (${res.status}): ${rawText || res.statusText}`);
+    }
+    throw new Error(`Respuesta no válida del servidor al guardar configuración: ${rawText || 'Sin contenido'}`);
   }
 
-  return await res.json();
+  if (!res.ok) {
+    throw new Error(`Error al guardar configuración de IA: ${data.error || res.statusText}`);
+  }
+
+  return data;
 }
 
 /**
@@ -80,13 +94,22 @@ export async function testBackendAiConnection(payload = {}) {
     body: JSON.stringify(payload)
   });
 
-  if (!res.ok) {
-    let errMsg = res.statusText;
-    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
-    throw new Error(errMsg);
+  const rawText = await res.text();
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Error en prueba de conexión (${res.status}): ${rawText || res.statusText}`);
+    }
+    throw new Error(`Respuesta no válida del servidor en prueba de conexión: ${rawText || 'Sin contenido'}`);
   }
 
-  return await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || res.statusText);
+  }
+
+  return data;
 }
 
 /**
