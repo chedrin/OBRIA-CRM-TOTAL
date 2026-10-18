@@ -10,7 +10,7 @@
 
 import { generateBudgetWithGemini, normalizeGeminiModel } from './geminiService';
 import { buildFewShotReferenceContext, buildGeminiSystemPromptWithReferences } from './referenceBudgetService';
-import { checkBackendStatus, transcribeAudioViaBackend, generateBudgetViaBackend } from './backendAiService';
+import { checkBackendStatus, transcribeAudioViaBackend, generateBudgetViaBackend, getBackendAiSettings } from './backendAiService';
 
 export const SYSTEM_PROMPT_TECHNICAL_SPECS = `Eres el Ingeniero Técnico de Edificación y Presupuestador Jefe de la empresa constructora "ObraMaster".
 Tu objetivo es recibir audios transcritos, notas de voz, textos coloquiales o correos electrónicos de clientes/directores de obra y transformarlos en partidas formales de presupuesto de construcción o reforma.
@@ -51,7 +51,18 @@ FORMATO DE SALIDA (ESTRICTO JSON):
  * @param {Object} aiConfig - User's configured AI settings
  */
 export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallback = '') {
-  const apiKey = (aiConfig.apiKey || '').trim();
+  let apiKey = (aiConfig.apiKey || '').trim();
+
+  if (!apiKey) {
+    try {
+      const savedBackendSettings = await getBackendAiSettings();
+      if (savedBackendSettings && savedBackendSettings.apiKey) {
+        apiKey = savedBackendSettings.apiKey.trim();
+      }
+    } catch (e) {
+      console.warn('No se pudieron consultar los ajustes del backend:', e);
+    }
+  }
 
   // 1. Transcripción vía Backend de Producción
   if (audioBlob && audioBlob.size > 0) {
