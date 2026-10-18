@@ -12,8 +12,11 @@ import {
   RefreshCw,
   Edit3,
   Music,
-  Check
+  Check,
+  BookOpen,
+  X
 } from 'lucide-react';
+import PresupuestosModeloConfig from '../Configuracion/PresupuestosModeloConfig';
 import confetti from 'canvas-confetti';
 import { processScopeWithAI } from '../../services/aiAudioTextService';
 import { transcribeAudioViaBackend } from '../../services/backendAiService';
@@ -41,6 +44,9 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   const [clienteDireccion, setClienteDireccion] = useState('Ubicación de Obra');
   const [margenGlobal, setMargenGlobal] = useState(30);
   const [tipoIva, setTipoIva] = useState(10);
+
+  // Model References Tab State
+  const [showReferenceModal, setShowReferenceModal] = useState(false);
 
   // AI Progress & Generation State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -252,12 +258,21 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
           </p>
         </div>
 
-        <button
-          onClick={onCancel}
-          className="text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3.5 py-2 rounded-xl transition w-fit"
-        >
-          Volver a Presupuestos
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowReferenceModal(true)}
+            className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3.5 py-2 rounded-xl transition font-bold"
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>Presupuestos Modelo ({referenceBudgets?.filter(b => b.is_active).length || 0} activos)</span>
+          </button>
+          <button
+            onClick={onCancel}
+            className="text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3.5 py-2 rounded-xl transition w-fit"
+          >
+            Volver a Presupuestos
+          </button>
+        </div>
       </div>
 
       {/* Main Grid */}
@@ -637,6 +652,35 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         </div>
 
       </div>
+
+      {/* Modal Presupuestos Modelo / RAG Reference Training */}
+      {showReferenceModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-white text-base">Presupuestos de Referencia para Aprendizaje de la IA</h3>
+              </div>
+              <button onClick={() => setShowReferenceModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <PresupuestosModeloConfig />
+
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowReferenceModal(false)}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition"
+              >
+                Aplicar y Volver al Generador
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

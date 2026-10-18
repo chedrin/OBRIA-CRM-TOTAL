@@ -110,13 +110,22 @@ export async function transcribeAudioViaBackend(audioBlobOrFiles, customApiKey =
     body: form
   });
 
-  if (!res.ok) {
-    let errMsg = res.statusText;
-    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
-    throw new Error(`Error en transcripción de audio: ${errMsg}`);
+  const rawText = await res.text();
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Error en transcripción de audio (${res.status}): ${rawText || res.statusText}`);
+    }
+    throw new Error(`Respuesta no válida del servidor de transcripción: ${rawText || 'Sin contenido'}`);
   }
 
-  return await res.json();
+  if (!res.ok) {
+    throw new Error(`Error en transcripción de audio (${res.status}): ${data.error || res.statusText}`);
+  }
+
+  return data;
 }
 
 /**
@@ -171,11 +180,20 @@ export async function generateBudgetViaBackend({
     body: form
   });
 
-  if (!res.ok) {
-    let errMsg = res.statusText;
-    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
-    throw new Error(`Error al generar presupuesto IA (${res.status}): ${errMsg}`);
+  const rawText = await res.text();
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Error al generar presupuesto IA (${res.status}): ${rawText || res.statusText}`);
+    }
+    throw new Error(`Respuesta no válida del servidor al generar presupuesto: ${rawText || 'Sin contenido'}`);
   }
 
-  return await res.json();
+  if (!res.ok) {
+    throw new Error(`Error al generar presupuesto IA (${res.status}): ${data.error || res.statusText}`);
+  }
+
+  return data;
 }

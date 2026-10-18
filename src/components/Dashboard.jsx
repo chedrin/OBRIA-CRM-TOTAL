@@ -27,7 +27,8 @@ export default function Dashboard() {
     mensajesInbox,
     subcontratasPresupuestos,
     setActiveTab,
-    setSelectedObraId
+    setSelectedObraId,
+    currentUser
   } = useApp();
 
   // Financial Calculations
@@ -66,7 +67,7 @@ export default function Dashboard() {
               <span>Panel Operativo del Constructor</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
-              Buenos días, Manuel
+              Buenos días, {currentUser ? currentUser.fullName : 'Manuel'}
             </h1>
             <p className="text-sm text-slate-300 mt-1 max-w-2xl">
               Tienes <strong className="text-amber-400">{obrasActivas.length} obras en ejecución</strong>, {mensajesPendientes.length} audios/mensajes de obra pendientes de procesar y la facturación del 4T lista para la gestoría.
