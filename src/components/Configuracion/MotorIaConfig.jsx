@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS } from '../../services/geminiService';
+import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, checkAndAutoSelectBestGeminiModel } from '../../services/geminiService';
 import { checkBackendStatus, getBackendAiSettings, updateBackendAiSettings, testBackendAiConnection } from '../../services/backendAiService';
 import {
   Sparkles,
@@ -21,7 +21,8 @@ import {
   ExternalLink,
   Lock,
   Check,
-  Sliders
+  Sliders,
+  SearchCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -91,8 +92,10 @@ export default function MotorIaConfig() {
   const [maxTokens, setMaxTokens] = useState(4096);
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [checkingGemini, setCheckingGemini] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [geminiCheckResult, setGeminiCheckResult] = useState(null);
 
   // Backend Proxy State
   const [backendInfo, setBackendInfo] = useState({ checking: true, isAvailable: false, details: null });
@@ -127,6 +130,82 @@ export default function MotorIaConfig() {
       setModelName(pObj.defaultModel);
     }
     setTestResult(null);
+    setGeminiCheckResult(null);
+  };
+
+  const handleCheckGeminiApi = async () => {
+    if (!apiKey || !apiKey.trim()) {
+      showNotification('Introduce una API Key de Google Gemini para realizar la comprobación.', 'error');
+      return;
+    }
+
+    setCheckingGemini(true);
+    setGeminiCheckResult(null);
+    setTestResult(null);
+
+    try {
+      // 1. Backend attempt
+      let res;
+      try {
+        const fetchRes = await fetch('/api/ai/check-gemini-api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: apiKey.trim() })
+        });
+        if (fetchRes.ok) {
+          res = await fetchRes.json();
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      // 2. Direct client fallback if backend endpoint unavailable
+      if (!res || !res.success) {
+        res = await checkAndAutoSelectBestGeminiModel(apiKey.trim());
+      }
+
+      const optimalModel = res.activeModel || DEFAULT_GEMINI_MODEL;
+      setProvider('google');
+      setModelName(optimalModel);
+
+      await updateBackendAiSettings({
+        provider: 'google',
+        apiKey: apiKey.trim(),
+        model: optimalModel,
+        temperature,
+        maxTokens
+      });
+
+      updateAiConfig({
+        provider: 'google',
+        apiKey: apiKey.trim(),
+        modelName: optimalModel,
+        temperature,
+        maxTokens,
+        isActive: true,
+        status: 'connected',
+        lastTestedAt: new Date().toISOString()
+      });
+
+      setCheckingGemini(false);
+      setGeminiCheckResult({
+        success: true,
+        provider: 'Google Gemini',
+        activeModel: optimalModel,
+        status: 'Operativo',
+        formattedOutput: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo: ${optimalModel}\nEstado: Operativo`
+      });
+
+      confetti({ particleCount: 50, spread: 60 });
+      showNotification(`API Gemini verificada. Modelo "${optimalModel}" seleccionado y guardado automáticamente.`, 'success');
+    } catch (err) {
+      setCheckingGemini(false);
+      setGeminiCheckResult({
+        success: false,
+        error: 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.'
+      });
+      showNotification('No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.', 'error');
+    }
   };
 
   const handleTestConnection = async () => {
@@ -341,6 +420,7 @@ export default function MotorIaConfig() {
                 onChange={(e) => {
                   setApiKey(e.target.value);
                   setTestResult(null);
+                  setGeminiCheckResult(null);
                 }}
                 placeholder={`Introduce tu clave (${selectedProviderObj.keyPrefix}...)`}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3 pr-10 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
@@ -364,6 +444,7 @@ export default function MotorIaConfig() {
               onChange={(e) => {
                 setModelName(e.target.value);
                 setTestResult(null);
+                setGeminiCheckResult(null);
               }}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-semibold text-xs focus:outline-none focus:border-amber-400"
             >
@@ -413,6 +494,21 @@ export default function MotorIaConfig() {
           </div>
         </div>
 
+        {/* Formatted Gemini Auto-Discovery Box */}
+        {geminiCheckResult && (
+          <div className={`p-4 rounded-xl border text-xs font-mono space-y-1 whitespace-pre-line ${
+            geminiCheckResult.success
+              ? 'bg-emerald-950/30 border-emerald-500/50 text-emerald-300'
+              : 'bg-rose-950/30 border-rose-500/50 text-rose-300'
+          }`}>
+            {geminiCheckResult.success ? (
+              <span>{geminiCheckResult.formattedOutput}</span>
+            ) : (
+              <span>Error al verificar API Gemini: {geminiCheckResult.error}</span>
+            )}
+          </div>
+        )}
+
         {/* Test Result Box */}
         {testResult && (
           <div className={`p-4 rounded-xl border text-xs space-y-2 ${
@@ -444,15 +540,28 @@ export default function MotorIaConfig() {
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
-          <button
-            type="button"
-            disabled={testing || !apiKey}
-            onClick={handleTestConnection}
-            className="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition border border-slate-700 flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" /> : <Zap className="w-3.5 h-3.5 text-amber-400" />}
-            <span>{testing ? 'Probando conexión...' : 'Probar Conexión'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            {/* Requested [ Comprobar API Gemini ] Button */}
+            <button
+              type="button"
+              disabled={checkingGemini || !apiKey}
+              onClick={handleCheckGeminiApi}
+              className="px-4 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl transition border border-amber-500/40 flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {checkingGemini ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" /> : <SearchCheck className="w-3.5 h-3.5 text-amber-400" />}
+              <span>{checkingGemini ? 'Verificando modelos...' : '[ Comprobar API Gemini ]'}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={testing || !apiKey}
+              onClick={handleTestConnection}
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition border border-slate-700 flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" /> : <Zap className="w-3.5 h-3.5 text-amber-400" />}
+              <span>{testing ? 'Probando...' : 'Probar Conexión'}</span>
+            </button>
+          </div>
 
           <button
             type="submit"
