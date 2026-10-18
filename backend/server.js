@@ -168,7 +168,62 @@ async function callGeminiApi({ apiKey, model, contents, systemInstruction, gener
   return rawText;
 }
 
-// 3. Parser nativo de Multipart Form-Data (Sin dependencias)
+// 3. Servidor de archivos estáticos (Frontend construido en dist)
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".webm": "video/webm",
+  ".mp3": "audio/mp3",
+  ".wav": "audio/wav"
+};
+
+const DIST_DIR = path.resolve(__dirname, "../dist");
+
+function tryServeStatic(req, res, pathname) {
+  if (!fs.existsSync(DIST_DIR)) {
+    return false;
+  }
+
+  // Normalizar ruta
+  let relativePath = pathname === "/" ? "/index.html" : pathname;
+  // Prevenir travesía de directorios
+  let safePath = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, "");
+  let filePath = path.join(DIST_DIR, safePath);
+
+  // Servir archivo existente
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || "application/octet-stream";
+    res.writeHead(200, { "Content-Type": contentType });
+    fs.createReadStream(filePath).pipe(res);
+    return true;
+  }
+
+  // Fallback SPA (Single Page Application) para rutas del frontend
+  const indexPath = path.join(DIST_DIR, "index.html");
+  if (fs.existsSync(indexPath) && !path.extname(pathname)) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    fs.createReadStream(indexPath).pipe(res);
+    return true;
+  }
+
+  return false;
+}
+
+// 4. Parser nativo de Multipart Form-Data (Sin dependencias)
 function parseMultipartBuffer(buffer, boundary) {
   const boundaryBuffer = Buffer.from(`--${boundary}`);
   const fields = {};
@@ -248,6 +303,26 @@ async function handleRequest(req, res) {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const pathname = parsedUrl.pathname;
   const headerKey = (req.headers["x-api-key"] || (req.headers["authorization"]?.startsWith("Bearer ") ? req.headers["authorization"].substring(7) : "") || "").trim();
+
+  // Servir estáticos/frontend si la petición no es a /api/*
+  if (!pathname.startsWith("/api")) {
+    const served = tryServeStatic(req, res, pathname);
+    if (served) return;
+
+    res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(`
+      <!DOCTYPE html>
+      <html lang="es">
+      <head><meta charset="UTF-8"><title>ObraMaster - Aplicación no construida</title></head>
+      <body style="font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; text-align: center;">
+        <h1>ObraMaster CRM</h1>
+        <p>El frontend aún no ha sido construido en la carpeta <code>dist/</code>.</p>
+        <p>Por favor, ejecuta <code>npm run build</code> en el servidor para generar los archivos estáticos.</p>
+      </body>
+      </html>
+    `);
+    return;
+  }
 
   // Endpoint: GET /api/health
   if (req.method === "GET" && pathname === "/api/health") {
