@@ -125,15 +125,7 @@ export default function PresupuestosList() {
           >
             <Camera className="w-4 h-4" />
             <Mic className="w-4 h-4" />
-            <span>Nueva Visita con IA</span>
-          </button>
-
-          <button
-            onClick={() => setViewMode('new_ai')}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Generador Rápido</span>
+            <span>Visita de Obra (Fotos + Voz)</span>
           </button>
         </div>
       </div>
@@ -145,20 +137,19 @@ export default function PresupuestosList() {
             <Sparkles className="w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <h3 className="font-bold text-white text-base">Generador Inteligente con Fotos y Audio</h3>
+            <h3 className="font-bold text-white text-base">Asistente IA de Presupuestación</h3>
             <p className="text-xs text-slate-300 mt-0.5">
-              Sube fotos del baño o vivienda, dicta los trabajos necesarios y la IA desglosa capítulos, partidas, mediciones y márgenes automáticamente.
+              Crea presupuestos desglosados por capítulos y partidas con precios actualizados de la base de datos de reformas.
             </p>
           </div>
         </div>
 
         <button
           onClick={() => setViewMode('new_ai')}
-          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-2 shrink-0 transition"
+          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-2 shrink-0 transition shadow-md shadow-amber-500/20 active:scale-95"
         >
-          <Camera className="w-4 h-4" />
-          <Mic className="w-4 h-4" />
-          <span>Generar con IA Ahora</span>
+          <Sparkles className="w-4 h-4" />
+          <span>Iniciar Asistente IA</span>
         </button>
       </div>
 
