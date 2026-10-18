@@ -32,6 +32,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import TaskProgressSelector from '../PortalObrero/TaskProgressSelector';
+import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 
 export default function ObraDetail({ obraId, onBack }) {
   const {
@@ -318,22 +319,44 @@ export default function ObraDetail({ obraId, onBack }) {
             )}
           </div>
 
-          {/* Quick Metrics Badge */}
-          <div className="flex items-center gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800 shrink-0">
-            <div className="text-center px-2">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Presupuesto</span>
-              <span className="text-lg font-black text-white">{obra.presupuestoTotal?.toLocaleString('es-ES')} €</span>
+          {/* Quick Metrics Badge & Planificación IA */}
+          <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800 shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="text-center px-2">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Presupuesto</span>
+                <span className="text-lg font-black text-white">{obra.presupuestoTotal?.toLocaleString('es-ES')} €</span>
+              </div>
+              <div className="w-px h-8 bg-slate-800"></div>
+              <div className="text-center px-2">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Coste Real</span>
+                <span className="text-lg font-black text-slate-200">{obra.costeRealActual?.toLocaleString('es-ES')} €</span>
+              </div>
+              <div className="w-px h-8 bg-slate-800"></div>
+              <div className="text-center px-2">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Margen</span>
+                <span className="text-lg font-black text-emerald-400">{obra.margenRealPct || 35}%</span>
+              </div>
             </div>
-            <div className="w-px h-8 bg-slate-800"></div>
-            <div className="text-center px-2">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Coste Real</span>
-              <span className="text-lg font-black text-slate-200">{obra.costeRealActual?.toLocaleString('es-ES')} €</span>
-            </div>
-            <div className="w-px h-8 bg-slate-800"></div>
-            <div className="text-center px-2">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Margen</span>
-              <span className="text-lg font-black text-emerald-400">{obra.margenRealPct || 35}%</span>
-            </div>
+
+            {(() => {
+              const sched = calculateObraScheduling(obra, obras);
+              return (
+                <div className="bg-slate-900 p-2.5 rounded-lg border border-amber-500/30 text-[11px] space-y-1 w-full sm:w-auto">
+                  <div className="flex items-center justify-between font-bold text-amber-400 gap-2">
+                    <span className="flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      <span>PLANIFICACIÓN IA</span>
+                    </span>
+                    <span>{sched.estadoRiesgo}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-slate-300">
+                    <span>Inicio: <strong>{sched.fechaInicioFormatted}</strong></span>
+                    <span>Fin: <strong>{sched.fechaFinFormatted}</strong></span>
+                    <span>Días rem: <strong className="text-amber-400">{sched.diasRestantes}d</strong></span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 

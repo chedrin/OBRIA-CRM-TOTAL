@@ -271,6 +271,45 @@ export default function Dashboard() {
         {/* Right Column: AI Voice Inbox & Subcontracts Quick Watch (1 col) */}
         <div className="space-y-4">
           
+          {/* Planificación & Capacidad IA Widget */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-white text-sm">Planificación IA</h3>
+              </div>
+              <button
+                onClick={() => setActiveTab('obras')}
+                className="text-xs text-amber-400 hover:underline font-medium"
+              >
+                Ver Obras
+              </button>
+            </div>
+
+            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs space-y-2">
+              <div className="flex items-center justify-between font-bold">
+                <span className="text-slate-300">🚧 Obras activas:</span>
+                <span className="text-amber-400 font-mono text-sm">{obrasActivas.length}</span>
+              </div>
+
+              {obrasActivas.length > 0 && (() => {
+                const endingObra = [...obrasActivas].sort((a, b) => new Date(a.fechaFinEstimada || '2026-12-31') - new Date(b.fechaFinEstimada || '2026-12-31'))[0];
+                const daysRemaining = endingObra?.fechaFinEstimada
+                  ? Math.max(0, Math.round((new Date(endingObra.fechaFinEstimada) - new Date()) / 86400000))
+                  : 12;
+                return (
+                  <div className="pt-1.5 border-t border-slate-800/80 text-[11px] text-slate-300">
+                    <span className="text-emerald-400 font-bold block mb-0.5">✅ Obra más próxima a finalizar:</span>
+                    <p className="font-medium text-white truncate">{endingObra.titulo}</p>
+                    <p className="text-slate-400 mt-0.5">Quedan <strong className="text-amber-400">{daysRemaining} días</strong> para liberar equipo.</p>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
           {/* Audio & Email AI Assistant Quick Widget */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
             <div className="flex items-center justify-between">

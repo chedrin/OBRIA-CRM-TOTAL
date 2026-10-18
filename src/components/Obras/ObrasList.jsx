@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import ObraDetail from './ObraDetail';
+import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import {
   HardHat,
   Plus,
@@ -13,7 +14,9 @@ import {
   TrendingUp,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Users
 } from 'lucide-react';
 
 export default function ObrasList() {
@@ -265,6 +268,46 @@ export default function ObrasList() {
                     ></div>
                   </div>
                 </div>
+
+                {/* Planificación IA Card */}
+                {(() => {
+                  const sched = calculateObraScheduling(obra, obras);
+                  return (
+                    <div className="mt-4 bg-slate-950 p-3 rounded-xl border border-amber-500/30 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between font-bold text-amber-400 text-[11px]">
+                        <span className="flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" />
+                          <span>PLANIFICACIÓN IA</span>
+                        </span>
+                        <span>{sched.estadoRiesgo}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase">Inicio</span>
+                          <span className="text-slate-200 font-medium">{sched.fechaInicioFormatted}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase">Fin previsto</span>
+                          <span className="text-slate-200 font-medium">{sched.fechaFinFormatted}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase">Recursos ocupados</span>
+                          <span className="text-slate-200 font-medium">{sched.operariosAsignados} operarios</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase">Días restantes</span>
+                          <span className="text-amber-300 font-bold">{sched.diasRestantes} días</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+                        <span className="text-slate-400">Próxima obra disponible:</span>
+                        <span className="font-bold text-emerald-400">{sched.proximaFechaDisponibleFormatted}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Bottom Financial Details */}
