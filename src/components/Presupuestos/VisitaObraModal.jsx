@@ -66,7 +66,17 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   // Audio Recording & Text Input State
   const [audioFile, setAudioFile] = useState(null);
   const [audioTranscript, setAudioTranscript] = useState(VISITA_TEMPLATES[0].audioMuestra);
+  const [audioRefinedText, setAudioRefinedText] = useState('');
+  const [isRefiningAudio, setIsRefiningAudio] = useState(false);
+
+  // Anotaciones & WhatsApp / Email text
   const [complementaryText, setComplementaryText] = useState('');
+  const [notesRefinedText, setNotesRefinedText] = useState('');
+  const [isRefiningNotes, setIsRefiningNotes] = useState(false);
+
+  // Documents State (PDF, Word, Excel)
+  const [documentos, setDocumentos] = useState([]);
+  const docFileInputRef = useRef(null);
 
   // Captures (Only real uploaded photos from device / camera)
   const [capturas, setCapturas] = useState([]);
@@ -78,6 +88,90 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [stepLabel, setStepLabel] = useState('');
+
+  // Refine text via AI using historical reference budgets
+  const handleRefineAudioWithAI = async () => {
+    if (!audioTranscript?.trim()) {
+      showNotification('No hay audio transcrito para mejorar.', 'error');
+      return;
+    }
+    setIsRefiningAudio(true);
+    try {
+      const result = await processScopeWithAI(
+        audioTranscript,
+        'nota_voz',
+        obraTitulo,
+        empresaConfig?.aiConfig || {},
+        basePrecios,
+        referenceBudgets
+      );
+      if (result?.redaccion_tecnica_estilo) {
+        setAudioRefinedText(result.redaccion_tecnica_estilo);
+        showNotification('✨ Transcripción convertida a redacción técnica profesional.');
+      } else {
+        setAudioRefinedText(result?.resumen_alcance || audioTranscript);
+      }
+    } catch (err) {
+      console.error('Error al mejorar audio con IA:', err);
+      showNotification('No se pudo redactar la versión técnica: ' + (err.message || 'Error de IA'), 'error');
+    } finally {
+      setIsRefiningAudio(false);
+    }
+  };
+
+  const handleRefineNotesWithAI = async () => {
+    if (!complementaryText?.trim()) {
+      showNotification('No hay anotaciones ni medidas para mejorar.', 'error');
+      return;
+    }
+    setIsRefiningNotes(true);
+    try {
+      const result = await processScopeWithAI(
+        complementaryText,
+        'email_cliente',
+        obraTitulo,
+        empresaConfig?.aiConfig || {},
+        basePrecios,
+        referenceBudgets
+      );
+      if (result?.redaccion_tecnica_estilo) {
+        setNotesRefinedText(result.redaccion_tecnica_estilo);
+        showNotification('✨ Anotaciones convertidas a lenguaje técnico presupuestario.');
+      } else {
+        setNotesRefinedText(result?.resumen_alcance || complementaryText);
+      }
+    } catch (err) {
+      console.error('Error al mejorar notas con IA:', err);
+      showNotification('No se pudo redactar la versión técnica: ' + (err.message || 'Error de IA'), 'error');
+    } finally {
+      setIsRefiningNotes(false);
+    }
+  };
+
+  // Documents upload handler
+  const handleDocumentUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    files.forEach((file, index) => {
+      const newDoc = {
+        id: `doc-${Date.now()}-${index}`,
+        nombre: file.name,
+        tamano: `${(file.size / 1024).toFixed(0)} KB`,
+        tipo: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.xlsx') || file.name.endsWith('.xls') ? 'Excel' : 'Word',
+        file
+      };
+      setDocumentos(prev => [...prev, newDoc]);
+    });
+
+    e.target.value = '';
+    showNotification(`📄 ${files.length} documento(s) adjuntado(s) para análisis de la IA.`);
+  };
+
+  const handleDeleteDocument = (id) => {
+    setDocumentos(prev => prev.filter(d => d.id !== id));
+    showNotification('Documento eliminado del expediente.');
+  };
 
   // Switch template
   const handleSelectTemplate = (template) => {
@@ -91,6 +185,8 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     setCalidades(template.calidades);
     setPlazoDeseado(template.plazoMeses);
     setAudioTranscript(template.audioMuestra);
+    setAudioRefinedText('');
+    setNotesRefinedText('');
     // No se cargan fotos de muestra: solo se tendrán en cuenta las fotos subidas por el usuario
   };
 
@@ -183,6 +279,10 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
       }
     }
 
+    const finalAudioText = audioRefinedText?.trim() || effectiveTranscript;
+    const finalNotesText = notesRefinedText?.trim() || complementaryText;
+    const docsSummary = documentos.length > 0 ? `\n\n[DOCUMENTOS ADJUNTOS PARA ANÁLISIS]:\n` + documentos.map(d => `- Documento: ${d.nombre} (${d.tipo}, ${d.tamano})`).join('\n') : '';
+
     const expedienteData = {
       titulo: obraTitulo,
       cliente: clienteNombre,
@@ -193,10 +293,11 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
       plazoMeses: plazoDeseado,
       margenGlobalPct: margenObjetivo,
       tipoIvaPct: tipoIva,
-      audioTranscripcion: effectiveTranscript,
+      audioTranscripcion: finalAudioText,
       audioBlob: audioFile,
       capturas: realUploadedCapturas,
-      medidasNotas: complementaryText ? `${complementaryText}\n\nCalidades solicitadas: ${calidades}.` : `Medidas tomadas in situ con distanciómetro láser. Calidades: ${calidades}.`
+      medidasNotas: (finalNotesText ? `${finalNotesText}${docsSummary}\n\nCalidades solicitadas: ${calidades}.` : `Medidas tomadas in situ con distanciómetro láser.${docsSummary}\nCalidades: ${calidades}.`),
+      documentos
     };
 
     try {
@@ -235,13 +336,13 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black text-white">Nueva Visita de Presupuesto (Multimodal AI)</h2>
+                <h2 className="text-lg font-black text-white">🚀 Asistente de Presupuestación IA 360°</h2>
                 <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
-                  Gemini Multimodal
+                  Multimodal AI
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Toma de datos en campo: dictado de voz, fotos de estado, croquis con cotas y parámetros del cliente.
+                Captura unificada en campo: fotografías, grabación de voz, anotaciones, mediciones y documentos en una sola pantalla.
               </p>
             </div>
           </div>
@@ -346,35 +447,84 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               </div>
             </div>
 
-            {/* In Situ Multimodal Capture Section (Audio Voice Recorder + Mediciones) */}
+            {/* In Situ Multimodal Capture Section (Audio Voice Recorder + Text Refining) */}
             <div className="space-y-4">
-              <AudioVoiceRecorder
-                title="1. Captura de Audio de Visita y Transcripción con IA"
-                initialTranscript={audioTranscript}
-                placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio' para transcribir la explicación de la obra. La transcripción de la visita aparecerá aquí y podrás editarla..."
-                onTranscriptChange={(text, blob) => {
-                  setAudioTranscript(text);
-                  if (blob) setAudioFile(blob);
-                  setIsManualMode(true);
-                }}
-              />
+              <div className="space-y-2">
+                <AudioVoiceRecorder
+                  title="🎤 Grabación o Subida de Audio"
+                  initialTranscript={audioTranscript}
+                  placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio' para transcribir la explicación de la obra. La transcripción de la visita aparecerá aquí y podrás editarla..."
+                  onTranscriptChange={(text, blob) => {
+                    setAudioTranscript(text);
+                    if (blob) setAudioFile(blob);
+                    setIsManualMode(true);
+                  }}
+                />
 
-              {/* Entrada por Texto / Mediciones In Situ */}
-              <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Mediciones Láser & Anotaciones Complementarias In Situ</span>
-                  </span>
-                  {complementaryText && (
+                {/* Botón & Caja para Mejorar Audio con IA */}
+                <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Mejora Inteligente de Transcripción</span>
+                    </span>
+
                     <button
                       type="button"
-                      onClick={() => setComplementaryText('')}
-                      className="text-[10px] text-slate-500 hover:text-rose-400 transition"
+                      onClick={handleRefineAudioWithAI}
+                      disabled={isRefiningAudio || !audioTranscript?.trim()}
+                      className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 transition shadow-sm shadow-amber-500/20 active:scale-95 disabled:opacity-50"
                     >
-                      Limpiar notas
+                      <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
+                      <span>{isRefiningAudio ? 'Mejorando...' : '✨ Mejorar con IA'}</span>
                     </button>
+                  </div>
+
+                  {audioRefinedText && (
+                    <div className="bg-slate-900 border border-amber-500/30 p-3 rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-amber-400 font-bold">
+                        <span>VERSIÓN TÉCNICA IA (Aprendida de presupuestos modelo)</span>
+                        <button
+                          type="button"
+                          onClick={() => setAudioTranscript(audioRefinedText)}
+                          className="text-xs text-amber-300 hover:underline"
+                        >
+                          Usar esta versión
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-200 font-medium leading-relaxed">{audioRefinedText}</p>
+                    </div>
                   )}
+                </div>
+              </div>
+
+              {/* Anotaciones Manuales / WhatsApp / Emails */}
+              <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>📝 Anotaciones, Mensajes de WhatsApp o Correo</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {complementaryText && (
+                      <button
+                        type="button"
+                        onClick={() => { setComplementaryText(''); setNotesRefinedText(''); }}
+                        className="text-[10px] text-slate-500 hover:text-rose-400 transition"
+                      >
+                        Limpiar notas
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRefineNotesWithAI}
+                      disabled={isRefiningNotes || !complementaryText?.trim()}
+                      className="px-3 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3 h-3 text-indigo-400" />
+                      <span>{isRefiningNotes ? 'Mejorando...' : '✨ Mejorar con IA'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <textarea
@@ -384,9 +534,140 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                     setComplementaryText(e.target.value);
                     setIsManualMode(true);
                   }}
-                  placeholder="Anotaciones complementarias in situ:&#10;• Dimensiones: 4.20m x 2.80m (altura 2.50m)&#10;• Alicatar hasta el techo con porcelánico rectificado&#10;• Falso techo de pladur verde con 4 puntos de luz LED..."
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/60 transition"
+                  placeholder="Pega mensajes de WhatsApp, correos del cliente o notas in situ:&#10;ej: 'tirar tabique cocina de 5 metros y poner pladur, cambiar suelo por tarima AC5 y poner 6 enchufes nuevos'..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition"
                 ></textarea>
+
+                {notesRefinedText && (
+                  <div className="bg-slate-900 border border-indigo-500/30 p-3 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-indigo-400 font-bold">
+                      <span>VERSIÓN TÉCNICA REDACTADA POR IA</span>
+                      <button
+                        type="button"
+                        onClick={() => setComplementaryText(notesRefinedText)}
+                        className="text-xs text-indigo-300 hover:underline"
+                      >
+                        Sustituir notas con versión técnica
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-200 font-medium leading-relaxed">{notesRefinedText}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Mediciones Manuales */}
+              <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-blue-400" />
+                  <span>📏 Mediciones y Unidades de Obra In Situ</span>
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  Introduce dimensiones clave (largo, ancho, alto) para calcular superficies ($m^2$) y volúmenes ($m^3$) automáticamente.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                    <label className="text-[10px] text-slate-400 block font-semibold">Largo (m)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="ej: 4.8"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) setComplementaryText(prev => `${prev}\n- Largo medido: ${val}m`);
+                      }}
+                      className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
+                    />
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                    <label className="text-[10px] text-slate-400 block font-semibold">Ancho (m)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="ej: 3.2"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) setComplementaryText(prev => `${prev}\n- Ancho medido: ${val}m`);
+                      }}
+                      className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
+                    />
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                    <label className="text-[10px] text-slate-400 block font-semibold">Alto (m)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="ej: 2.5"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) setComplementaryText(prev => `${prev}\n- Alto medido: ${val}m`);
+                      }}
+                      className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
+                    />
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                    <label className="text-[10px] text-slate-400 block font-semibold">Estancia / Zona</label>
+                    <input
+                      type="text"
+                      placeholder="ej: Salón / Baño 1"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) setComplementaryText(prev => `${prev}\n- Zona: ${val}`);
+                      }}
+                      className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Adjuntar Documentos PDF, Word, Excel */}
+              <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>📄 Documentos Adicionales (PDF, Word, Excel, Planos)</span>
+                  </span>
+                  <input
+                    type="file"
+                    ref={docFileInputRef}
+                    onChange={handleDocumentUpload}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx"
+                    multiple
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => docFileInputRef.current?.click()}
+                    className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition active:scale-95"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Adjuntar Documentos</span>
+                  </button>
+                </div>
+
+                {documentos.length === 0 ? (
+                  <p className="text-[11px] text-slate-500 italic">No se han adjuntado archivos PDF, Word o Excel.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {documentos.map(doc => (
+                      <div key={doc.id} className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-white truncate">{doc.nombre}</p>
+                            <span className="text-[10px] text-slate-400">{doc.tipo} · {doc.tamano}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDocument(doc.id)}
+                          className="text-slate-500 hover:text-rose-400 p-1 transition shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

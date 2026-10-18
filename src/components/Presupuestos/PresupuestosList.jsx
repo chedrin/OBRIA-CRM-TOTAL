@@ -121,35 +121,36 @@ export default function PresupuestosList() {
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => setShowVisitaModal(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-500 hover:to-indigo-400 text-white font-extrabold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-blue-500/20 active:scale-95"
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
           >
-            <Camera className="w-4 h-4" />
-            <Mic className="w-4 h-4" />
-            <span>Visita de Obra (Fotos + Voz)</span>
+            <Sparkles className="w-4 h-4 text-slate-950" />
+            <span>🚀 Presupuesto IA 360°</span>
           </button>
         </div>
       </div>
 
-      {/* Hero Banner for AI Generator */}
+      {/* Hero Banner for Unified AI Generator */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950/30 p-5 rounded-2xl border border-amber-500/30 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
             <Sparkles className="w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <h3 className="font-bold text-white text-base">Asistente IA de Presupuestación</h3>
+            <h3 className="font-bold text-white text-base flex items-center gap-2">
+              <span>🚀 Asistente de Presupuestación IA 360°</span>
+            </h3>
             <p className="text-xs text-slate-300 mt-0.5">
-              Crea presupuestos desglosados por capítulos y partidas con precios actualizados de la base de datos de reformas.
+              Captura fotos, graba audio de voz, añade anotaciones de WhatsApp/Email y mediciones para generar un presupuesto automático por capítulos y partidas.
             </p>
           </div>
         </div>
 
         <button
-          onClick={() => setViewMode('new_ai')}
-          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-2 shrink-0 transition shadow-md shadow-amber-500/20 active:scale-95"
+          onClick={() => setShowVisitaModal(true)}
+          className="px-5 py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl flex items-center gap-2 shrink-0 transition shadow-md shadow-amber-500/20 active:scale-95"
         >
-          <Sparkles className="w-4 h-4" />
-          <span>Iniciar Asistente IA</span>
+          <Sparkles className="w-4 h-4 fill-slate-950" />
+          <span>Iniciar Asistente IA 360°</span>
         </button>
       </div>
 
