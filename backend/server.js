@@ -5,6 +5,7 @@
  * - Centralización 100% de proveedores de IA (Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Azure OpenAI).
  * - Persistencia de datos en disco (db_presupuestos.json, db_obras.json, db_clientes.json, ai_settings.json, ai_audit_log.json).
  * - Centralized Gemini models with fallback cascade: gemini-2.5-flash -> gemini-2.0-flash -> gemini-1.5-flash
+ * - Dynamic model discovery via `/api/ai/check-gemini-api`
  * - User-friendly error messages (sanitizing raw Google API error output)
  */
 
@@ -50,7 +51,6 @@ const DB_PRESUPUESTOS_FILE = path.join(__dirname, "db_presupuestos.json");
 const DB_OBRAS_FILE = path.join(__dirname, "db_obras.json");
 const DB_CLIENTES_FILE = path.join(__dirname, "db_clientes.json");
 
-// Helper para leer/escribir archivos JSON de BD
 function readJsonDb(filepath, defaultValue = []) {
   try {
     if (fs.existsSync(filepath)) {
@@ -186,7 +186,6 @@ function fileToPart(file) {
   };
 }
 
-// Invocadores por Proveedor con Cascade Fallback para Gemini
 async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json" }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!effectiveKey) {
@@ -201,7 +200,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
     if (!modelsToTry.includes(m)) modelsToTry.push(m);
   }
 
-  const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models`;
+  const baseUrl = `https://generativelanguage.googleapis.com/v1beta`;
   const bodyPayload = {
     contents,
     ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
@@ -215,7 +214,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
   let lastTechnicalError = "";
 
   for (const targetModel of modelsToTry) {
-    const url = `${baseUrl}/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
+    const url = `${baseUrl}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -249,6 +248,17 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
 
   console.error("[Backend Gemini Fallback Failed] Detalle técnico interno:", lastTechnicalError);
   throw new Error(USER_FRIENDLY_AI_ERROR);
+}
+
+async function fetchAvailableGeminiModelsFromGoogle(apiKey) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(USER_FRIENDLY_AI_ERROR);
+  const data = await res.json();
+  const list = data.models || [];
+  return list
+    .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+    .map(m => (m.name || '').replace(/^models\//, ''));
 }
 
 async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15, maxTokens = 4096 }) {
@@ -367,12 +377,11 @@ async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0
   }
 }
 
-// Transcripción de Audio Robusta y Específica por Proveedor
+// Transcripción de Audio Robusta
 async function transcribeAudioUnified({ audioFile, config }) {
   const provider = (config.provider || "google").toLowerCase();
   const apiKey = (config.apiKey || "").trim();
 
-  // 1. Si el proveedor es OpenAI o el usuario usa una clave OpenAI (sk-...)
   if ((provider === "openai" || apiKey.startsWith("sk-")) && !apiKey.startsWith("sk-ant") && !apiKey.startsWith("sk-or")) {
     const boundary = "--------------------------" + Math.random().toString(36).substring(2);
     const filename = audioFile.originalname || "audio-grabacion.webm";
@@ -413,7 +422,6 @@ async function transcribeAudioUnified({ audioFile, config }) {
     return data.text || "";
   }
 
-  // 2. Si el proveedor es Google Gemini o se tiene GEMINI_API_KEY
   const geminiKey = (apiKey.startsWith("AIza") ? apiKey : process.env.GEMINI_API_KEY || "").trim();
   if (geminiKey || provider === "google") {
     const part = fileToPart(audioFile);
@@ -678,6 +686,38 @@ async function handleRequest(req, res) {
         return;
       }
 
+      if (req.method === "POST" && pathname === "/api/ai/check-gemini-api") {
+        const apiKey = (fields.apiKey || currentConfig.apiKey || "").trim();
+        if (!apiKey) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: USER_FRIENDLY_AI_ERROR }));
+          return;
+        }
+
+        const availableModels = await fetchAvailableGeminiModelsFromGoogle(apiKey);
+        let selectedModel = GEMINI_FALLBACK_CASCADE.find(m => availableModels.includes(m));
+        if (!selectedModel) {
+          selectedModel = availableModels.find(id => id.includes("flash")) || availableModels[0] || GEMINI_DEFAULT_MODEL;
+        }
+
+        const updated = saveAiConfig({ provider: "google", apiKey, model: selectedModel });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          success: true,
+          provider: "Google Gemini",
+          activeModel: selectedModel,
+          status: "Operativo",
+          statusMessage: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo: ${selectedModel}\nEstado: Operativo`,
+          availableModels,
+          config: {
+            ...updated,
+            apiKeyMasked: updated.apiKey ? (updated.apiKey.substring(0, 6) + "..." + updated.apiKey.slice(-4)) : ""
+          }
+        }));
+        return;
+      }
+
       if (req.method === "POST" && pathname === "/api/presupuestos") {
         let items = readJsonDb(DB_PRESUPUESTOS_FILE, []);
         if (Array.isArray(fields)) {
@@ -734,7 +774,7 @@ async function handleRequest(req, res) {
           rawResponse = await callGeminiProvider({
             apiKey,
             model,
-            contents: [{ role: "user", parts: [{ text: "Responde estrictamente con JSON: {\"status\": \"PONG\", \"message\": \"Conexión exitosa\"}" }] }]
+            contents: [{ role: "user", parts: [{ text: "Responde strictly con JSON: {\"status\": \"PONG\", \"message\": \"Conexión exitosa\"}" }] }]
           });
         } else if (provider === "openai") {
           rawResponse = await callOpenAiProvider({
