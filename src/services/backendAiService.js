@@ -1,23 +1,24 @@
 /**
- * ObraMaster - Backend AI Integration Service
+ * ObraMaster - Backend AI SaaS Service Integration
  * 
- * Communicates with the local Node/Express backend (http://localhost:3000 or /api proxy):
- * 1. Checks backend health and Gemini availability
- * 2. Uploads audio files to /api/transcribir
- * 3. Uploads photo files to /api/analizar-fotos
- * 4. Submits complete multimodal budget requests to /api/presupuesto
+ * Centraliza la comunicación segura del frontend con los endpoints del servidor:
+ * - GET  /api/settings/ai          -> Obtener configuración persistente
+ * - PUT  /api/settings/ai          -> Guardar configuración del motor de IA
+ * - POST /api/ai/test-connection   -> Prueba de latencia y estado de la API
+ * - POST /api/ai/transcribe        -> Transcripción unificada de audios
+ * - POST /api/ai/generate-budget   -> Generación estructurada de presupuesto
+ * - POST /api/ai/analyze-images    -> Inspección de fotos de obra
  */
 
-const BACKEND_BASE_URL = '/api'; // Proxied by Vite to http://localhost:3000 in dev
+const BACKEND_BASE_URL = '/api';
 
 /**
- * Checks if the local backend server is up and running
- * @returns {Promise<{isAvailable: boolean, details?: Object}>}
+ * Comprueba si el backend de producción está activo
  */
 export async function checkBackendStatus() {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     const res = await fetch(`${BACKEND_BASE_URL}/health`, {
       method: 'GET',
@@ -36,90 +37,96 @@ export async function checkBackendStatus() {
 }
 
 /**
- * Sends an audio recording or file to the backend to transcribe with Gemini
- * @param {Blob|File} audioBlobOrFile
- * @param {string} [customApiKey]
- * @returns {Promise<{success: boolean, texto: string, transcripcion: string}>}
+ * Obtiene la configuración de IA activa guardada en backend
  */
-export async function transcribeAudioViaBackend(audioBlobOrFile, customApiKey = '') {
-  const form = new FormData();
-  const filename = audioBlobOrFile.name || 'audio-grabacion.webm';
-  form.append('audios', audioBlobOrFile, filename);
-  if (customApiKey) form.append('apiKey', customApiKey);
-
-  const res = await fetch(`${BACKEND_BASE_URL}/transcribir`, {
-    method: 'POST',
-    body: form
-  });
-
-  if (!res.ok) {
-    let errMsg = res.statusText;
-    try {
-      const errJson = await res.json();
-      errMsg = errJson.error || errMsg;
-    } catch {
-      // Keep statusText
+export async function getBackendAiSettings() {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/settings/ai`);
+    if (res.ok) {
+      return await res.json();
     }
-    throw new Error(`Error en el backend al transcribir: ${errMsg}`);
+  } catch (err) {
+    console.warn('Error al obtener configuración de IA del backend:', err);
   }
-
-  const data = await res.json();
-  return data;
+  return null;
 }
 
 /**
- * Sends photos to the backend for AI visual inspection
- * @param {Array<File|Blob>} photoFiles
- * @param {string} [customApiKey]
- * @returns {Promise<Object>}
+ * Actualiza de forma persistente la configuración de IA en el backend
  */
-export async function analyzePhotosViaBackend(photoFiles, customApiKey = '') {
-  const form = new FormData();
-  photoFiles.forEach((file, idx) => {
-    const filename = file.name || `foto-${idx + 1}.jpg`;
-    form.append('fotos', file, filename);
-  });
-  if (customApiKey) form.append('apiKey', customApiKey);
-
-  const res = await fetch(`${BACKEND_BASE_URL}/analizar-fotos`, {
-    method: 'POST',
-    body: form
+export async function updateBackendAiSettings(newSettings) {
+  const res = await fetch(`${BACKEND_BASE_URL}/settings/ai`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newSettings)
   });
 
   if (!res.ok) {
     let errMsg = res.statusText;
-    try {
-      const errJson = await res.json();
-      errMsg = errJson.error || errMsg;
-    } catch {
-      // Keep statusText
-    }
-    throw new Error(`Error en el backend al analizar fotos: ${errMsg}`);
+    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
+    throw new Error(`Error al guardar configuración de IA: ${errMsg}`);
   }
 
   return await res.json();
 }
 
 /**
- * Generates structured budget via backend proxy with native multimodal files
- * @param {Object} params
- * @param {Array<File|Blob>} [params.fotos]
- * @param {Array<File|Blob>} [params.audios]
- * @param {string} [params.dictado]
- * @param {string} [params.medidasNotas]
- * @param {string} [params.cliente]
- * @param {string} [params.direccion]
- * @param {string} [params.calidades]
- * @param {Array} [params.basePrecios]
- * @param {Array} [params.referenceBudgets]
- * @param {number} [params.margenGlobal]
- * @param {string} [params.customApiKey]
- * @returns {Promise<Object>}
+ * Realiza una prueba de ping/latencia con el proveedor configurado
+ */
+export async function testBackendAiConnection(payload = {}) {
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/test-connection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    let errMsg = res.statusText;
+    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+
+  return await res.json();
+}
+
+/**
+ * Envía un archivo o varios archivos de audio para su transcripción automática por la IA
+ */
+export async function transcribeAudioViaBackend(audioBlobOrFiles, customApiKey = '') {
+  const form = new FormData();
+
+  if (Array.isArray(audioBlobOrFiles)) {
+    audioBlobOrFiles.forEach((f, idx) => {
+      form.append('audios', f, f.name || `grabacion-${idx + 1}.webm`);
+    });
+  } else if (audioBlobOrFiles) {
+    form.append('audios', audioBlobOrFiles, audioBlobOrFiles.name || 'grabacion.webm');
+  }
+
+  if (customApiKey) form.append('apiKey', customApiKey);
+
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/transcribe`, {
+    method: 'POST',
+    body: form
+  });
+
+  if (!res.ok) {
+    let errMsg = res.statusText;
+    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
+    throw new Error(`Error en transcripción de audio: ${errMsg}`);
+  }
+
+  return await res.json();
+}
+
+/**
+ * Genera el presupuesto técnico multimodal a través del backend de IA
  */
 export async function generateBudgetViaBackend({
   fotos = [],
   audios = [],
   dictado = '',
+  transcription = '',
   medidasNotas = '',
   cliente = '',
   direccion = '',
@@ -131,22 +138,20 @@ export async function generateBudgetViaBackend({
 }) {
   const form = new FormData();
 
-  // Attach photos
   fotos.forEach((f, idx) => {
     if (f instanceof Blob || f instanceof File) {
       form.append('fotos', f, f.name || `foto-${idx + 1}.jpg`);
     }
   });
 
-  // Attach audios
   audios.forEach((a, idx) => {
     if (a instanceof Blob || a instanceof File) {
       form.append('audios', a, a.name || `audio-${idx + 1}.webm`);
     }
   });
 
-  // Attach text metadata
-  if (dictado) form.append('dictado', dictado);
+  const textPayload = dictado || transcription || '';
+  if (textPayload) form.append('dictado', textPayload);
   if (medidasNotas) form.append('medidasNotas', medidasNotas);
   if (cliente) form.append('cliente', cliente);
   if (direccion) form.append('direccion', direccion);
@@ -161,22 +166,16 @@ export async function generateBudgetViaBackend({
     form.append('referenceBudgets', JSON.stringify(referenceBudgets));
   }
 
-  const res = await fetch(`${BACKEND_BASE_URL}/presupuesto`, {
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/generate-budget`, {
     method: 'POST',
     body: form
   });
 
   if (!res.ok) {
     let errMsg = res.statusText;
-    try {
-      const errJson = await res.json();
-      errMsg = errJson.error || errMsg;
-    } catch {
-      // Keep statusText
-    }
-    throw new Error(`Error del Backend de IA (${res.status}): ${errMsg}`);
+    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
+    throw new Error(`Error al generar presupuesto IA (${res.status}): ${errMsg}`);
   }
 
-  const data = await res.json();
-  return data;
+  return await res.json();
 }

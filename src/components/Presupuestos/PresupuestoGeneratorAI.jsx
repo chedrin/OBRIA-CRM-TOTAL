@@ -5,63 +5,83 @@ import {
   Camera,
   Mic,
   Upload,
-  Play,
-  Square,
   CheckCircle2,
-  AlertCircle,
-  Plus,
   Trash2,
-  ArrowRight,
   FileText,
-  DollarSign,
-  TrendingUp,
-  Percent,
-  Layers,
-  ChevronRight,
-  RefreshCw,
   Building2,
-  HardHat
+  RefreshCw,
+  Edit3,
+  Music,
+  Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { processScopeWithAI } from '../../services/aiAudioTextService';
+import { transcribeAudioViaBackend } from '../../services/backendAiService';
 
 export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   const {
     addPresupuesto,
-    addObra,
     showNotification,
     empresaConfig,
     basePrecios,
     referenceBudgets
   } = useApp();
 
-  // User Uploaded Photos and Audio Transcript (No sample stock photos)
+  // Audio Files & Transcription
+  const [audioFiles, setAudioFiles] = useState([]);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [audioTranscript, setAudioTranscript] = useState('');
+  const [hasTranscribed, setHasTranscribed] = useState(false);
+
+  // Photos & Project Data
   const [customPhotos, setCustomPhotos] = useState([]);
-  const [customPhotoUrl, setCustomPhotoUrl] = useState('');
-  const [audioTranscript, setAudioTranscript] = useState('Reforma integral de baño: demoler alicatados y bañera antigua con retirada a vertedero en sacas homologadas. Instalar plato de ducha de resina pizarra grafito 140x80 con mampara fija perfil negro. Inodoro suspendido Geberit. Puntos de fontanería multicapa y solado porcelánico rectificado.');
+  const [obraTitulo, setObraTitulo] = useState('Reforma Integral de Inmueble');
+  const [clienteNombre, setClienteNombre] = useState('Cliente Particular');
+  const [clienteNif, setClienteNif] = useState('12345678Z');
+  const [clienteDireccion, setClienteDireccion] = useState('Ubicación de Obra');
+  const [margenGlobal, setMargenGlobal] = useState(30);
+  const [tipoIva, setTipoIva] = useState(10);
 
-  // AI Training & Redaction Examples State
-  const [showExamplesModal, setShowExamplesModal] = useState(false);
-  const [userRedactionExamples, setUserRedactionExamples] = useState([
-    { id: 'ex-1', titulo: 'Estilo de Redacción Propio - Alicatado y Sanitario', texto: 'Alicatado con porcelánico rectificado en paramentos verticales con mortero cola C2TE. Incluye picado previo, nivelado con crucetas autonivelantes y rejuntado antihumedad. No se incluyen sanitarios de alta gama no presupuestados.' },
-    { id: 'ex-2', titulo: 'Estilo de Redacción Propio - Electricidad y Cajas', texto: 'Suministro e instalación de puntos de luz conmutados con tubo corrugado ignífugo M-20, cable libre de halógenos 1.5mm² y mecanismos serie media Niessen. Incluye boletín oficial CIE de industria.' }
-  ]);
-  const [newExampleTitle, setNewExampleTitle] = useState('');
-  const [newExampleText, setNewExampleText] = useState('');
+  // AI Progress & Generation State
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [progressStatus, setProgressStatus] = useState('');
+  const [progressPct, setProgressPct] = useState(0);
+  const [partidasList, setPartidasList] = useState([]);
+  const [generatedResult, setGeneratedResult] = useState(null);
 
-  const handleAddExample = (e) => {
-    e.preventDefault();
-    if (!newExampleTitle || !newExampleText) return;
-    setUserRedactionExamples(prev => [
-      ...prev,
-      { id: `ex-${Date.now()}`, titulo: newExampleTitle, texto: newExampleText }
-    ]);
-    setNewExampleTitle('');
-    setNewExampleText('');
-    showNotification('Ejemplo de redacción guardado para aprendizaje de la IA');
+  // Handle Audio Uploads
+  const handleAudioUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setAudioFiles(prev => [...prev, ...files]);
+    setIsTranscribing(true);
+    setProgressStatus('Subiendo archivo de audio...');
+    setProgressPct(20);
+
+    try {
+      setProgressStatus('Transcribiendo audio con Inteligencia Artificial...');
+      setProgressPct(60);
+
+      const res = await transcribeAudioViaBackend(files);
+      const text = res.texto || res.transcripcion || '';
+
+      setAudioTranscript(prev => (prev ? `${prev}\n\n${text}` : text));
+      setHasTranscribed(true);
+      setProgressPct(100);
+      showNotification(`Audio transcrito exitosamente (${files.length} archivo/s)`);
+      confetti({ particleCount: 25, spread: 40 });
+    } catch (err) {
+      showNotification(`Error al transcribir audio: ${err.message}`, 'error');
+    } finally {
+      setIsTranscribing(false);
+      setProgressStatus('');
+      setProgressPct(0);
+    }
   };
 
-  const handleFileUpload = (e) => {
+  // Handle Photo Uploads
+  const handlePhotoUpload = (e) => {
     const files = Array.from(e.target.files || []);
     files.forEach(file => {
       const reader = new FileReader();
@@ -71,7 +91,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
           title: file.name,
           url: event.target.result,
           file: file,
-          descripcion: `Foto tomada en obra (${(file.size / 1024).toFixed(0)} KB)`
+          descripcion: `Foto de obra (${(file.size / 1024).toFixed(0)} KB)`
         }]);
       };
       reader.readAsDataURL(file);
@@ -81,63 +101,39 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
     }
   };
 
-  const handleAddPhotoUrl = () => {
-    if (!customPhotoUrl) return;
-    setCustomPhotos(prev => [...prev, {
-      id: `usr-url-${Date.now()}`,
-      title: 'Foto Adjunta',
-      url: customPhotoUrl,
-      descripcion: 'Foto de obra vía enlace'
-    }]);
-    setCustomPhotoUrl('');
-    showNotification('Foto añadida correctamente.');
-  };
-
   const handleDeleteCustomPhoto = (id, e) => {
     if (e) e.stopPropagation();
     setCustomPhotos(prev => prev.filter(p => p.id !== id));
     showNotification('Foto eliminada.');
   };
 
-  const [obraTitulo, setObraTitulo] = useState('Reforma Integral de Vivienda');
-  const [clienteNombre, setClienteNombre] = useState('Dña. Victoria Méndez');
-  const [clienteNif, setClienteNif] = useState('51904231S');
-  const [clienteDireccion, setClienteDireccion] = useState('Calle Serrano 82, 4ºD, Madrid');
-  const [margenGlobal, setMargenGlobal] = useState(30);
-  const [tipoIva, setTipoIva] = useState(10); // 10% vivienda, 21% general
-
-  // AI Generation State
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState(0);
-  const [generatedResult, setGeneratedResult] = useState(null);
-
-  // Editable partidas state once generated
-  const [partidasList, setPartidasList] = useState([]);
-
+  // Run AI Budget Generation
   const handleRunAiAnalysis = async () => {
-    setIsAnalyzing(true);
-    setAnalysisStep(1);
-
-    const photosText = customPhotos.length > 0
-      ? `[FOTOGRAFÍAS REALES SUBIDAS POR EL USUARIO (${customPhotos.length})]:\n` +
-        customPhotos.map((p, i) => `${i + 1}. ${p.title} - ${p.descripcion || 'Foto aportada por el usuario'}`).join('\n')
-      : '[FOTOGRAFÍAS]: No se han aportado fotos. Generar presupuesto estrictamente según el audio y texto.';
-
-    const combinedInput = [
-      audioTranscript ? `[AUDIO TRANSCRITO / NOTAS DE VOZ]:\n${audioTranscript}` : '',
-      photosText
-    ].filter(Boolean).join('\n\n');
-
-    if (!combinedInput.trim()) {
-      showNotification('Por favor, indica las instrucciones de obra en audio o texto antes de generar con IA.', 'error');
-      setIsAnalyzing(false);
+    if (!audioTranscript.trim() && customPhotos.length === 0) {
+      showNotification('Por favor, sube un audio o añade descripción de la obra antes de generar.', 'error');
       return;
     }
 
-    setTimeout(() => setAnalysisStep(2), 600);
-    setTimeout(() => setAnalysisStep(3), 1200);
+    setIsAnalyzing(true);
+    setProgressStatus('Subiendo y procesando datos de obra...');
+    setProgressPct(25);
+
+    setTimeout(() => {
+      setProgressStatus('Analizando fotografías y cotas de espacio...');
+      setProgressPct(50);
+    }, 800);
+
+    setTimeout(() => {
+      setProgressStatus('Consultando base de precios oficial y generando presupuesto...');
+      setProgressPct(80);
+    }, 1600);
 
     try {
+      const combinedInput = [
+        audioTranscript ? `[TRANSCRIPCIÓN DE AUDIO VERIFICADA]:\n${audioTranscript}` : '',
+        customPhotos.length > 0 ? `[FOTOGRAFÍAS REALES ADJUNTAS (${customPhotos.length})]` : ''
+      ].filter(Boolean).join('\n\n');
+
       const aiResult = await processScopeWithAI(
         combinedInput,
         'presupuesto_obra',
@@ -148,7 +144,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         customPhotos
       );
 
-      setAnalysisStep(4);
+      setProgressPct(100);
 
       const generatedItems = [];
       (aiResult.capitulos || []).forEach(cap => {
@@ -186,17 +182,15 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         }
       });
 
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.6 }
-      });
-      showNotification('¡Presupuesto generado con éxito por la IA a partir de tus archivos y audio!');
+      confetti({ particleCount: 50, spread: 60 });
+      showNotification('Presupuesto técnico generado exitosamente por la IA');
     } catch (err) {
       console.error('Error generando presupuesto IA:', err);
-      showNotification(`Error de IA: ${err.message || 'No se pudieron generar las partidas'}`, 'error');
+      showNotification(`Error de IA: ${err.message}`, 'error');
     } finally {
       setIsAnalyzing(false);
+      setProgressStatus('');
+      setProgressPct(0);
     }
   };
 
@@ -215,7 +209,6 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
     setPartidasList(prev => prev.filter(p => p.id !== id));
   };
 
-  // Calculations
   const baseImponible = Number(partidasList.reduce((s, p) => s + p.total, 0).toFixed(2));
   const cuotaIva = Number((baseImponible * (tipoIva / 100)).toFixed(2));
   const totalPresupuesto = Number((baseImponible + cuotaIva).toFixed(2));
@@ -223,29 +216,23 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   const beneficioBruto = Number((baseImponible - costeTotalDirecto).toFixed(2));
 
   const handleSavePresupuestoBorrador = () => {
-    // Save as Borrador (Draft) for client review, NOT auto-accepted
     const newPres = addPresupuesto({
-      obraTitulo: obraTitulo,
+      obraTitulo,
       cliente: clienteNombre,
       nif: clienteNif,
       direccion: clienteDireccion,
       tipoIvaPct: tipoIva,
       margenGlobalPct: margenGlobal,
       partidas: partidasList,
-      baseImponible: baseImponible,
-      cuotaIva: cuotaIva,
+      baseImponible,
+      cuotaIva,
       totalConIva: totalPresupuesto,
-      estado: 'borrador', // Creado como borrador para revisión/envío al cliente
-      notasLegales: 'Presupuesto generado con IA a partir de fotos del estado actual y notas de voz. Forma de pago: 40% a la aceptación y replanteo, 40% avance de instalaciones, 20% entrega de llaves. Garantía oficial de 2 años según LOE.'
+      estado: 'borrador',
+      notasLegales: 'Presupuesto técnico generado mediante IA. Forma de pago: 40% a la firma, 40% avance de obra, 20% liquidación.'
     });
 
-    confetti({
-      particleCount: 60,
-      spread: 60,
-      origin: { y: 0.6 }
-    });
-
-    showNotification(`¡Presupuesto ${newPres.numero} guardado como borrador! Pendiente de aprobación por el cliente.`);
+    confetti({ particleCount: 60, spread: 60 });
+    showNotification(`Presupuesto ${newPres.numero} guardado correctamente`);
     if (onCreated) onCreated();
   };
 
@@ -257,11 +244,11 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         <div>
           <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
             <Sparkles className="w-4 h-4 animate-pulse" />
-            <span>Motor de Inteligencia Artificial para Obras y Reformas</span>
+            <span>Módulo de Presupuestos IA de Producción</span>
           </div>
-          <h1 className="text-2xl font-black text-white">Generador de Presupuestos con Fotos y Audio</h1>
+          <h1 className="text-2xl font-black text-white">Transcribir Audios y Generar Presupuesto Real</h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Sube o selecciona fotos del estado actual y dicta o reproduce el audio con los trabajos requeridos. La IA cubicara mediciones y desglosará partidas con precios oficiales.
+            Sube los audios dictados in situ (mp3, wav, m4a, webm, ogg). La IA transcribirá el contenido, te permitirá revisarlo y generará las partidas técnicas.
           </p>
         </div>
 
@@ -273,140 +260,132 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         </button>
       </div>
 
-      {/* Main Grid: 2 Columns (Inputs vs Results) */}
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* LEFT COLUMN: INPUTS (5 Cols) */}
+        {/* LEFT COLUMN: AUDIO UPLOAD, TRANSCRIPTION & INPUTS */}
         <div className="lg:col-span-5 space-y-5">
           
-          {/* 1. Photo Selection & Custom Upload Card */}
+          {/* 1. Subida de Audios de Obra */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <Camera className="w-4 h-4 text-amber-400" />
-                <span>1. Fotos de Obra (Archivos Subidos)</span>
+                <Mic className="w-4 h-4 text-amber-400" />
+                <span>1. Audios de Dictado de Obra</span>
               </h3>
               <span className="text-[11px] text-amber-400/90 font-bold">
-                {customPhotos.length === 0 ? 'Sin fotos adjuntas' : `${customPhotos.length} ${customPhotos.length === 1 ? 'foto' : 'fotos'}`}
+                {audioFiles.length} archivo/s
               </span>
             </div>
 
-            {/* Custom Photo File Input & Camera Button */}
-            <div className="grid grid-cols-2 gap-2">
-              <label className="flex items-center justify-center gap-2 p-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl cursor-pointer transition text-xs font-bold">
-                <Upload className="w-4 h-4" />
-                <span>Subir Fotos de Obra</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+            <label className="flex flex-col items-center justify-center p-4 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-dashed border-amber-500/40 rounded-xl cursor-pointer transition text-xs font-bold text-center space-y-1">
+              <Music className="w-6 h-6" />
+              <span>Subir Archivos de Audio (mp3, wav, m4a, webm, ogg)</span>
+              <span className="text-[10px] text-slate-400 font-normal">Sube una o varias grabaciones dictadas en la visita</span>
+              <input
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a,.webm,.ogg"
+                multiple
+                onChange={handleAudioUpload}
+                className="hidden"
+              />
+            </label>
 
-              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1">
-                <input
-                  type="text"
-                  placeholder="URL de foto..."
-                  value={customPhotoUrl}
-                  onChange={(e) => setCustomPhotoUrl(e.target.value)}
-                  className="w-full bg-transparent px-2 text-[11px] text-white focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddPhotoUrl}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg text-xs font-bold shrink-0"
-                >
-                  OK
-                </button>
-              </div>
-            </div>
-
-            {/* User Uploaded Photos List */}
-            {customPhotos.length > 0 ? (
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-slate-300 font-bold block">
-                    Fotos de la obra para análisis ({customPhotos.length}):
+            {/* Loading / Transcribing Progress Bar */}
+            {isTranscribing && (
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-amber-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-400">
+                  <span className="flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>{progressStatus}</span>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setCustomPhotos([])}
-                    className="text-[10px] text-rose-400 hover:text-rose-300 underline"
-                  >
-                    Borrar todas
-                  </button>
+                  <span>{progressPct}%</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {customPhotos.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950 relative group"
-                    >
-                      <img src={item.url} alt={item.title} className="w-full h-20 object-cover" />
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteCustomPhoto(item.id, e)}
-                        className="absolute top-1 right-1 w-5 h-5 rounded bg-rose-600/90 hover:bg-rose-600 text-white flex items-center justify-center transition shadow opacity-90 hover:opacity-100"
-                        title="Eliminar esta foto"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                      <div className="p-1 bg-slate-950 text-center truncate">
-                        <span className="text-[9px] font-bold text-amber-300 truncate block">{item.title}</span>
-                      </div>
-                    </div>
-                  ))}
+                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500 transition-all duration-300"
+                    style={{ width: `${progressPct}%` }}
+                  ></div>
                 </div>
-              </div>
-            ) : (
-              <div className="border border-dashed border-slate-800 rounded-xl p-4 text-center space-y-1 bg-slate-950/60">
-                <Camera className="w-6 h-6 text-slate-600 mx-auto" />
-                <span className="text-xs text-slate-300 font-medium block">Sin fotos de obra</span>
-                <p className="text-[11px] text-slate-500">
-                  La IA generará el presupuesto basándose exclusivamente en el audio transcrito y las notas técnicas.
-                </p>
               </div>
             )}
           </div>
 
-          {/* 2. Audio Transcript Input Card & AI Style Examples Button */}
+          {/* 2. Texto Transcrito (Editable por el Usuario) */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3 shadow-sm">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <Mic className="w-4 h-4 text-amber-400" />
-                <span>2. Audio de Instrucciones de Obra</span>
+                <Edit3 className="w-4 h-4 text-amber-400" />
+                <span>2. Texto Transcrito (Verificar / Editar)</span>
               </h3>
-              <button
-                type="button"
-                onClick={() => setShowExamplesModal(true)}
-                className="text-[11px] text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Estilo / Aprendizaje IA ({userRedactionExamples.length})</span>
-              </button>
+              {hasTranscribed && (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Transcrito con IA
+                </span>
+              )}
             </div>
 
             <textarea
-              rows="4"
+              rows="5"
               value={audioTranscript}
               onChange={(e) => setAudioTranscript(e.target.value)}
-              placeholder="Dicta o escribe las instrucciones de obra: demolición, alicatados, sanitarios, electricidad..."
+              placeholder="El texto transcrito de tus audios aparecerá aquí automáticamente. Puedes editarlo o modificarlo antes de generar el presupuesto."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed font-sans"
             ></textarea>
           </div>
 
-          {/* 3. Project Configuration & Margin Card */}
+          {/* 3. Fotos de la Obra */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <Camera className="w-4 h-4 text-amber-400" />
+                <span>3. Fotografías de la Obra</span>
+              </h3>
+              <span className="text-[11px] text-slate-400 font-bold">
+                {customPhotos.length} foto/s
+              </span>
+            </div>
+
+            <label className="flex items-center justify-center gap-2 p-3 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl cursor-pointer transition text-xs font-bold">
+              <Upload className="w-4 h-4 text-amber-400" />
+              <span>Añadir Fotografías de Inspección</span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+            </label>
+
+            {customPhotos.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                {customPhotos.map((item) => (
+                  <div key={item.id} className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950 relative group">
+                    <img src={item.url} alt={item.title} className="w-full h-20 object-cover" />
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteCustomPhoto(item.id, e)}
+                      className="absolute top-1 right-1 w-5 h-5 rounded bg-rose-600/90 text-white flex items-center justify-center opacity-90 hover:opacity-100"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 4. Datos del Proyecto y Margen */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 shadow-sm">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Building2 className="w-4 h-4 text-amber-400" />
-              <span>3. Datos de la Obra y Margen</span>
+              <span>4. Datos de la Obra</span>
             </h3>
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="text-slate-400 block mb-1">Título de la Obra / Reforma</label>
+                <label className="text-slate-400 block mb-1">Título de la Reforma</label>
                 <input
                   type="text"
                   value={obraTitulo}
@@ -417,7 +396,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-400 block mb-1">Nombre Cliente</label>
+                  <label className="text-slate-400 block mb-1">Cliente</label>
                   <input
                     type="text"
                     value={clienteNombre}
@@ -426,7 +405,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                   />
                 </div>
                 <div>
-                  <label className="text-slate-400 block mb-1">NIF/CIF Cliente</label>
+                  <label className="text-slate-400 block mb-1">NIF/CIF</label>
                   <input
                     type="text"
                     value={clienteNif}
@@ -437,7 +416,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Dirección del Inmueble</label>
+                <label className="text-slate-400 block mb-1">Dirección</label>
                 <input
                   type="text"
                   value={clienteDireccion}
@@ -470,14 +449,14 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                     onChange={(e) => setTipoIva(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white"
                   >
-                    <option value={10}>10% (Reforma Vivienda Habitual)</option>
-                    <option value={21}>21% (Sociedad / Local Comercial)</option>
+                    <option value={10}>10% (Vivienda Habitual)</option>
+                    <option value={21}>21% (Local Comercial / Empresa)</option>
                   </select>
                 </div>
               </div>
             </div>
 
-            {/* Big Action Button */}
+            {/* Action Button */}
             <button
               onClick={handleRunAiAnalysis}
               disabled={isAnalyzing}
@@ -490,83 +469,56 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
               {isAnalyzing ? (
                 <>
                   <RefreshCw className="w-5 h-5 animate-spin" />
-                  <span>Analizando Fotos y Audio con IA...</span>
+                  <span>Procesando Presupuesto...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-5 h-5 stroke-[2.5]" />
-                  <span>Generar Presupuesto con IA</span>
+                  <span>Generar Presupuesto Técnico</span>
                 </>
               )}
             </button>
+
+            {/* General Processing Bar */}
+            {isAnalyzing && (
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-amber-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-400">
+                  <span>{progressStatus}</span>
+                  <span>{progressPct}%</span>
+                </div>
+                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${progressPct}%` }}></div>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
 
-        {/* RIGHT COLUMN: AI RESULTS & PARTIDAS (7 Cols) */}
+        {/* RIGHT COLUMN: GENERATED PARTIDAS & RESULTS */}
         <div className="lg:col-span-7 space-y-5">
           
-          {/* If analyzing simulation */}
-          {isAnalyzing && (
-            <div className="bg-slate-900 border border-amber-500/40 p-8 rounded-2xl shadow-xl space-y-6 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto animate-bounce">
-                <Sparkles className="w-8 h-8" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-white">Gemini Construction AI Engine</h3>
-                <p className="text-xs text-slate-400 mt-1">Analizando mediciones, superficies y partidas de obra...</p>
-              </div>
-
-              {/* Progress Steps */}
-              <div className="max-w-md mx-auto space-y-3 text-left text-xs">
-                <div className={`p-3 rounded-xl border flex items-center gap-3 ${analysisStep >= 1 ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
-                  <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">1</span>
-                  <span>Cubicación visual: análisis de fotos, detección de revestimientos y bañera/tabiques</span>
-                </div>
-                <div className={`p-3 rounded-xl border flex items-center gap-3 ${analysisStep >= 2 ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
-                  <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">2</span>
-                  <span>Transcribiendo audio y extrayendo calidades solicitadas (Geberit, porcelánico, LED)</span>
-                </div>
-                <div className={`p-3 rounded-xl border flex items-center gap-3 ${analysisStep >= 3 ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
-                  <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">3</span>
-                  <span>Cruzando con la Base de Precios de Subcontratas (Electricidad, Fontanería, Albañilería)</span>
-                </div>
-                <div className={`p-3 rounded-xl border flex items-center gap-3 ${analysisStep >= 4 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>
-                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-bold text-[10px]">4</span>
-                  <span>Aplicando margen comercial del {margenGlobal}% y calculando total oficial</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Generated Result Display */}
-          {!isAnalyzing && generatedResult && (
-            <div className="space-y-4">
+          {generatedResult && (
+            <div className="space-y-4 animate-in fade-in">
               
-              {/* AI Recognition Badge */}
-              <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-amber-950/20 border border-emerald-500/30 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="bg-slate-900 border border-emerald-500/30 p-4 rounded-2xl flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-6 h-6" />
-                  </div>
+                  <CheckCircle2 className="w-6 h-6 text-emerald-400" />
                   <div>
-                    <h4 className="font-bold text-white text-sm">Mediciones Estimadas por la IA:</h4>
-                    <p className="text-xs text-slate-300">
-                      {Object.entries(generatedResult.mediciones).map(([k, v]) => `${k.replace('m2', 'm² ')}: ${v}`).join(' · ')}
-                    </p>
+                    <h4 className="font-bold text-white text-sm">Presupuesto Técnico Generado</h4>
+                    <p className="text-xs text-slate-400">{generatedResult.resumen}</p>
                   </div>
                 </div>
-
-                <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-bold self-start sm:self-center">
-                  {partidasList.length} Partidas Calculadas
+                <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-bold">
+                  {partidasList.length} Partidas
                 </span>
               </div>
 
-              {/* Editable Partidas Table */}
+              {/* Partidas Table */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow">
                 <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                  <h3 className="font-bold text-white text-sm">Desglose de Partidas y Mediciones</h3>
-                  <span className="text-[11px] text-slate-400">Puedes modificar cantidades antes de guardar</span>
+                  <h3 className="font-bold text-white text-sm">Partidas Calculadas</h3>
+                  <span className="text-[11px] text-slate-400">Edita cantidades antes de guardar</span>
                 </div>
 
                 <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
@@ -618,7 +570,6 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                             <button
                               onClick={() => handleDeletePartida(p.id)}
                               className="text-slate-500 hover:text-rose-400 p-1"
-                              title="Eliminar partida"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -630,7 +581,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                 </div>
               </div>
 
-              {/* Financial Summary Card */}
+              {/* Totals & Save */}
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
@@ -651,43 +602,34 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                   </div>
                 </div>
 
-                {/* Final Actions */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800">
-                  <div className="text-xs text-slate-400">
-                    <span>✓ Creará el presupuesto formal y la <strong>ficha de obra con sus fases</strong>.</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={onCancel}
-                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={handleSavePresupuestoBorrador}
-                      className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95"
-                    >
-                      <FileText className="w-4 h-4 stroke-[2.5]" />
-                      <span>Guardar Presupuesto (Borrador)</span>
-                    </button>
-                  </div>
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                  <button
+                    onClick={onCancel}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSavePresupuestoBorrador}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95"
+                  >
+                    <FileText className="w-4 h-4 stroke-[2.5]" />
+                    <span>Guardar Presupuesto</span>
+                  </button>
                 </div>
               </div>
 
             </div>
           )}
 
-          {/* Initial State Placeholder */}
-          {!isAnalyzing && !generatedResult && (
+          {!generatedResult && !isAnalyzing && (
             <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl text-center space-y-4">
               <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto">
                 <Sparkles className="w-8 h-8" />
               </div>
               <h3 className="text-lg font-bold text-white">Listo para Generar Presupuesto</h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Revisa las fotos y la descripción en audio a la izquierda y pulsa en <strong>"Generar Presupuesto con IA"</strong>.
-                Obtendrás el desglose de partidas, rendimientos y márgenes al instante.
+                Sube las grabaciones de audio a la izquierda. La IA transcribirá las notas de voz y calculará las partidas técnicas.
               </p>
             </div>
           )}
@@ -695,84 +637,6 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
         </div>
 
       </div>
-
-      {/* Modal Ejemplos de Redacción y Aprendizaje para la IA */}
-      {showExamplesModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-amber-400" />
-                  <span>Entrenamiento y Estilo de Redacción para la IA</span>
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Introduce ejemplos de cómo te gusta redactar tus presupuestos, qué conceptos incluyes o excluyes por defecto.
-                </p>
-              </div>
-              <button onClick={() => setShowExamplesModal(false)} className="text-slate-400 hover:text-white font-bold text-lg">✕</button>
-            </div>
-
-            {/* Ejemplos Actuales */}
-            <div className="space-y-2">
-              <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
-                Ejemplos de Redacción Enseñados a la IA ({userRedactionExamples.length}):
-              </span>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {userRedactionExamples.map((ex) => (
-                  <div key={ex.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
-                    <span className="font-bold text-white block">{ex.titulo}</span>
-                    <p className="text-slate-300 italic">"{ex.texto}"</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Formulario Añadir Nuevo Ejemplo */}
-            <form onSubmit={handleAddExample} className="space-y-3 pt-2 border-t border-slate-800 text-xs">
-              <span className="font-bold text-white block">Añadir Nuevo Ejemplo de Redacción / Criterio:</span>
-              <div>
-                <label className="text-slate-400 block mb-1">Título / Trabajo</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej: Formateo de Fontanería con Multicapa"
-                  value={newExampleTitle}
-                  onChange={(e) => setNewExampleTitle(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                />
-              </div>
-              <div>
-                <label className="text-slate-400 block mb-1">Texto / Partida Redactada de Ejemplo</label>
-                <textarea
-                  rows="3"
-                  required
-                  placeholder="Escribe la descripción de la partida exactamente como quieres que la redacte la IA..."
-                  value={newExampleText}
-                  onChange={(e) => setNewExampleText(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
-                ></textarea>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowExamplesModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
-                >
-                  Cerrar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow"
-                >
-                  Guardar Ejemplo de Aprendizaje
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
     </div>
   );
