@@ -45,7 +45,7 @@ function loadEnv() {
 loadEnv();
 
 const PORT = Number(process.env.PORT) || 3000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:5173";
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 
 // 2. Normalización de modelos Gemini para evitar errores 404
 function normalizeGeminiModel(rawModel) {
@@ -289,7 +289,8 @@ function parseMultipartBuffer(buffer, boundary) {
 // 4. Controlador de Peticiones HTTP
 async function handleRequest(req, res) {
   // CORS Headers
-  res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
+  const originHeader = req.headers.origin || (CORS_ORIGIN === "*" ? "*" : CORS_ORIGIN);
+  res.setHeader("Access-Control-Allow-Origin", originHeader);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, x-api-key");
   res.setHeader("Access-Control-Allow-Credentials", "true");
