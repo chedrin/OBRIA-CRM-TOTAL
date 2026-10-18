@@ -4,17 +4,8 @@
  * Arquitectura de Producción SaaS:
  * - Centralización 100% de proveedores de IA (Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Azure OpenAI).
  * - Persistencia de datos en disco (db_presupuestos.json, db_obras.json, db_clientes.json, ai_settings.json, ai_audit_log.json).
- * - Endpoints de producción:
- *    GET  /api/health               -> Estado del servidor
- *    GET  /api/settings/ai          -> Obtener configuración de IA activa
- *    PUT  /api/settings/ai          -> Guardar configuración de IA
- *    POST /api/ai/test-connection   -> Prueba de conexión con latencia
- *    POST /api/ai/transcribe        -> Transcripción unificada de audios
- *    POST /api/ai/generate-budget   -> Generación técnica de presupuesto
- *    POST /api/ai/analyze-images    -> Inspección técnica de fotos
- *    GET/POST /api/presupuestos     -> Persistencia real de presupuestos
- *    GET/POST /api/obras            -> Persistencia real de obras
- *    GET/POST /api/clientes         -> Persistencia real de clientes
+ * - Centralized Gemini models with fallback cascade: gemini-2.5-flash -> gemini-2.0-flash -> gemini-1.5-flash
+ * - User-friendly error messages (sanitizing raw Google API error output)
  */
 
 import http from "node:http";
@@ -24,6 +15,10 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const USER_FRIENDLY_AI_ERROR = "No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.";
+const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
+const GEMINI_FALLBACK_CASCADE = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
 function loadEnv() {
   const envPath = path.join(__dirname, ".env");
@@ -82,10 +77,10 @@ function getDefaultAiConfig() {
   return {
     provider: process.env.AI_PROVIDER || "google",
     apiKey: process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || "",
-    model: process.env.GEMINI_MODEL || process.env.AI_MODEL || "gemini-1.5-flash",
+    model: process.env.GEMINI_MODEL || process.env.AI_MODEL || GEMINI_DEFAULT_MODEL,
     temperature: Number(process.env.AI_TEMPERATURE) || 0.15,
     maxTokens: Number(process.env.AI_MAX_TOKENS) || 4096,
-    openRouterModel: process.env.OPENROUTER_MODEL || "google/gemini-flash-1.5",
+    openRouterModel: process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash",
     azureEndpoint: process.env.AZURE_OPENAI_ENDPOINT || "",
     azureDeployment: process.env.AZURE_OPENAI_DEPLOYMENT || ""
   };
@@ -191,15 +186,22 @@ function fileToPart(file) {
   };
 }
 
-// Invocadores por Proveedor
+// Invocadores por Proveedor con Cascade Fallback para Gemini
 async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json" }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
-  if (!effectiveKey) throw new Error("API Key no configurada para Google Gemini.");
+  if (!effectiveKey) {
+    throw new Error(USER_FRIENDLY_AI_ERROR);
+  }
 
-  let targetModel = model || "gemini-1.5-flash";
+  let preferredModel = model || GEMINI_DEFAULT_MODEL;
+  if (preferredModel.includes('1.5')) preferredModel = 'gemini-1.5-flash';
+
+  const modelsToTry = [preferredModel];
+  for (const m of GEMINI_FALLBACK_CASCADE) {
+    if (!modelsToTry.includes(m)) modelsToTry.push(m);
+  }
+
   const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models`;
-  let url = `${baseUrl}/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
-
   const bodyPayload = {
     contents,
     ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
@@ -210,130 +212,159 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
     }
   };
 
-  let response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(bodyPayload)
-  });
+  let lastTechnicalError = "";
 
-  if (!response.ok && response.status === 404 && targetModel !== "gemini-1.5-flash") {
-    targetModel = "gemini-1.5-flash";
-    url = `${baseUrl}/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
-    response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(bodyPayload)
-    });
+  for (const targetModel of modelsToTry) {
+    const url = `${baseUrl}/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyPayload)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) return rawText;
+      }
+
+      let errText = await response.text();
+      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+      console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
+      lastTechnicalError = `[${targetModel}] HTTP ${response.status}: ${errText}`;
+
+      if (response.status === 404 || errText.includes("not found") || errText.includes("is not supported")) {
+        console.warn(`[Backend Gemini Cascade] Reintentando con siguiente modelo por error 404 en ${targetModel}...`);
+        continue;
+      }
+
+      break;
+    } catch (netErr) {
+      console.error(`[Backend Gemini Exception] Modelo "${targetModel}":`, netErr.message);
+      lastTechnicalError = netErr.message;
+      continue;
+    }
   }
 
-  if (!response.ok) {
-    let errText = await response.text();
-    try { errText = JSON.parse(errText).error?.message || errText; } catch {}
-    throw new Error(`Google Gemini (${response.status}): ${errText}`);
-  }
-
-  const data = await response.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) throw new Error("Google Gemini devolvió una respuesta vacía.");
-  return rawText;
+  console.error("[Backend Gemini Fallback Failed] Detalle técnico interno:", lastTechnicalError);
+  throw new Error(USER_FRIENDLY_AI_ERROR);
 }
 
 async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15, maxTokens = 4096 }) {
   const effectiveKey = (apiKey || process.env.OPENAI_API_KEY || "").trim();
-  if (!effectiveKey) throw new Error("API Key no configurada para OpenAI.");
+  if (!effectiveKey) throw new Error(USER_FRIENDLY_AI_ERROR);
 
   const url = "https://api.openai.com/v1/chat/completions";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${effectiveKey}`
-    },
-    body: JSON.stringify({
-      model: model || "gpt-4o",
-      messages,
-      response_format: { type: "json_object" },
-      temperature,
-      max_tokens: maxTokens
-    })
-  });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${effectiveKey}`
+      },
+      body: JSON.stringify({
+        model: model || "gpt-4o",
+        messages,
+        response_format: { type: "json_object" },
+        temperature,
+        max_tokens: maxTokens
+      })
+    });
 
-  if (!response.ok) {
-    let errText = await response.text();
-    try { errText = JSON.parse(errText).error?.message || errText; } catch {}
-    throw new Error(`OpenAI (${response.status}): ${errText}`);
+    if (!response.ok) {
+      let errText = await response.text();
+      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+      console.error(`[OpenAI Error] HTTP ${response.status}: ${errText}`);
+      throw new Error(USER_FRIENDLY_AI_ERROR);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error(USER_FRIENDLY_AI_ERROR);
+    return content;
+  } catch (err) {
+    console.error("[OpenAI Provider Exception]", err);
+    throw new Error(USER_FRIENDLY_AI_ERROR);
   }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("OpenAI devolvió una respuesta vacía.");
-  return content;
 }
 
 async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, temperature = 0.15, maxTokens = 4096 }) {
   const effectiveKey = (apiKey || process.env.ANTHROPIC_API_KEY || "").trim();
-  if (!effectiveKey) throw new Error("API Key no configurada para Anthropic Claude.");
+  if (!effectiveKey) throw new Error(USER_FRIENDLY_AI_ERROR);
 
   const url = "https://api.anthropic.com/v1/messages";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": effectiveKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: model || "claude-3-5-sonnet-20241022",
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-      max_tokens: maxTokens,
-      temperature
-    })
-  });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": effectiveKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: model || "claude-3-5-sonnet-20241022",
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+        max_tokens: maxTokens,
+        temperature
+      })
+    });
 
-  if (!response.ok) {
-    let errText = await response.text();
-    try { errText = JSON.parse(errText).error?.message || errText; } catch {}
-    throw new Error(`Anthropic Claude (${response.status}): ${errText}`);
+    if (!response.ok) {
+      let errText = await response.text();
+      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+      console.error(`[Anthropic Error] HTTP ${response.status}: ${errText}`);
+      throw new Error(USER_FRIENDLY_AI_ERROR);
+    }
+
+    const data = await response.json();
+    const textBlock = data.content?.find(b => b.type === "text")?.text || "";
+    if (!textBlock) throw new Error(USER_FRIENDLY_AI_ERROR);
+    return textBlock;
+  } catch (err) {
+    console.error("[Anthropic Provider Exception]", err);
+    throw new Error(USER_FRIENDLY_AI_ERROR);
   }
-
-  const data = await response.json();
-  const textBlock = data.content?.find(b => b.type === "text")?.text || "";
-  if (!textBlock) throw new Error("Anthropic Claude devolvió una respuesta vacía.");
-  return textBlock;
 }
 
 async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0.15, maxTokens = 4096 }) {
   const effectiveKey = (apiKey || process.env.OPENROUTER_API_KEY || "").trim();
-  if (!effectiveKey) throw new Error("API Key no configurada para OpenRouter.");
+  if (!effectiveKey) throw new Error(USER_FRIENDLY_AI_ERROR);
 
   const url = "https://openrouter.ai/api/v1/chat/completions";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${effectiveKey}`,
-      "HTTP-Referer": "https://obriamaster.app",
-      "X-Title": "ObraMaster CRM"
-    },
-    body: JSON.stringify({
-      model: model || "google/gemini-flash-1.5",
-      messages,
-      temperature,
-      max_tokens: maxTokens
-    })
-  });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${effectiveKey}`,
+        "HTTP-Referer": "https://obriamaster.app",
+        "X-Title": "ObraMaster CRM"
+      },
+      body: JSON.stringify({
+        model: model || "google/gemini-2.5-flash",
+        messages,
+        temperature,
+        max_tokens: maxTokens
+      })
+    });
 
-  if (!response.ok) {
-    let errText = await response.text();
-    try { errText = JSON.parse(errText).error?.message || errText; } catch {}
-    throw new Error(`OpenRouter (${response.status}): ${errText}`);
+    if (!response.ok) {
+      let errText = await response.text();
+      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+      console.error(`[OpenRouter Error] HTTP ${response.status}: ${errText}`);
+      throw new Error(USER_FRIENDLY_AI_ERROR);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error(USER_FRIENDLY_AI_ERROR);
+    return content;
+  } catch (err) {
+    console.error("[OpenRouter Provider Exception]", err);
+    throw new Error(USER_FRIENDLY_AI_ERROR);
   }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("OpenRouter devolvió una respuesta vacía.");
-  return content;
 }
 
 // Transcripción de Audio Robusta y Específica por Proveedor
@@ -371,17 +402,18 @@ async function transcribeAudioUnified({ audioFile, config }) {
     try {
       data = rawText ? JSON.parse(rawText) : {};
     } catch {
-      throw new Error(`Error en servicio Whisper OpenAI (${res.status}): ${rawText || "Sin respuesta"}`);
+      throw new Error(USER_FRIENDLY_AI_ERROR);
     }
 
     if (!res.ok) {
-      throw new Error(`OpenAI Whisper (${res.status}): ${data.error?.message || rawText}`);
+      console.error(`[Whisper Error] ${res.status}:`, data);
+      throw new Error(USER_FRIENDLY_AI_ERROR);
     }
 
     return data.text || "";
   }
 
-  // 2. Si el proveedor es Google Gemini o se tiene GEMINI_API_KEY / clave AIza...
+  // 2. Si el proveedor es Google Gemini o se tiene GEMINI_API_KEY
   const geminiKey = (apiKey.startsWith("AIza") ? apiKey : process.env.GEMINI_API_KEY || "").trim();
   if (geminiKey || provider === "google") {
     const part = fileToPart(audioFile);
@@ -394,7 +426,7 @@ Devuelve estrictamente un JSON válido con esta estructura exacta:
 `;
     const rawText = await callGeminiProvider({
       apiKey: geminiKey || process.env.GEMINI_API_KEY,
-      model: config.model || "gemini-1.5-flash",
+      model: config.model || GEMINI_DEFAULT_MODEL,
       contents: [{ role: "user", parts: [{ text: promptText }, part] }],
       temperature: 0.1,
       responseMimeType: "application/json"
@@ -413,8 +445,7 @@ Devuelve estrictamente un JSON válido con esta estructura exacta:
     }
   }
 
-  // Fallback seguro si no hay motor de audio directo para Anthropic/OpenRouter sin Whisper
-  throw new Error(`Para transcribir audio, configura tu API Key de OpenAI (Whisper) o Google Gemini en Ajustes de IA.`);
+  throw new Error(USER_FRIENDLY_AI_ERROR);
 }
 
 // Servidor Estático
@@ -633,7 +664,6 @@ async function handleRequest(req, res) {
     const currentConfig = getSavedAiConfig();
 
     try {
-      // Endpoint: PUT /api/settings/ai
       if (req.method === "PUT" && pathname === "/api/settings/ai") {
         const updated = saveAiConfig(fields);
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -648,7 +678,6 @@ async function handleRequest(req, res) {
         return;
       }
 
-      // Endpoint: POST /api/presupuestos
       if (req.method === "POST" && pathname === "/api/presupuestos") {
         let items = readJsonDb(DB_PRESUPUESTOS_FILE, []);
         if (Array.isArray(fields)) {
@@ -664,7 +693,6 @@ async function handleRequest(req, res) {
         return;
       }
 
-      // Endpoint: POST /api/obras
       if (req.method === "POST" && pathname === "/api/obras") {
         let items = readJsonDb(DB_OBRAS_FILE, []);
         if (Array.isArray(fields)) {
@@ -680,7 +708,6 @@ async function handleRequest(req, res) {
         return;
       }
 
-      // Endpoint: POST /api/clientes
       if (req.method === "POST" && pathname === "/api/clientes") {
         let items = readJsonDb(DB_CLIENTES_FILE, []);
         if (Array.isArray(fields)) {
@@ -696,7 +723,6 @@ async function handleRequest(req, res) {
         return;
       }
 
-      // Endpoint: POST /api/ai/test-connection
       if (req.method === "POST" && (pathname === "/api/ai/test-connection" || pathname === "/api/test-connection")) {
         const provider = fields.provider || currentConfig.provider;
         const apiKey = fields.apiKey || currentConfig.apiKey;
@@ -726,7 +752,7 @@ async function handleRequest(req, res) {
         } else if (provider === "openrouter") {
           rawResponse = await callOpenRouterProvider({
             apiKey,
-            model: model || "google/gemini-flash-1.5",
+            model: model || "google/gemini-2.5-flash",
             messages: [{ role: "user", content: "Responde en JSON: {\"status\": \"PONG\", \"message\": \"Conexión exitosa\"}" }]
           });
         } else {
@@ -748,7 +774,6 @@ async function handleRequest(req, res) {
         return;
       }
 
-      // Endpoint: POST /api/ai/transcribe
       if (req.method === "POST" && (pathname === "/api/ai/transcribe" || pathname === "/api/transcribir")) {
         const audioFiles = files.audios || [];
         if (audioFiles.length === 0) {
@@ -793,7 +818,6 @@ async function handleRequest(req, res) {
         return;
       }
 
-      // Endpoint: POST /api/ai/generate-budget
       if (req.method === "POST" && (pathname === "/api/ai/generate-budget" || pathname === "/api/presupuesto")) {
         const startTime = performance.now();
         const fotos = files.fotos || [];
@@ -906,7 +930,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
         } else if (effectiveConfig.provider === "openrouter") {
           rawOutput = await callOpenRouterProvider({
             apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "google/gemini-flash-1.5",
+            model: effectiveConfig.model || "google/gemini-2.5-flash",
             messages: [
               { role: "system", content: systemInstruction },
               { role: "user", content: userPrompt }
@@ -943,7 +967,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: `Endpoint no encontrado: ${pathname}` }));
     } catch (err) {
-      console.error("[Backend AI Error]", err);
+      console.error("[Backend AI Exception]", err);
       logAiCall({
         provider: currentConfig.provider,
         model: currentConfig.model,
@@ -954,7 +978,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
       });
 
       res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err.message || "Error interno procesando solicitud de IA." }));
+      res.end(JSON.stringify({ error: USER_FRIENDLY_AI_ERROR }));
     }
   });
 }

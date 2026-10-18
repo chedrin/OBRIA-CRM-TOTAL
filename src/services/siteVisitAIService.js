@@ -9,12 +9,12 @@
  * 5. Conversational voice/text refinement console (natural language modifications)
  */
 
-import { generateBudgetWithGemini, normalizeGeminiModel } from './geminiService';
+import { generateBudgetWithGemini, normalizeGeminiModel, DEFAULT_GEMINI_MODEL, USER_FRIENDLY_AI_ERROR } from './geminiService';
 
 export const SYSTEM_PROMPT_PRESUPUESTADORA = `Eres el Motor Central de Presupuestación e Inteligencia Artificial de "ObraMaster", actuando como un Aparejador / Arquitecto Técnico Colegiado Senior y Estimador de Costes de Construcción en España (conforme a LOE Ley 38/1999, CTE y REBT).
 
 OBJETIVO PRINCIPAL:
-Transformar un expediente multimodal de visita de obra (notas de voz transcritas, fotos del estado del inmueble, croquis manuscritos con medidas de distanciómetro láser y requerimientos del cliente) en un borrador de presupuesto técnico completo, estructurado por Capítulos y Partidas, cruzado estrictamente con el Catálogo Oficial de Precios de la empresa constructora.
+Transformar un expediente multimodal de visita de obra (notas de voz transcritas, fotos del estado del inmueble, croquis manuscritos con medidas de distanciómetro láser y requerimientos del cliente) en un borrador de presupuesto técnico completo, estructurado por Capítulos y Partidas, cruzado strictly con el Catálogo Oficial de Precios de la empresa constructora.
 
 REGLAS TÉCNICAS OBLIGATORIAS:
 1. CAPÍTULOS NORMALIZADOS:
@@ -144,7 +144,7 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
           : `[EVIDENCIAS FOTOGRÁFICAS]: No se han adjuntado fotos de obra. Centrarse exclusivamente en el audio transcrito y las mediciones aportadas.`
       ].filter(Boolean).join('\n\n');
 
-      const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || 'gemini-1.5-flash');
+      const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || DEFAULT_GEMINI_MODEL);
       const promptUser = `
 EXPEDIENTE DE VISITA DE OBRA:
 - Cliente: ${expediente.cliente || 'Particular'}
@@ -194,94 +194,93 @@ Por favor, desglosa el presupuesto técnico completo respetando rigurosamente lo
                        (expediente.audioTranscripcion || '').toLowerCase().includes('piso') ||
                        (expediente.audioTranscripcion || '').toLowerCase().includes('alcalá');
 
-  if (isVivienda) {
-    rawChapters = [
-      {
-        id: 'cap-01',
-        codigo: '01',
-        nombre: 'Actuaciones Previas, Demoliciones y Gestión de Residuos',
-        partidas: [
-          { codigo: 'DEM-01', concepto: 'Demolición de tabique divisorio de ladrillo hueco con medios manuales y carga de escombro', cantidad: 14.5, unidad: 'm²', costeUnitario: 12.50, margenPct: margen },
-          { codigo: 'DEM-02', concepto: 'Picado de alicatados y solados antiguos en baños y cocina con retirada en sacas', cantidad: 62.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
-          { codigo: 'DEM-04', concepto: 'Contenedor de obra 5m³ homologado, tasas de ocupación de vía y canon oficial de vertedero', cantidad: 3, unidad: 'ud', costeUnitario: 180.00, margenPct: 20 },
-          { codigo: 'PROP-IA-01', concepto: 'Recargo por acopio manual de materiales y bajada de sacas por escalera en 3º piso sin ascensor', cantidad: 1, unidad: 'partida', costeUnitario: 450.00, margenPct: 30 }
-        ]
-      },
-      {
-        id: 'cap-02',
-        codigo: '02',
-        nombre: 'Albañilería, Tabiquería y Falsos Techos',
-        partidas: [
-          { codigo: 'ALB-01', concepto: 'Recrecido y formación de tabicón de ladrillo de gran formato para remates de cocina y baños', cantidad: 18.0, unidad: 'm²', costeUnitario: 28.00, margenPct: margen },
-          { codigo: 'ALB-02', concepto: 'Falso techo continuo de pladur 13mm en toda la vivienda con foseado perimetral en salón para tira LED', cantidad: 88.0, unidad: 'm²', costeUnitario: 24.00, margenPct: margen },
-          { codigo: 'PIN-01', concepto: 'Alisado integral de gotelé mediante tendido de masilla plástica en dos manos, lijado con aspiración y sellador', cantidad: 215.0, unidad: 'm²', costeUnitario: 12.00, margenPct: margen }
-        ]
-      },
-      {
-        id: 'cap-03',
-        codigo: '03',
-        nombre: 'Fontanería, Saneamiento y Sanitarios',
-        partidas: [
-          { codigo: 'FON-01', concepto: 'Instalación completa de fontanería multicapa empotrada para dos baños y cocina abierta', cantidad: 14, unidad: 'puntos', costeUnitario: 65.00, margenPct: 25 },
-          { codigo: 'FON-03', concepto: 'Suministro e instalación de plato de ducha resina pizarra grafito 140x80 con mampara fija perfil negro', cantidad: 2, unidad: 'ud', costeUnitario: 160.00, margenPct: 30 },
-          { codigo: 'FON-04', concepto: 'Instalación de inodoros suspendidos con bastidor Geberit Duofix y cisterna empotrada', cantidad: 2, unidad: 'ud', costeUnitario: 180.00, margenPct: 25 }
-        ]
-      },
-      {
-        id: 'cap-04',
-        codigo: '04',
-        nombre: 'Electricidad e Iluminación (Normativa REBT)',
-        partidas: [
-          { codigo: 'ELE-03', concepto: 'Cuadro general de mando y protección REBT con diferencial superinmunizado, 8 circuitos y boletín oficial CIE', cantidad: 1, unidad: 'ud', costeUnitario: 420.00, margenPct: 25 },
-          { codigo: 'ELE-01', concepto: 'Instalación de mecanismos serie Schneider D-Life en color antracita y tomas USB integradas', cantidad: 45, unidad: 'ud', costeUnitario: 18.50, margenPct: 25 },
-          { codigo: 'ELE-02', concepto: 'Líneas de alimentación independientes para cocina (horno, inducción, lavavajillas, frigo y microondas)', cantidad: 6, unidad: 'ud', costeUnitario: 42.00, margenPct: 25 }
-        ]
-      },
-      {
-        id: 'cap-05',
-        codigo: '05',
-        nombre: 'Revestimientos y Acabados de Suelos',
-        partidas: [
-          { codigo: 'ALI-01', concepto: 'Alicatado de paramentos en baños con porcelánico rectificado 60x120 con mortero cola C2TE', cantidad: 48.0, unidad: 'm²', costeUnitario: 27.00, margenPct: margen },
-          { codigo: 'CAR-02', concepto: 'Suministro e instalación de tarima laminada AC5 hidrófuga con aislante acústico y rodapié lacado blanco', cantidad: 74.0, unidad: 'm²', costeUnitario: 22.00, margenPct: 25 },
-          { codigo: 'PIN-02', concepto: 'Pintura plástica lavable mate blanco roto a dos manos en paredes y techos', cantidad: 215.0, unidad: 'm²', costeUnitario: 7.50, margenPct: margen }
-        ]
-      }
-    ];
-  } else {
-    // Baño / Aseo especializado
-    rawChapters = [
-      {
-        id: 'cap-01',
-        codigo: '01',
-        nombre: 'Demoliciones y Retirada a Vertedero',
-        partidas: [
-          { codigo: 'DEM-02', concepto: 'Demolición de bañera existente, picado de azulejos y desescombro en sacas', cantidad: 26.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
-          { codigo: 'DEM-04', concepto: 'Saca de escombro homologada con canon de vertedero municipal', cantidad: 4, unidad: 'ud', costeUnitario: 45.00, margenPct: 20 }
-        ]
-      },
-      {
-        id: 'cap-02',
-        codigo: '02',
-        nombre: 'Fontanería y Aparatos Sanitarios',
-        partidas: [
-          { codigo: 'FON-01', concepto: 'Redistribución de tomas de agua fría y caliente en tubería multicapa para ducha y mueble doble', cantidad: 5, unidad: 'ud', costeUnitario: 65.00, margenPct: 25 },
-          { codigo: 'FON-03', concepto: 'Plato de ducha pizarra antracita antideslizante C3 160x80 con mampara fija perfilería negra', cantidad: 1, unidad: 'ud', costeUnitario: 220.00, margenPct: 30 },
-          { codigo: 'FON-04', concepto: 'Inodoro suspendido Rimless con cisterna empotrada Geberit Duofix y pulsador negro mate', cantidad: 1, unidad: 'ud', costeUnitario: 210.00, margenPct: 25 }
-        ]
-      },
-      {
-        id: 'cap-03',
-        codigo: '03',
-        nombre: 'Revestimientos y Electricidad',
-        partidas: [
-          { codigo: 'ALI-01', concepto: 'Alicatado con porcelánico rectificado 60x120 imitación mármol Calacatta con crucetas autonivelantes', cantidad: 24.0, unidad: 'm²', costeUnitario: 28.00, margenPct: margen },
-          { codigo: 'ALI-02', concepto: 'Solado antideslizante imitación roble natural continuo con junta epoxi', cantidad: 6.0, unidad: 'm²', costeUnitario: 26.00, margenPct: margen },
-          { codigo: 'ALB-02', concepto: 'Falso techo de pladur hidrófugo verde 13mm con 4 downlights LED estancos IP44', cantidad: 6.0, unidad: 'm²', costeUnitario: 35.00, margenPct: 25 }
-        ]
-      }
-    ];
-  }
+    if (isVivienda) {
+      rawChapters = [
+        {
+          id: 'cap-01',
+          codigo: '01',
+          nombre: 'Actuaciones Previas, Demoliciones y Gestión de Residuos',
+          partidas: [
+            { codigo: 'DEM-01', concepto: 'Demolición de tabique divisorio de ladrillo hueco con medios manuales y carga de escombro', cantidad: 14.5, unidad: 'm²', costeUnitario: 12.50, margenPct: margen },
+            { codigo: 'DEM-02', concepto: 'Picado de alicatados y solados antiguos en baños y cocina con retirada en sacas', cantidad: 62.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
+            { codigo: 'DEM-04', concepto: 'Contenedor de obra 5m³ homologado, tasas de ocupación de vía y canon oficial de vertedero', cantidad: 3, unidad: 'ud', costeUnitario: 180.00, margenPct: 20 },
+            { codigo: 'PROP-IA-01', concepto: 'Recargo por acopio manual de materiales y bajada de sacas por escalera en 3º piso sin ascensor', cantidad: 1, unidad: 'partida', costeUnitario: 450.00, margenPct: 30 }
+          ]
+        },
+        {
+          id: 'cap-02',
+          codigo: '02',
+          nombre: 'Albañilería, Tabiquería y Falsos Techos',
+          partidas: [
+            { codigo: 'ALB-01', concepto: 'Recrecido y formación de tabicón de ladrillo de gran formato para remates de cocina y baños', cantidad: 18.0, unidad: 'm²', costeUnitario: 28.00, margenPct: margen },
+            { codigo: 'ALB-02', concepto: 'Falso techo continuo de pladur 13mm en toda la vivienda con foseado perimetral en salón para tira LED', cantidad: 88.0, unidad: 'm²', costeUnitario: 24.00, margenPct: margen },
+            { codigo: 'PIN-01', concepto: 'Alisado integral de gotelé mediante tendido de masilla plástica en dos manos, lijado con aspiración y sellador', cantidad: 215.0, unidad: 'm²', costeUnitario: 12.00, margenPct: margen }
+          ]
+        },
+        {
+          id: 'cap-03',
+          codigo: '03',
+          nombre: 'Fontanería, Saneamiento y Sanitarios',
+          partidas: [
+            { codigo: 'FON-01', concepto: 'Instalación completa de fontanería multicapa empotrada para dos baños y cocina abierta', cantidad: 14, unidad: 'puntos', costeUnitario: 65.00, margenPct: 25 },
+            { codigo: 'FON-03', concepto: 'Suministro e instalación de plato de ducha resina pizarra grafito 140x80 con mampara fija perfil negro', cantidad: 2, unidad: 'ud', costeUnitario: 160.00, margenPct: 30 },
+            { codigo: 'FON-04', concepto: 'Instalación de inodoros suspendidos con bastidor Geberit Duofix y cisterna empotrada', cantidad: 2, unidad: 'ud', costeUnitario: 180.00, margenPct: 25 }
+          ]
+        },
+        {
+          id: 'cap-04',
+          codigo: '04',
+          nombre: 'Electricidad e Iluminación (Normativa REBT)',
+          partidas: [
+            { codigo: 'ELE-03', concepto: 'Cuadro general de mando y protección REBT con diferencial superinmunizado, 8 circuitos y boletín oficial CIE', cantidad: 1, unidad: 'ud', costeUnitario: 420.00, margenPct: 25 },
+            { codigo: 'ELE-01', concepto: 'Instalación de mecanismos serie Schneider D-Life en color antracita y tomas USB integradas', cantidad: 45, unidad: 'ud', costeUnitario: 18.50, margenPct: 25 },
+            { codigo: 'ELE-02', concepto: 'Líneas de alimentación independientes para cocina (horno, inducción, lavavajillas, frigo y microondas)', cantidad: 6, unidad: 'ud', costeUnitario: 42.00, margenPct: 25 }
+          ]
+        },
+        {
+          id: 'cap-05',
+          codigo: '05',
+          nombre: 'Revestimientos y Acabados de Suelos',
+          partidas: [
+            { codigo: 'ALI-01', concepto: 'Alicatado de paramentos en baños con porcelánico rectificado 60x120 con mortero cola C2TE', cantidad: 48.0, unidad: 'm²', costeUnitario: 27.00, margenPct: margen },
+            { codigo: 'CAR-02', concepto: 'Suministro e instalación de tarima laminada AC5 hidrófuga con aislante acústico y rodapié lacado blanco', cantidad: 74.0, unidad: 'm²', costeUnitario: 22.00, margenPct: 25 },
+            { codigo: 'PIN-02', concepto: 'Pintura plástica lavable mate blanco roto a dos manos en paredes y techos', cantidad: 215.0, unidad: 'm²', costeUnitario: 7.50, margenPct: margen }
+          ]
+        }
+      ];
+    } else {
+      rawChapters = [
+        {
+          id: 'cap-01',
+          codigo: '01',
+          nombre: 'Demoliciones y Retirada a Vertedero',
+          partidas: [
+            { codigo: 'DEM-02', concepto: 'Demolición de bañera existente, picado de azulejos y desescombro en sacas', cantidad: 26.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
+            { codigo: 'DEM-04', concepto: 'Saca de escombro homologada con canon de vertedero municipal', cantidad: 4, unidad: 'ud', costeUnitario: 45.00, margenPct: 20 }
+          ]
+        },
+        {
+          id: 'cap-02',
+          codigo: '02',
+          nombre: 'Fontanería y Aparatos Sanitarios',
+          partidas: [
+            { codigo: 'FON-01', concepto: 'Redistribución de tomas de agua fría y caliente en tubería multicapa para ducha y mueble doble', cantidad: 5, unidad: 'ud', costeUnitario: 65.00, margenPct: 25 },
+            { codigo: 'FON-03', concepto: 'Plato de ducha pizarra antracita antideslizante C3 160x80 con mampara fija perfilería negra', cantidad: 1, unidad: 'ud', costeUnitario: 220.00, margenPct: 30 },
+            { codigo: 'FON-04', concepto: 'Inodoro suspendido Rimless con cisterna empotrada Geberit Duofix y pulsador negro mate', cantidad: 1, unidad: 'ud', costeUnitario: 210.00, margenPct: 25 }
+          ]
+        },
+        {
+          id: 'cap-03',
+          codigo: '03',
+          nombre: 'Revestimientos y Electricidad',
+          partidas: [
+            { codigo: 'ALI-01', concepto: 'Alicatado con porcelánico rectificado 60x120 imitación mármol Calacatta con crucetas autonivelantes', cantidad: 24.0, unidad: 'm²', costeUnitario: 28.00, margenPct: margen },
+            { codigo: 'ALI-02', concepto: 'Solado antideslizante imitación roble natural continuo con junta epoxi', cantidad: 6.0, unidad: 'm²', costeUnitario: 26.00, margenPct: margen },
+            { codigo: 'ALB-02', concepto: 'Falso techo de pladur hidrófugo verde 13mm con 4 downlights LED estancos IP44', cantidad: 6.0, unidad: 'm²', costeUnitario: 35.00, margenPct: 25 }
+          ]
+        }
+      ];
+    }
   }
 
   // Calculate pricing
@@ -312,7 +311,6 @@ Por favor, desglosa el presupuesto técnico completo respetando rigurosamente lo
     };
   });
 
-  // Flat partidas list
   const allPartidas = capitulosCalculados.flatMap(c => c.partidas.map(p => ({ ...p, capitulo: c.nombre })));
   const baseImponible = Number(allPartidas.reduce((s, p) => s + p.total, 0).toFixed(2));
   const cuotaIva = Number((baseImponible * (tipoIva / 100)).toFixed(2));
@@ -357,19 +355,17 @@ Por favor, desglosa el presupuesto técnico completo respetando rigurosamente lo
 
 /**
  * Applies a conversational voice/text command to an existing quote
- * E.g: "En electricidad sube los mecanismos a Schneider D-Life y añade un 5% extra a la demolición por ser cuarto piso sin ascensor"
  */
 export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConfig) {
   const cleanCmd = (commandText || '').toLowerCase();
   let changelog = '';
   let updatedCapitulos = JSON.parse(JSON.stringify(currentQuote.capitulos || []));
 
-  // Case 1: Extra demolition surcharge (4th floor without elevator)
   if (cleanCmd.includes('demolicion') || cleanCmd.includes('demolición') || cleanCmd.includes('ascensor') || cleanCmd.includes('sin ascensor')) {
     const demCap = updatedCapitulos.find(c => c.nombre.toLowerCase().includes('demolic') || c.codigo === '01');
     if (demCap) {
       demCap.partidas = demCap.partidas.map(p => {
-        const extraFactor = 1.05; // 5% extra
+        const extraFactor = 1.05;
         const newCoste = Number((p.costeUnitario * extraFactor).toFixed(2));
         const newPvp = Number((newCoste * (1 + p.margenPct / 100)).toFixed(2));
         return {
@@ -384,13 +380,12 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
     }
   }
 
-  // Case 2: Mechanisms to Schneider D-Life or high-end
   if (cleanCmd.includes('mecanismo') || cleanCmd.includes('schneider') || cleanCmd.includes('gama alta') || cleanCmd.includes('electricidad')) {
     const eleCap = updatedCapitulos.find(c => c.nombre.toLowerCase().includes('electricidad') || c.codigo === '04');
     if (eleCap) {
       eleCap.partidas = eleCap.partidas.map(p => {
         if (p.concepto.toLowerCase().includes('mecanismo') || p.codigo.includes('ELE-01')) {
-          const newCoste = 24.50; // High end mechanism
+          const newCoste = 24.50;
           const newPvp = Number((newCoste * (1 + p.margenPct / 100)).toFixed(2));
           return {
             ...p,
@@ -407,7 +402,6 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
     }
   }
 
-  // Case 3: Global or chapter margin change
   const marginMatch = cleanCmd.match(/(\d+)\s*%/);
   if (cleanCmd.includes('margen') && marginMatch) {
     const newMargin = Number(marginMatch[1]);
@@ -427,12 +421,10 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
     changelog += `Margen comercial ajustado al ${newMargin}% en las partidas. `;
   }
 
-  // Case 4: General modification fallback
   if (!changelog) {
     changelog = `Instrucción interpretada: "${commandText}". Partidas recalculadas según especificaciones del Director.`;
   }
 
-  // Recalculate chapter subtotals
   updatedCapitulos = updatedCapitulos.map(c => {
     const subtotal = Number(c.partidas.reduce((s, p) => s + p.total, 0).toFixed(2));
     const coste = Number(c.partidas.reduce((s, p) => s + (p.costeUnitario * p.cantidad), 0).toFixed(2));
