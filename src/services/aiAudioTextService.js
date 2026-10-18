@@ -53,59 +53,19 @@ FORMATO DE SALIDA (ESTRICTO JSON):
 export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallback = '') {
   const apiKey = (aiConfig.apiKey || '').trim();
 
-  // 1. Probar en primer lugar con el Backend Local Multimodal (Google Gemini Audio)
+  // 1. Transcripción vía Backend de Producción
   if (audioBlob && audioBlob.size > 0) {
     try {
-      const backendStatus = await checkBackendStatus();
-      if (backendStatus.isAvailable) {
-        const transResult = await transcribeAudioViaBackend(audioBlob, apiKey);
-        if (transResult && transResult.texto) {
-          return { success: true, text: transResult.texto, source: 'backend-gemini' };
-        }
+      const transResult = await transcribeAudioViaBackend(audioBlob, apiKey);
+      if (transResult && transResult.texto) {
+        return { success: true, text: transResult.texto, source: 'backend-ai' };
       }
     } catch (bErr) {
-      console.warn('Backend proxy no disponible para audio, pasando a método alternativo:', bErr.message);
+      console.warn('Error en el servicio de transcripción backend:', bErr.message);
     }
   }
 
-  const hasRealOpenAiKey =
-    apiKey.startsWith('sk-') &&
-    !apiKey.includes('obramaster9876543210') &&
-    (aiConfig.provider === 'openai' || !aiConfig.provider);
-
-  // 2. If user configured a valid OpenAI API Key, call Whisper Cloud
-  if (hasRealOpenAiKey && audioBlob && audioBlob.size > 0) {
-    try {
-      const formData = new FormData();
-      const fileExt = audioBlob.name?.split('.').pop() || 'webm';
-      formData.append('file', audioBlob, `audio_recording.${fileExt}`);
-      formData.append('model', 'whisper-1');
-      formData.append('language', 'es');
-      formData.append('prompt', 'Vocabulario de construcción y reformas en España: tabicón cerámico, trasdosado de pladur, alicatado porcelánico rectificado, rozas, desescombro, REBT, CTE, multicapa, Geberit, inodoro suspendido, solera autonivelante.');
-
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn('Whisper API cloud response error:', errorText);
-      } else {
-        const data = await response.json();
-        if (data.text && data.text.trim().length > 0) {
-          return { success: true, text: data.text.trim(), source: 'whisper-api' };
-        }
-      }
-    } catch (err) {
-      console.warn('Network error calling Whisper Cloud API:', err);
-    }
-  }
-
-  // 2. If browser speech recognition captured real words spoken by the user into the microphone
+  // 2. Transcripción por reconocimiento de voz del navegador
   if (liveSpeechFallback && liveSpeechFallback.trim().length > 3) {
     return {
       success: true,
@@ -114,20 +74,7 @@ export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallba
     };
   }
 
-  // 3. Fallback realistic site dictation simulator for testing/demonstrations
-  await new Promise(r => setTimeout(r, 800));
-  const sampleDictations = [
-    "Revisión de obra en baño principal y pasillo. Hay que demoler la bañera antigua de chapa y picar unos 24 metros cuadrados de azulejo antiguo. Instalar plato de ducha de pizarra grafito de 140 por 80 con mampara fija. Modificar tomas de agua con tubería multicapa y desagüe insonorizado. En el pasillo rascar gotelé en 35 metros cuadrados de pared y pintar en blanco mate lavable.",
-    "Petición urgente del cliente para la cocina. Quiere añadir 3 enchufes dobles sobre la encimera para electrodomésticos, mover el punto de luz del techo 80 centímetros hacia el centro de la isla y colocar falso techo de pladur con foseado perimetral para tira LED indirecta.",
-    "Demolición de tabique divisorio entre salón y cocina de 4 metros y medio de longitud por 2 metros y medio de alto. Desescombro completo con bajada a pie de calle y contenedor. Rehacer solera autonivelante de 12 metros cuadrados y solado porcelánico rectificado gran formato."
-  ];
-
-  const randomText = sampleDictations[Math.floor(Math.random() * sampleDictations.length)];
-  return {
-    success: true,
-    text: randomText,
-    source: 'local-transcription-engine'
-  };
+  throw new Error('No se pudo procesar el archivo de audio. Por favor verifica que el backend de IA esté activo.');
 }
 
 /**

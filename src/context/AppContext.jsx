@@ -90,7 +90,6 @@ export function AppProvider({ children }) {
     { id: 'log-1', timestamp: '2026-10-16 10:15:22', usuario: 'Manuel (Gerente)', accion: 'EMISION_FACTURA_VERIFACTU', recurso: 'FAC-2026-024', ip: '88.12.45.192', hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }
   ]));
 
-  // Expedientes de Visita de Obra Multimodal (sin fotos de muestra, solo imágenes reales subidas)
   const [siteVisits, setSiteVisits] = useState(() => {
     const raw = loadStored(STORAGE_KEYS.SITE_VISITS, VISITA_TEMPLATES);
     return (raw || []).map(v => ({
@@ -99,38 +98,51 @@ export function AppProvider({ children }) {
     }));
   });
 
-  // Realtime & Offline Network State
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [offlineQueueLength, setOfflineQueueLength] = useState(() => realtimeSync.offlineQueue.length);
   const [activeRealtimeAlert, setActiveRealtimeAlert] = useState(null);
 
-  // Users & Authentication State
   const [users, setUsers] = useState(() => loadStored(STORAGE_KEYS.USERS, INITIAL_USERS));
   const [currentUser, setCurrentUser] = useState(() => loadStored(STORAGE_KEYS.AUTH_USER, null));
 
-  // RRHH (Employees) & Subcontractors State
   const [employees, setEmployees] = useState(() => loadStored(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
   const [subcontractors, setSubcontractors] = useState(() => loadStored(STORAGE_KEYS.SUBCONTRACTORS, INITIAL_SUBCONTRACTORS));
 
-  // Avisos Técnicos de Dirección de Obra
   const [avisosTecnicos, setAvisosTecnicos] = useState(() => loadStored(STORAGE_KEYS.AVISOS_TECNICOS, INITIAL_AVISOS_TECNICOS));
 
-  // Presupuestos de Referencia / Entrenamiento Contextual IA (PDFs)
   const [referenceBudgets, setReferenceBudgets] = useState(() => loadStored(STORAGE_KEYS.REFERENCE_BUDGETS, INITIAL_REFERENCE_BUDGETS));
 
-  // Navigation State
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, obras, inbox, presupuestos, facturas, gestoria, obreros, subcontratas, portal_obrero, empresa_config
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedObraId, setSelectedObraId] = useState(null);
   const [selectedPresupuestoId, setSelectedPresupuestoId] = useState(null);
-  const [pdfModalData, setPdfModalData] = useState(null); // { type: 'presupuesto'|'factura', data: ... }
+  const [pdfModalData, setPdfModalData] = useState(null);
   const [notification, setNotification] = useState(null);
 
-  // Sync to LocalStorage
+  // Sync with Backend Database API
+  useEffect(() => {
+    fetch('/api/presupuestos')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (Array.isArray(data) && data.length > 0) setPresupuestos(data); })
+      .catch(() => {});
+
+    fetch('/api/obras')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (Array.isArray(data) && data.length > 0) setObras(data); })
+      .catch(() => {});
+  }, []);
+
+  // Sync to LocalStorage & Backend
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.EMPRESA, JSON.stringify(empresaConfig)); }, [empresaConfig]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.OBRAS, JSON.stringify(obras)); }, [obras]);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.OBRAS, JSON.stringify(obras));
+    fetch('/api/obras', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obras) }).catch(() => {});
+  }, [obras]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.OBREROS, JSON.stringify(obreros)); }, [obreros]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.BASE_PRECIOS, JSON.stringify(basePrecios)); }, [basePrecios]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.PRESUPUESTOS, JSON.stringify(presupuestos)); }, [presupuestos]);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.PRESUPUESTOS, JSON.stringify(presupuestos));
+    fetch('/api/presupuestos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(presupuestos) }).catch(() => {});
+  }, [presupuestos]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FACTURAS, JSON.stringify(facturas)); }, [facturas]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.FACTURAS_PROV, JSON.stringify(facturasProveedores)); }, [facturasProveedores]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.MENSAJES, JSON.stringify(mensajesInbox)); }, [mensajesInbox]);
@@ -150,7 +162,7 @@ export function AppProvider({ children }) {
     }
   }, [currentUser]);
 
-  // Realtime Bidirectional Event Bus Subscriptions
+  // Realtime Subscriptions
   useEffect(() => {
     const unsubProgress = realtimeSync.subscribe('WORKER_PROGRESS_UPDATED', (payload) => {
       const { obraId, faseId, taskId, newProgress, obreroNombre, taskTitle } = payload;
@@ -303,24 +315,9 @@ export function AppProvider({ children }) {
       return { success: false, error: 'API Key requerida' };
     }
 
-    // Validate key format
-    if (provider === 'openai' && !key.startsWith('sk-') && !key.startsWith('sk-proj-')) {
-      showNotification('La API Key de OpenAI debe comenzar por "sk-" o "sk-proj-".', 'error');
-      return { success: false, error: 'Formato de API Key no válido para OpenAI' };
-    }
-    if (provider === 'anthropic' && !key.startsWith('sk-ant-')) {
-      showNotification('La API Key de Anthropic debe comenzar por "sk-ant-".', 'error');
-      return { success: false, error: 'Formato de API Key no válido para Anthropic' };
-    }
-    if (provider === 'google' && !key.startsWith('AIza') && key.length < 25) {
-      showNotification('La API Key de Google Gemini suele comenzar por "AIzaSy..." y tener al menos 25 caracteres.', 'error');
-      return { success: false, error: 'Formato de API Key no válido para Google Gemini' };
-    }
-
     const normalizedModel = provider === 'google' ? normalizeGeminiModel(modelName) : modelName;
     let latency = Math.floor(130 + Math.random() * 70);
 
-    // If Google Gemini, run real ping test to Google API
     if (provider === 'google') {
       try {
         const pingResult = await testGeminiConnection(key, normalizedModel);
@@ -357,7 +354,6 @@ export function AppProvider({ children }) {
     };
   };
 
-  // Reference Budgets (Few-Shot Contextual Training PDFs)
   const addReferenceBudget = async (file, customTitle = '', tipoObra = 'Reforma General') => {
     const val = validatePdfFile(file);
     if (!val.valid) {
@@ -440,8 +436,6 @@ export function AppProvider({ children }) {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Auth Functions
-  // Auth Functions with Multi-Identifier & Robust Matching
   const login = (usernameOrEmailOrPhone, password) => {
     const rawInput = (usernameOrEmailOrPhone || '').trim();
     const cleanPass = (password || '').trim();
@@ -458,17 +452,14 @@ export function AppProvider({ children }) {
     const digitsInput = rawInput.replace(/\D/g, '');
     const dniInput = rawInput.toUpperCase().replace(/[\s-]/g, '');
 
-    // 1. Direct match on users list
     let matchedUser = users.find(u => {
       const uNormName = norm(u.username);
       const uNormEmail = norm(u.email);
 
-      // Match username or email
       if (uNormName === normInput || (uNormEmail && uNormEmail === normInput)) {
         return true;
       }
 
-      // Match phone
       if (digitsInput && digitsInput.length >= 7 && u.phone) {
         const uDigits = u.phone.replace(/\D/g, '');
         if (uDigits === digitsInput || uDigits.endsWith(digitsInput) || digitsInput.endsWith(uDigits)) {
@@ -479,7 +470,6 @@ export function AppProvider({ children }) {
       return false;
     });
 
-    // 2. Fallback: match via employees table (by DNI, Phone, or Full Name)
     if (!matchedUser) {
       const matchedEmployee = employees.find(emp => {
         const empDni = (emp.dni || '').toUpperCase().replace(/[\s-]/g, '');
@@ -501,14 +491,12 @@ export function AppProvider({ children }) {
       });
 
       if (matchedEmployee) {
-        // Find existing user for this employee
         matchedUser = users.find(u =>
           (matchedEmployee.usuarioId && u.id === matchedEmployee.usuarioId) ||
           u.employeeId === matchedEmployee.id ||
           (matchedEmployee.obreroId && u.obreroId === matchedEmployee.obreroId)
         );
 
-        // If employee exists in plantilla but user was missing, auto-create on the fly
         if (!matchedUser) {
           const autoUsername = `${norm(matchedEmployee.nombre || 'operario')}.${norm(matchedEmployee.apellidos || 'obra')}`
             .replace(/[^a-z0-9]/g, '.')
@@ -537,7 +525,6 @@ export function AppProvider({ children }) {
       }
     }
 
-    // 3. Fallback: match via obreros table
     if (!matchedUser) {
       const matchedObrero = obreros.find(o => {
         if (digitsInput && digitsInput.length >= 7 && o.telefono) {
@@ -600,7 +587,6 @@ export function AppProvider({ children }) {
     }
   };
 
-  // User Management (Admin CRUD)
   const addUser = ({ username, password, role = 'obrero', fullName, trade, phone, email }) => {
     const cleanUsername = (username || '')
       .trim()
@@ -608,7 +594,8 @@ export function AppProvider({ children }) {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9.]/g, '')
-      .replace(/\.+/g, '.');
+      .replace(/\.+/g, '.')
+      .replace(/^\.|\.$/g, '');
 
     if (!cleanUsername) return { success: false, error: 'El nombre de usuario es obligatorio.' };
     if (!fullName || !fullName.trim()) return { success: false, error: 'El nombre completo es obligatorio.' };
@@ -757,7 +744,6 @@ export function AppProvider({ children }) {
     return `${word}${num}!`;
   };
 
-  // Obra Actions
   const addObra = (obraData) => {
     const newObra = {
       ...obraData,
@@ -895,9 +881,6 @@ export function AppProvider({ children }) {
     }));
   };
 
-  // ==========================================
-  // REALTIME BIDIRECTIONAL BROADCAST METHODS
-  // ==========================================
   const broadcastWorkerProgress = (obraId, faseId, newProgress, obreroNombre, taskId = null) => {
     const progNum = Math.min(100, Math.max(0, newProgress));
     const isCompleted = progNum === 100;
@@ -1061,9 +1044,6 @@ export function AppProvider({ children }) {
     showNotification('Todos los avisos técnicos han sido marcados como leídos.', 'success');
   };
 
-  // ==========================================
-  // MULTIMODAL SITE VISIT & AI QUOTE PIPELINE
-  // ==========================================
   const addSiteVisit = (visitData) => {
     const newVisit = {
       ...visitData,
@@ -1129,7 +1109,6 @@ export function AppProvider({ children }) {
     return updatedQuote;
   };
 
-  // Presupuesto Actions
   const addPresupuesto = (presData) => {
     const newPres = {
       ...presData,
@@ -1149,7 +1128,6 @@ export function AppProvider({ children }) {
       if (p.id === id) {
         const newPres = { ...p, ...updates };
 
-        // Si el presupuesto pasa a estado 'aceptado' o 'firmado', sincronizar 1:1 con la obra (Single Source of Truth)
         if (updates.estado === 'aceptado' || updates.estado === 'firmado') {
           const canonicalFases = generateExecutionPlanFromBudget(newPres);
           const canonicalProgreso = calculateGlobalProjectProgress(canonicalFases);
@@ -1179,7 +1157,6 @@ export function AppProvider({ children }) {
     showNotification('Presupuesto actualizado y sincronizado');
   };
 
-  // Presupuesto to Factura conversion in 1-click
   const convertPresupuestoToFactura = (presupuestoId, tipoFactura = 'Certificación 1 (Anticipo 40%)', porcentaje = 40) => {
     const pres = presupuestos.find(p => p.id === presupuestoId);
     if (!pres) return null;
@@ -1192,8 +1169,7 @@ export function AppProvider({ children }) {
     const cuotaIvaCalculada = Number((baseCalculada * (pres.tipoIvaPct / 100)).toFixed(2));
     const totalCalculado = Number((baseCalculada + cuotaIvaCalculada).toFixed(2));
 
-    // Determinar trimestre actual
-    const mes = new Date().getMonth(); // 0 a 11
+    const mes = new Date().getMonth();
     const trim = mes < 3 ? '1T' : mes < 6 ? '2T' : mes < 9 ? '3T' : '4T';
 
     const newFactura = {
@@ -1222,7 +1198,6 @@ export function AppProvider({ children }) {
     };
 
     setFacturas(prev => [newFactura, ...prev]);
-    // Update presupuesto status
     setPresupuestos(prev => prev.map(p => p.id === pres.id ? { ...p, estado: 'facturado' } : p));
     showNotification(`¡Factura ${newFactura.numero} generada con éxito por ${totalCalculado.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}!`);
     return newFactura;
@@ -1253,7 +1228,6 @@ export function AppProvider({ children }) {
     showNotification('Factura de gasto/subcontrata añadida al libro de IVA soportado');
   };
 
-  // Obreros & Subcontratas review and scoring engine
   const addReviewObrero = (obreroId, review) => {
     let newScoreValue = null;
     let newCritValues = null;
@@ -1380,9 +1354,6 @@ export function AppProvider({ children }) {
     showNotification(`Scoring de operario fijado en ${scoreNum.toFixed(1)}⭐`);
   };
 
-  // ==========================================
-  // RRHH & NÓMINAS: GESTIÓN DE EMPLEADOS
-  // ==========================================
   const addEmployee = (empData, userCreds = null) => {
     const empId = `emp-${Date.now()}`;
     const obreroId = `obrero-${Date.now()}`;
@@ -1695,9 +1666,6 @@ export function AppProvider({ children }) {
     return { success: true, password: cleanPass };
   };
 
-  // ==========================================
-  // SUBCONTRATAS & GREMIOS: GESTIÓN INTEGRAL
-  // ==========================================
   const addSubcontractor = (subData) => {
     const newSub = {
       ...subData,
@@ -1926,7 +1894,6 @@ export function AppProvider({ children }) {
     showNotification('Evaluación de subcontrata registrada y scoring actualizado.');
   };
 
-  // Subcontractor Quote Application & Price Database Auto-update with configured margin!
   const applySubcontrataPresupuesto = (subPresupuestoId, partidasToUpdate, globalMargin = null) => {
     setBasePrecios(prevBase => {
       const updated = [...prevBase];
@@ -1970,7 +1937,6 @@ export function AppProvider({ children }) {
     showNotification(`¡Base de Precios actualizada con éxito! Precios de coste y PVP actualizados con el margen comercial.`);
   };
 
-  // Inbox & Requirement processing
   const processMensajeInbox = (mensajeId, obraId, accionTipo, datosExtra) => {
     const msg = mensajesInbox.find(m => m.id === mensajeId);
     if (!msg) return;
@@ -2104,7 +2070,6 @@ export function AppProvider({ children }) {
       notification,
       showNotification,
       resetAllData,
-      // Users & Auth
       users,
       setUsers,
       currentUser,
@@ -2119,10 +2084,8 @@ export function AppProvider({ children }) {
       resetUserPassword,
       changeAdminPassword,
       generateRandomPassword,
-      // AI Engine Config
       updateAiConfig,
       testAiConnection,
-      // Realtime Bidirectional & Offline-First
       isOnline,
       offlineQueueLength,
       activeRealtimeAlert,
@@ -2131,19 +2094,16 @@ export function AppProvider({ children }) {
       broadcastWorkerEvidence,
       broadcastAdminTask,
       broadcastAdminAlert,
-      // Avisos Técnicos de Dirección de Obra
       avisosTecnicos,
       setAvisosTecnicos,
       marcarAvisoLeido,
       marcarTodosAvisosLeidos,
-      // Site Visits & AI Multimodal Quoting
       siteVisits,
       setSiteVisits,
       addSiteVisit,
       generateQuoteFromSiteVisit,
       refineQuoteWithVoiceCommand,
       approveAndSendQuote,
-      // RRHH & Employees
       employees,
       setEmployees,
       addEmployee,
@@ -2153,7 +2113,6 @@ export function AppProvider({ children }) {
       addEmployeeAbsence,
       resetEmployeePassword,
       createMobileAccountForEmployee,
-      // Subcontractors
       subcontractors,
       setSubcontractors,
       addSubcontractor,
@@ -2164,7 +2123,6 @@ export function AppProvider({ children }) {
       updateSubcontractorInvoiceStatus,
       addSubcontractorNote,
       addSubcontractorReview,
-      // Reference Budgets (Few-Shot Contextual Training PDFs)
       referenceBudgets,
       addReferenceBudget,
       toggleReferenceBudget,
