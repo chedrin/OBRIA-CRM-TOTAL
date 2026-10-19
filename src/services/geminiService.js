@@ -5,9 +5,9 @@
  * 1. SDK Support: Official @google/genai SDK integration
  * 2. Credential provider: Fetches API Key from Supabase (`ai_integration_settings` / `company_settings`)
  *    with fallback to environment variable `VITE_GEMINI_API_KEY`.
- * 3. Model selection: `gemini-1.5-flash` (fast) and `gemini-1.5-pro` (complex reasoning).
- * 4. Fallback cascade chain: gemini-2.5-flash -> gemini-1.5-flash -> gemini-1.5-pro
- * 5. Robust Error Handling: 429 (quota), 401/403 (invalid key), and Timeout handling with friendly messages.
+ * 3. Model selection: Default model `gemini-1.5-flash` with support for `gemini-1.5-pro`.
+ * 4. Fallback cascade chain: gemini-1.5-flash -> gemini-2.5-flash -> gemini-1.5-pro
+ * 5. Detailed console logging and robust error handling for 401, 403, 429, and timeouts.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -19,15 +19,15 @@ export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta
 export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
 
 export const GEMINI_FALLBACK_CASCADE = [
-  'gemini-2.5-flash',
   'gemini-1.5-flash',
+  'gemini-2.5-flash',
   'gemini-1.5-pro'
 ];
 
 export const GEMINI_MODELS = [
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Ultrarrápido · Tareas estándar)', speed: 'Ultrarrápido', context: '1M tokens' },
+  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Ultrarrápido · Modelo Predeterminado)', speed: 'Ultrarrápido', context: '1M tokens' },
   { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Razonamiento complejo · Mediciones extensas)', speed: 'Rápido', context: '2M tokens' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Generación Rápida & Multimodal)', speed: 'Ultrarrápido', context: '1M tokens' }
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Generación Multimodal)', speed: 'Ultrarrápido', context: '1M tokens' }
 ];
 
 export const USER_FRIENDLY_AI_ERROR = 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.';
@@ -56,12 +56,6 @@ export async function getGeminiApiKey(customKey = '') {
         return dbKey;
       }
     }
-
-    const { data: companySettings, error: compErr } = await supabase
-      .from('company_settings')
-      .select('tax_id')
-      .maybeSingle();
-
   } catch (err) {
     console.warn('[Gemini Service] Exception fetching key from Supabase:', err.message);
   }
@@ -101,7 +95,7 @@ export async function fetchAvailableGeminiModels(apiKeyInput = '') {
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      handleGeminiHttpError(response.status, 'Error al listar modelos');
+      handleGeminiHttpError(response.status, 'Error al listar modelos de Gemini');
     }
     const data = await response.json();
     const rawList = data.models || [];
@@ -194,17 +188,18 @@ export function cleanGeminiJsonResponse(rawText) {
 /**
  * Error classifier for HTTP status codes
  */
-export function handleGeminiHttpError(status, customMsg = '') {
+export function handleGeminiHttpError(status, detail = '') {
+  console.error(`[Google Gemini API HTTP Error ${status}] Detalle técnico:`, detail);
   if (status === 429) {
     throw new Error('Cuota excedida de la API de Gemini (Error 429). Por favor, espere un momento antes de volver a intentarlo.');
   }
   if (status === 401 || status === 403) {
-    throw new Error('Clave de API de Gemini inválida o no autorizada (Error ' + status + '). Por favor, revise la clave en Ajustes.');
+    throw new Error(`Clave de API de Gemini inválida o no autorizada (HTTP ${status}). Detalle: ${detail || 'Revise la clave en Ajustes.'}`);
   }
   if (status === 408 || status === 504) {
     throw new Error('Tiempo de espera agotado al conectar con Gemini (Timeout). Inténtelo de nuevo.');
   }
-  throw new Error(customMsg || USER_FRIENDLY_AI_ERROR);
+  throw new Error(`Error en API Gemini (HTTP ${status}): ${detail || USER_FRIENDLY_AI_ERROR}`);
 }
 
 /**
@@ -251,20 +246,20 @@ async function executeGeminiRequestWithFallback({ apiKeyInput, model, payload })
         return { data, rawContent, modelUsed: currentModel };
       }
 
-      if (response.status === 429 || response.status === 401 || response.status === 403) {
-        handleGeminiHttpError(response.status);
-      }
-
       let errMessage = response.statusText;
       try {
         const errJson = await response.json();
         errMessage = errJson.error?.message || errMessage;
       } catch (e) {}
 
-      console.error(`[Gemini API Error] Modelo "${currentModel}" HTTP ${response.status}:`, errMessage);
+      console.error(`[Gemini API Error Response] Model: "${currentModel}", Status: ${response.status}, Detail:`, errMessage);
+
+      if (response.status === 429 || response.status === 401 || response.status === 403) {
+        handleGeminiHttpError(response.status, errMessage);
+      }
 
       if (response.status === 404 || errMessage.includes('not found') || errMessage.includes('is not supported')) {
-        console.warn(`[Gemini Fallback] El modelo "${currentModel}" no está disponible (404). Reintentando con el siguiente modelo del cascade...`);
+        console.warn(`[Gemini Fallback] El modelo "${currentModel}" no está disponible (404). Reintentando con el siguiente modelo...`);
         lastError = new Error(errMessage);
         continue;
       }
@@ -289,6 +284,8 @@ async function executeGeminiRequestWithFallback({ apiKeyInput, model, payload })
 
 /**
  * Pings Google Gemini API to test connection and measure latency
+ * Direct REST endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}
+ * Payload: { "contents": [{ "parts": [{ "text": "ping" }] }] }
  */
 export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEMINI_MODEL) {
   const apiKey = await getGeminiApiKey(apiKeyInput);
@@ -296,37 +293,48 @@ export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEM
     throw new Error('Configuración de API Key de Gemini requerida.');
   }
 
+  const targetModel = normalizeGeminiModel(model) || DEFAULT_GEMINI_MODEL;
   const startTime = performance.now();
+  const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const payload = {
     contents: [
       {
-        role: 'user',
-        parts: [{ text: 'Responde exclusivamente con la palabra: PONG' }]
+        parts: [{ text: 'ping' }]
       }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 20
-    }
+    ]
   };
 
   try {
-    const { rawContent, modelUsed } = await executeGeminiRequestWithFallback({
-      apiKeyInput: apiKey,
-      model,
-      payload
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
     const elapsedMs = Math.round(performance.now() - startTime);
 
-    return {
-      success: true,
-      latencyMs: elapsedMs,
-      model: modelUsed,
-      message: `Conexión con Google Gemini (${modelUsed}) exitosa (${elapsedMs}ms). Respuesta: ${rawContent.trim()}`
-    };
+    if (response.ok) {
+      const data = await response.json();
+      const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text || 'PONG';
+      console.log(`[Gemini Ping Success] Status ${response.status}, Latency: ${elapsedMs}ms, Response:`, rawContent);
+      return {
+        success: true,
+        latencyMs: elapsedMs,
+        model: targetModel,
+        message: `Conexión con Google Gemini (${targetModel}) exitosa (${elapsedMs}ms). Respuesta: ${rawContent.trim()}`
+      };
+    }
+
+    let detailMsg = response.statusText;
+    try {
+      const errJson = await response.json();
+      detailMsg = errJson.error?.message || detailMsg;
+    } catch (e) {}
+
+    console.error(`[Gemini Ping Failure] Status: ${response.status}, StatusText: ${response.statusText}, Details:`, detailMsg);
+    handleGeminiHttpError(response.status, detailMsg);
   } catch (err) {
-    console.error('[Gemini Connection Test Failed]', err);
+    console.error('[Gemini Connection Test Exception]', err.message || err);
     throw err;
   }
 }
