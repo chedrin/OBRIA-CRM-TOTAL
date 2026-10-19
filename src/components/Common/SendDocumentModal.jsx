@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Send,
@@ -29,12 +29,29 @@ export default function SendDocumentModal({
   isOpen,
   onClose,
   document,
-  documentType = 'presupuesto', // 'presupuesto' | 'factura'
+  documentType = 'presupuesto',
   onSent
 }) {
   const { empresaConfig, showNotification, addAuditLog, updatePresupuesto, updateFactura } = useApp();
+  const backdropRef = useRef(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !document) return null;
+
+  const handleBackdropClick = (e) => {
+    if (e.target === backdropRef.current) {
+      onClose();
+    }
+  };
 
   const isInvoice = documentType === 'factura';
   const typeLabel = isInvoice ? 'Factura' : 'Presupuesto';
@@ -46,14 +63,12 @@ export default function SendDocumentModal({
   const cuotaIva = isInvoice ? (document.cuotaIva || 0) : (document.cuotaIva || document.ivaImporte || 0);
   const ivaPct = document.tipoIvaPct || 10;
 
-  // Channels: 'whatsapp' | 'email' | 'both'
   const [channel, setChannel] = useState('both');
   const [telefono, setTelefono] = useState(document.telefono || '+34 620 445 112');
   const [email, setEmail] = useState(document.email || 'cliente@ejemplo.es');
-  const [whatsAppMethod, setWhatsAppMethod] = useState('direct'); // 'direct' (wa.me) | 'cloud' (Meta Cloud API)
+  const [whatsAppMethod, setWhatsAppMethod] = useState('direct');
   const [isSending, setIsSending] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [showPreviewEmail, setShowPreviewEmail] = useState(false);
 
   const signatureLink = isInvoice
     ? `https://obramaster.app/facturas/${document.id || 'f-1'}/verifactu`
@@ -94,38 +109,29 @@ export default function SendDocumentModal({
     });
 
     try {
-      const results = [];
-
-      // 1. Email dispatch
       if (channel === 'email' || channel === 'both') {
-        const emailRes = await sendEmailDocument({
+        await sendEmailDocument({
           to: email,
           subject: `${typeLabel} Oficial ${docNumber} - ${docTitle} (${empresaConfig.nombreEmpresa || 'ObraMaster'})`,
           html: emailHtml
         });
-        results.push(emailRes.message);
       }
 
-      // 2. WhatsApp dispatch
       if (channel === 'whatsapp' || channel === 'both') {
         if (whatsAppMethod === 'cloud') {
-          const waRes = await sendWhatsAppCloudMessage({
+          await sendWhatsAppCloudMessage({
             phone: telefono,
             messageText: customMsg
           });
-          results.push(waRes.message);
         } else {
-          // Direct wa.me link opened in new tab
           const directUrl = buildWhatsAppDirectUrl({
             phone: telefono,
             messageText: customMsg
           });
           window.open(directUrl, '_blank');
-          results.push(`WhatsApp abierto en nueva pestaña para el número ${telefono}.`);
         }
       }
 
-      // Update state in app
       const nowIso = new Date().toISOString().replace('T', ' ').substring(0, 16);
       const envioData = {
         fecha: nowIso,
@@ -164,8 +170,12 @@ export default function SendDocumentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-xl shadow-2xl p-5 sm:p-6 space-y-4 text-slate-100 my-auto">
+    <div
+      ref={backdropRef}
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto transition-all duration-200 ease-out"
+    >
+      <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-xl shadow-2xl p-5 sm:p-6 space-y-4 text-slate-100 my-auto transform transition-all duration-200 ease-out scale-100">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3.5">
@@ -207,9 +217,9 @@ export default function SendDocumentModal({
           <label className="text-xs font-bold text-slate-300 block">Canal de Envío:</label>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'text-emerald-400 border-emerald-500' },
-              { id: 'email', label: 'Email', icon: Mail, color: 'text-blue-400 border-blue-500' },
-              { id: 'both', label: 'Ambos Canales', icon: Share2, color: 'text-teal-400 border-teal-500' }
+              { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
+              { id: 'email', label: 'Email', icon: Mail },
+              { id: 'both', label: 'Ambos Canales', icon: Share2 }
             ].map(ch => {
               const Icon = ch.icon;
               const isSel = channel === ch.id;
@@ -231,46 +241,6 @@ export default function SendDocumentModal({
             })}
           </div>
         </div>
-
-        {/* WhatsApp Sending Method (if whatsapp selected) */}
-        {(channel === 'whatsapp' || channel === 'both') && (
-          <div className="bg-slate-950 border border-slate-800 p-3 rounded-2xl space-y-2 text-xs">
-            <span className="text-slate-400 font-semibold block">Modalidad de Envío de WhatsApp:</span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setWhatsAppMethod('direct')}
-                className={`p-2 rounded-xl border text-left transition ${
-                  whatsAppMethod === 'direct'
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>WhatsApp Web / App</span>
-                </div>
-                <span className="text-[10px] text-slate-500 block mt-0.5">Sin coste · Apertura instantánea</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWhatsAppMethod('cloud')}
-                className={`p-2 rounded-xl border text-left transition ${
-                  whatsAppMethod === 'cloud'
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Meta Cloud API</span>
-                </div>
-                <span className="text-[10px] text-slate-500 block mt-0.5">Envío automatizado de servidor</span>
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Contact Inputs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -331,7 +301,7 @@ export default function SendDocumentModal({
           ></textarea>
         </div>
 
-        {/* Actions */}
+        {/* Actions - Positioned bottom right as specified in AGENTS.md */}
         <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
           <button
             type="button"

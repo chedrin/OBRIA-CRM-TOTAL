@@ -5,11 +5,8 @@
  * 1. SDK Support: Official @google/genai SDK integration
  * 2. Credential provider: Fetches API Key from Supabase (`ai_integration_settings` / `company_settings`)
  *    with fallback to environment variable `VITE_GEMINI_API_KEY`.
- * 3. Model selection:
- *    - gemini-1.5-flash (Ultrarrápido - Recomendado)
- *    - gemini-1.5-pro (Razonamiento complejo / Presupuestos extensos)
- *    - gemini-3.8-flash
- * 4. Fallback cascade chain: gemini-1.5-flash -> gemini-3.8-flash -> gemini-1.5-pro
+ * 3. Model selection: Automatically defaults to `gemini-1.5-flash`.
+ * 4. Fallback cascade chain: gemini-1.5-flash -> gemini-2.0-flash -> gemini-1.5-pro
  * 5. Detailed console logging and robust error handling for 401, 403, 429, and timeouts.
  */
 
@@ -23,14 +20,14 @@ export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
 
 export const GEMINI_FALLBACK_CASCADE = [
   'gemini-1.5-flash',
-  'gemini-3.8-flash',
+  'gemini-2.0-flash',
   'gemini-1.5-pro'
 ];
 
 export const GEMINI_MODELS = [
   { id: 'gemini-1.5-flash', label: 'gemini-1.5-flash (Ultrarrápido - Recomendado)', speed: 'Ultrarrápido', context: '1M tokens' },
   { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro (Razonamiento complejo / Presupuestos extensos)', speed: 'Rápido', context: '2M tokens' },
-  { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash', speed: 'Ultrarrápido', context: '1M tokens' }
+  { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash (Alta velocidad)', speed: 'Ultrarrápido', context: '1M tokens' }
 ];
 
 export const USER_FRIENDLY_AI_ERROR = 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.';
@@ -151,10 +148,10 @@ export function normalizeGeminiModel(rawModel) {
   const cleaned = rawModel.trim().toLowerCase();
 
   if (cleaned.includes('1.5-pro') || cleaned.includes('pro')) return 'gemini-1.5-pro';
-  if (cleaned.includes('3.8')) return 'gemini-3.8-flash';
+  if (cleaned.includes('2.0')) return 'gemini-2.0-flash';
   if (cleaned.includes('1.5-flash') || cleaned.includes('1.5')) return 'gemini-1.5-flash';
 
-  return cleaned || DEFAULT_GEMINI_MODEL;
+  return DEFAULT_GEMINI_MODEL;
 }
 
 /**
@@ -278,7 +275,7 @@ async function executeGeminiRequestWithFallback({ apiKeyInput, model, payload })
 
 /**
  * Pings Google Gemini API to test connection and measure latency
- * Endpoint: https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}
+ * Endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}
  * Payload: { "contents": [{ "parts": [{ "text": "ping" }] }] }
  */
 export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEMINI_MODEL) {
