@@ -758,7 +758,7 @@ async function handleRequest(req, res) {
           else items.unshift(fields);
         }
         writeJsonDb(DB_CLIENTES_FILE, items);
-        res.writeHead(200, { "Content-Type": "application/json text/plain" });
+        res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true, count: items.length }));
         return;
       }

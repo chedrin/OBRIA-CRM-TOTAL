@@ -45,7 +45,25 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     referenceBudgets
   } = useApp();
 
+  const backdropRef = useRef(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
+
+  const handleBackdropClick = (e) => {
+    if (e.target === backdropRef.current) {
+      onClose();
+    }
+  };
 
   const activeRefBudgets = (referenceBudgets || []).filter(b => b.is_active);
 
@@ -325,8 +343,12 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-      <div className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col text-slate-100">
+    <div
+      ref={backdropRef}
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto transition-all duration-200 ease-out"
+    >
+      <div className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col text-slate-100 transform transition-all duration-200 ease-out scale-100">
         
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 sticky top-0 z-10">
@@ -396,7 +418,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
           </div>
         )}
 
-        {/* Structured Review Screen (Requirement 3: Review and apply JSON response) */}
+        {/* Structured Review Screen */}
         {!isProcessing && generatedQuoteResult && (
           <div className="p-6 space-y-5 bg-slate-950/80 flex-1">
             <div className="bg-emerald-950/30 border border-emerald-500/40 p-4 rounded-2xl flex items-center justify-between gap-3">
@@ -479,12 +501,12 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               </div>
             </div>
 
-            {/* Apply Button */}
+            {/* Apply Button Positioned Bottom Right as per AGENTS.md */}
             <div className="pt-2 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={handleApplyStructuredQuote}
-                className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-emerald-500/20 flex items-center gap-2 active:scale-95"
+                className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-emerald-500/20 flex items-center gap-2 active:scale-95"
               >
                 <Check className="w-4 h-4 stroke-[3]" />
                 <span>Aplicar Conceptos al Presupuesto Final</span>
@@ -540,13 +562,13 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               </div>
             </div>
 
-            {/* In Situ Multimodal Capture Section (Audio Voice Recorder + Text Refining) */}
+            {/* In Situ Multimodal Capture Section */}
             <div className="space-y-4">
               <div className="space-y-2">
                 <AudioVoiceRecorder
                   title="🎤 Grabación o Subida de Audio"
                   initialTranscript={audioTranscript}
-                  placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio' para transcribir la explicación de la obra. La transcripción de la visita aparecerá aquí y podrás editarla..."
+                  placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio' para transcribir la explicación de la obra..."
                   onTranscriptChange={(text, blob) => {
                     setAudioTranscript(text);
                     if (blob) setAudioFile(blob);
@@ -554,7 +576,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   }}
                 />
 
-                {/* Botón & Caja para Mejorar Audio con IA */}
                 <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-2xl space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
@@ -576,37 +597,17 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   {audioRefinedText && (
                     <div className="bg-slate-900 border border-amber-500/30 p-3 rounded-xl space-y-2">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-400 font-bold border-b border-amber-500/20 pb-1.5">
-                        <span>VERSIÓN TÉCNICA IA (Aprendida de presupuestos modelo)</span>
+                        <span>VERSIÓN TÉCNICA IA</span>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard?.writeText(audioRefinedText);
-                              showNotification('Copiado al portapapeles');
-                            }}
-                            className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded transition"
-                          >
-                            Copiar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
                               setAudioTranscript(audioRefinedText);
-                              showNotification('Transcripción original sustituida por la versión técnica');
-                            }}
-                            className="text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded transition"
-                          >
-                            Sustituir Original
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAudioTranscript(audioRefinedText);
-                              showNotification('Añadido prioritariamente al expediente del presupuesto');
+                              showNotification('Sustituido con éxito');
                             }}
                             className="text-[11px] bg-amber-500 text-slate-950 font-black px-2 py-0.5 rounded transition"
                           >
-                            Añadir al Presupuesto
+                            Sustituir Original
                           </button>
                         </div>
                       </div>
@@ -652,50 +653,9 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                     setComplementaryText(e.target.value);
                     setIsManualMode(true);
                   }}
-                  placeholder="Pega mensajes de WhatsApp, correos del cliente o notas in situ:&#10;ej: 'tirar tabique cocina de 5 metros y poner pladur, cambiar suelo por tarima AC5 y poner 6 enchufes nuevos'..."
+                  placeholder="Pega mensajes de WhatsApp, correos del cliente o notas in situ..."
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition"
                 ></textarea>
-
-                {notesRefinedText && (
-                  <div className="bg-slate-900 border border-indigo-500/30 p-3 rounded-xl space-y-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-indigo-400 font-bold border-b border-indigo-500/20 pb-1.5">
-                      <span>VERSIÓN TÉCNICA REDACTADA POR IA</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(notesRefinedText);
-                            showNotification('Copiado al portapapeles');
-                          }}
-                          className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded transition"
-                        >
-                          Copiar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setComplementaryText(notesRefinedText);
-                            showNotification('Anotaciones sustituidas por la versión técnica');
-                          }}
-                          className="text-[11px] bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 rounded transition"
-                        >
-                          Sustituir Original
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setComplementaryText(notesRefinedText);
-                            showNotification('Añadido prioritariamente al expediente del presupuesto');
-                          }}
-                          className="text-[11px] bg-indigo-500 text-white font-black px-2 py-0.5 rounded transition"
-                        >
-                          Añadir al Presupuesto
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-200 font-medium leading-relaxed">{notesRefinedText}</p>
-                  </div>
-                )}
               </div>
 
               {/* Mediciones Manuales */}
@@ -704,9 +664,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   <Sliders className="w-3.5 h-3.5 text-blue-400" />
                   <span>📏 Mediciones y Unidades de Obra In Situ</span>
                 </span>
-                <p className="text-[11px] text-slate-400">
-                  Introduce dimensiones clave (largo, ancho, alto) para calcular superficies ($m^2$) y volúmenes ($m^3$) automáticamente.
-                </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                   <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <label className="text-[10px] text-slate-400 block font-semibold">Largo (m)</label>
@@ -828,9 +785,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                         {capturas.length === 0 ? '0 fotos subidas' : `${capturas.length} ${capturas.length === 1 ? 'foto subida' : 'fotos subidas'}`}
                       </span>
                     </h3>
-                    <p className="text-[11px] text-slate-400">
-                      Sube las fotos reales de la obra. La IA procesará exclusivamente las imágenes que subas aquí junto al audio transcrito.
-                    </p>
                   </div>
                 </div>
 
@@ -857,7 +811,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                       type="button"
                       onClick={handleClearAllCaptures}
                       className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-semibold rounded-xl text-xs flex items-center gap-1 transition"
-                      title="Descartar todas las fotos cargadas"
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>Descartar todas</span>
@@ -871,9 +824,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                 <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 text-center space-y-2">
                   <Camera className="w-8 h-8 text-slate-600 mx-auto" />
                   <p className="text-xs text-slate-300 font-medium">No se han subido fotos de obra.</p>
-                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                    El presupuesto IA se generará únicamente a partir del audio transcrito y las notas in situ, a menos que adjuntes imágenes.
-                  </p>
                   <button
                     type="button"
                     onClick={() => photoFileInputRef.current?.click()}
@@ -889,10 +839,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                     <div key={cap.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden group relative hover:border-slate-700 transition">
                       <div className="h-28 overflow-hidden relative bg-slate-950">
                         <img src={cap.url} alt={cap.titulo} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                        <span className="absolute top-1.5 left-1.5 bg-slate-950/80 backdrop-blur-sm border border-slate-700 text-amber-400 px-2 py-0.5 rounded text-[10px] font-bold">
-                          {cap.tipo === 'croquis' ? '📐 Croquis Láser' : '📷 Estado Actual'}
-                        </span>
-
                         <button
                           type="button"
                           onClick={(e) => {
@@ -900,7 +846,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                             handleDeleteCapture(cap.id);
                           }}
                           className="absolute top-1.5 right-1.5 w-7 h-7 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white flex items-center justify-center transition shadow-md hover:scale-110 active:scale-95"
-                          title="Eliminar / descartar esta foto del presupuesto"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -910,44 +855,11 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                           <h5 className="text-xs font-bold text-white truncate">{cap.titulo}</h5>
                           <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{cap.notas}</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCapture(cap.id)}
-                          className="text-slate-500 hover:text-rose-400 p-1 rounded-lg transition shrink-0"
-                          title="Eliminar evidencia"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-
-              {/* Add Custom Photo / Sketch Link */}
-              <div className="pt-2 flex flex-col sm:flex-row gap-2 border-t border-slate-800/60">
-                <input
-                  type="text"
-                  placeholder="O pega URL de foto o croquis externo..."
-                  value={customPhotoUrl}
-                  onChange={(e) => setCustomPhotoUrl(e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
-                />
-                <input
-                  type="text"
-                  placeholder="Título (ej: Cuadro de luces)..."
-                  value={customPhotoTitle}
-                  onChange={(e) => setCustomPhotoTitle(e.target.value)}
-                  className="sm:w-48 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddCustomPhoto}
-                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-xl text-xs transition shrink-0"
-                >
-                  + Añadir Enlace
-                </button>
-              </div>
             </div>
 
             {/* Client Parameters & Economic Targets */}
@@ -1036,12 +948,12 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
           </div>
         )}
 
-        {/* Footer Actions */}
+        {/* Footer Actions - Positioned Bottom Right as required by AGENTS.md */}
         {!isProcessing && !generatedQuoteResult && (
           <div className="p-5 border-t border-slate-800 bg-slate-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 sticky bottom-0">
             <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-              <span>Listo para ensamblar con la Base Oficial de Precios ({basePrecios.length} partidas)</span>
+              <span>Base Oficial de Precios ({basePrecios.length} partidas)</span>
             </div>
 
             <div className="flex items-center gap-2.5 w-full sm:w-auto">
