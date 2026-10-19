@@ -2,11 +2,13 @@
  * Script de Migración de Datos de ObraMaster a Supabase
  * Convierte los datos locales de `src/data/initialData.js` a registros en las tablas de Supabase.
  *
- * Instrucciones de Ejecución:
- * 1. Asegúrate de configurar en tu archivo .env:
- *    SUPABASE_URL=https://tu-proyecto.supabase.co
- *    SUPABASE_SERVICE_ROLE_KEY=tu-clave-service-role
- * 2. Ejecuta: node scripts/migrateToSupabase.js
+ * INSTRUCCIONES PASO A PASO PARA EJECUTAR LA MIGRACIÓN:
+ * 1. Accede al SQL Editor de tu proyecto Supabase (https://rgwgjystfzlcogxyaksx.supabase.co) y ejecuta el script SQL completo.
+ * 2. Define las variables de entorno en tu terminal antes de ejecutar:
+ *    export SUPABASE_URL="https://rgwgjystfzlcogxyaksx.supabase.co"
+ *    export SUPABASE_SERVICE_ROLE_KEY="tu_clave_service_role_secret_de_supabase"
+ * 3. Ejecuta el script de migración con Node.js:
+ *    node scripts/migrateToSupabase.js
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -22,22 +24,23 @@ import {
   INITIAL_AVISOS_TECNICOS
 } from '../src/data/initialData.js';
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://rgwgjystfzlcogxyaksx.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ Error: Debes definir SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en tus variables de entorno.');
+if (!supabaseKey) {
+  console.error('❌ Error: Debes definir la clave SUPABASE_SERVICE_ROLE_KEY (o VITE_SUPABASE_ANON_KEY) en tus variables de entorno para ejecutar el script.');
+  console.error('Ejemplo: export SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOi..." && node scripts/migrateToSupabase.js');
   process.exit(1);
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function runMigration() {
-  console.log('🚀 Iniciando migración de datos a Supabase...');
+  console.log(`🚀 Iniciando migración de datos hacia el proyecto Supabase: ${supabaseUrl}`);
 
   try {
     // 1. Datos de Empresa (company_settings)
-    console.log('📦 Migrando datos de empresa...');
+    console.log('📦 Migrando datos de la empresa...');
     const { error: companyErr } = await supabase.from('company_settings').upsert({
       company_name: INITIAL_EMPRESA_CONFIG.razonSocial,
       commercial_name: INITIAL_EMPRESA_CONFIG.nombreComercial,
@@ -56,7 +59,7 @@ async function runMigration() {
     else console.log('✅ Datos de empresa migrados.');
 
     // 2. Configuración e Integración de IA Gemini (ai_integration_settings)
-    console.log('🧠 Migrando configuración del motor IA Gemini...');
+    console.log('🧠 Migrando configuración de API Key de Gemini e IA...');
     const { error: aiErr } = await supabase.from('ai_integration_settings').upsert({
       provider: INITIAL_EMPRESA_CONFIG.aiConfig?.provider || 'google',
       encrypted_api_key: INITIAL_EMPRESA_CONFIG.aiConfig?.apiKey || '',
@@ -173,9 +176,9 @@ async function runMigration() {
     }
     console.log('✅ Presupuestos migrados.');
 
-    console.log('🎉 ¡Migración completa finalizada con éxito en Supabase!');
+    console.log('🎉 ¡Migración completada con éxito en tu proyecto Supabase!');
   } catch (err) {
-    console.error('❌ Error fatal durante la migración:', err);
+    console.error('❌ Error durante la migración:', err);
   }
 }
 
