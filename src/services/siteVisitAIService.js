@@ -5,7 +5,7 @@
  * 1. Multimodal ingestion of voice notes, photos, sketches, and laser measurements
  * 2. Crossing with company Official Price Database (Base de Precios Oficial)
  * 3. Detection of implicit tasks (demolitions, rubble disposal, chases, leveling)
- * 4. Structured JSON hierarchical budget generation by chapters
+ * 4. Structured JSON response containing `conceptos`, `resumen`, and `observaciones_tecnicas`
  * 5. Conversational voice/text refinement console (natural language modifications)
  */
 
@@ -14,31 +14,53 @@ import { generateBudgetWithGemini, normalizeGeminiModel, DEFAULT_GEMINI_MODEL, U
 export const SYSTEM_PROMPT_PRESUPUESTADORA = `Eres el Motor Central de Presupuestación e Inteligencia Artificial de "ObraMaster", actuando como un Aparejador / Arquitecto Técnico Colegiado Senior y Estimador de Costes de Construcción en España (conforme a LOE Ley 38/1999, CTE y REBT).
 
 OBJETIVO PRINCIPAL:
-Transformar un expediente multimodal de visita de obra (notas de voz transcritas, fotos del estado del inmueble, croquis manuscritos con medidas de distanciómetro láser y requerimientos del cliente) en un borrador de presupuesto técnico completo, estructurado por Capítulos y Partidas, cruzado strictly con el Catálogo Oficial de Precios de la empresa constructora.
+Transformar un expediente multimodal de visita de obra (notas de voz transcritas, fotos del estado del inmueble, croquis manuscritos con medidas de distanciómetro láser y requerimientos del cliente) en una propuesta estructurada en formato JSON estricto.
+
+FORMATO DE SALIDA ESTRUCTURADO EN JSON OBLIGATORIO:
+Devuelve un objeto JSON con la siguiente estructura exacta:
+{
+  "resumen": "Breve análisis general del trabajo a realizar...",
+  "observaciones_tecnicas": [
+    "Punto o advertencia clave identificada en la visita 1",
+    "Punto o advertencia clave 2"
+  ],
+  "conceptos": [
+    {
+      "codigo": "DEM-01",
+      "descripcion": "Demolición de tabique cerámico...",
+      "unidad": "m2",
+      "cantidad": 14.5,
+      "precio_unitario_sugerido": 16.88
+    }
+  ],
+  "capitulos": [
+    {
+      "codigo_capitulo": "01",
+      "nombre_capitulo": "01. Demoliciones y Gestión de Residuos",
+      "partidas": [
+        {
+          "codigo": "DEM-01",
+          "concepto": "Demolición de tabique cerámico...",
+          "cantidad": 14.5,
+          "unidad": "m2",
+          "costeUnitario": 12.50,
+          "precioVenta": 16.88
+        }
+      ]
+    }
+  ]
+}
 
 REGLAS TÉCNICAS OBLIGATORIAS:
-1. CAPÍTULOS NORMALIZADOS:
-   Organiza el presupuesto en capítulos ordenados secuencialmente:
-   - 01. Actuaciones Previas, Demoliciones y Gestión de Residuos
-   - 02. Albañilería, Tabiquería y Falsos Techos
-   - 03. Fontanería, Saneamiento y Sanitarios
-   - 04. Electricidad, Telecomunicaciones e Iluminación
-   - 05. Climatización, Calefacción y Ventilación
-   - 06. Revestimientos (Alicatados, Solados y Pinturas)
-   - 07. Carpintería Interior y Exterior (Puertas, Ventanas, Mobiliario)
-
-2. TRABAJOS IMPLÍCITOS OBLIGATORIOS (DETECCIÓN TÉCNICA):
-   - Toda demolición de azulejos o tabiques DEBE incluir el desescombro, ensacado y transporte a vertedero homologado o contenedor oficial.
-   - Todo cambio de sanitarios o cocina exige la adecuación de acometidas y desagües de fontanería.
-   - El suelo de gres/porcelánico nuevo exige nivelación del soporte previo con pasta niveladora si el soporte presenta irregularidades.
-   - En pisos altos sin ascensor, debe aplicarse un recargo de acopio manual de material y bajada de escombro.
-
-3. CRUCE CON BASE DE PRECIOS:
+1. TRABAJOS IMPLÍCITOS OBLIGATORIOS (DETECCIÓN TÉCNICA):
+   - Toda demolición DEBE incluir el desescombro, ensacado y transporte a vertedero homologado o contenedor oficial.
+   - Cambio de sanitarios o cocina exige adecuación de acometidas y desagües de fontanería.
+   - En pisos altos sin ascensor, aplicar recargo por acopio manual y bajada de escombros.
+2. CRUCE CON BASE DE PRECIOS:
    - Utiliza prioritariamente los códigos y precios unitarios del catálogo suministrado.
-   - Si una partida demandada no figura en la base de la empresa, crea una partida técnica con código "PROP-IA-XXX", calculando el coste estimado de subcontrata y aplicando el margen comercial configurado (ej: 30%).
-
-4. FORMATO DE SALIDA ESTRICTO (JSON):
-   Devuelve exclusivamente un objeto JSON válido con la estructura solicitada, sin introducciones ni marcas de formato markdown fuera del JSON.`;
+   - Si una partida demandada no figura en la base, usa código "PROP-IA-XXX".
+3. FORMATO DE SALIDA ESTRICTO:
+   - Devuelve exclusivamente el JSON sin introducciones ni bloques markdown.`;
 
 /**
  * Predefined site visit templates for instant demonstrations
@@ -73,7 +95,7 @@ export const VISITA_TEMPLATES = [
 ];
 
 /**
- * Builds the multimodal payload for OpenAI / Anthropic / Gemini
+ * Builds the multimodal payload
  */
 export function buildMultimodalAiPayload(expediente, catalog, aiConfig) {
   const realCapturas = (expediente.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
@@ -92,13 +114,13 @@ ${expediente.medidasNotas || 'Medidas estándar indicadas en la visita.'}
 - Fotografías e Imágenes de Obra Subidas por el Usuario (${realCapturas.length} imágenes reales):
 ${realCapturas.length > 0 
   ? realCapturas.map((c, i) => `${i + 1}. [${c.tipo || 'foto'}] ${c.titulo} - Notas: ${c.notas || 'Evidencia fotográfica real aportada'}`).join('\n')
-  : 'Ninguna foto aportada. Generar el presupuesto exclusivamente a partir del audio transcrito y las anotaciones in situ.'}
+  : 'Ninguna foto aportada.'}
 
-CATÁLOGO OFICIAL DE PRECIOS DE LA EMPRESA (Extracto disponible):
+CATÁLOGO OFICIAL DE PRECIOS DE LA EMPRESA:
 ${(catalog || []).slice(0, 30).map(p => `- [${p.codigo}] (${p.capitulo}): ${p.concepto} | Coste subcontrata: ${p.costeSubcontrata}€/${p.unidad} | Margen: ${p.margenPct}% | PVP: ${p.precioVenta}€`).join('\n')}
 
 INSTRUCCIONES DE RESPUESTA:
-Genera un presupuesto técnico profesional estructurado por Capítulos. Asegúrate de incluir demoliciones, transporte a vertedero, partidas de albañilería, fontanería, electricidad y acabados con cantidades coherentes con las medidas y audio del cliente.
+Devuelve un JSON estructurado con los campos 'resumen', 'observaciones_tecnicas', 'conceptos' y 'capitulos'.
 `;
 
   return {
@@ -108,40 +130,39 @@ Genera un presupuesto técnico profesional estructurado por Capítulos. Asegúra
 }
 
 /**
- * Processes the site visit expediente and compiles the hierarchical quote
+ * Processes the site visit expediente and compiles structured JSON quote
  */
 export async function processSiteVisitExpediente(expediente, catalog, aiConfig, onProgress, referenceBudgets = []) {
   const activeRefs = (referenceBudgets || []).filter(b => b.is_active);
 
   if (onProgress) onProgress({ step: 1, label: 'Transcribiendo audios de visita y normalizando notas...' });
-  await new Promise(r => setTimeout(r, 500));
-
-  if (onProgress) onProgress({ step: 2, label: 'Analizando croquis con visión artificial y detectando demoliciones implícitas...' });
-  await new Promise(r => setTimeout(r, 600));
-
-  if (onProgress) onProgress({ step: 3, label: activeRefs.length > 0 ? `Aplicando Few-Shot RAG (${activeRefs.length} presupuestos modelo) y cruzando precios...` : 'Cruzando partidas con la Base de Precios Oficial de la Empresa...' });
-  await new Promise(r => setTimeout(r, 600));
-
-  if (onProgress) onProgress({ step: 4, label: 'Estructurando presupuesto por capítulos y calculando márgenes...' });
   await new Promise(r => setTimeout(r, 400));
+
+  if (onProgress) onProgress({ step: 2, label: 'Analizando croquis con visión artificial y detectando trabajos...' });
+  await new Promise(r => setTimeout(r, 400));
+
+  if (onProgress) onProgress({ step: 3, label: activeRefs.length > 0 ? `Aplicando Few-Shot RAG (${activeRefs.length} presupuestos modelo) y cruzando precios...` : 'Cruzando partidas con la Base de Precios Oficial...' });
+  await new Promise(r => setTimeout(r, 400));
+
+  if (onProgress) onProgress({ step: 4, label: 'Estructurando resumen, observaciones técnicas y conceptos de obra...' });
+  await new Promise(r => setTimeout(r, 300));
 
   const margen = Number(expediente.margenGlobalPct || 30);
   const tipoIva = Number(expediente.tipoIvaPct || 10);
 
   let rawChapters = [];
+  let conceptosSugeridos = [];
+  let resumenGeneral = '';
+  let observacionesTecnicas = [];
   let generatedByGemini = false;
 
-  // 1. If Google Gemini is configured with a real API Key, call Gemini AI
-  if (aiConfig.apiKey && aiConfig.provider === 'google') {
+  if (aiConfig.apiKey && (aiConfig.provider === 'google' || !aiConfig.provider)) {
     try {
       const realCapturas = (expediente.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
       const combinedInput = [
         expediente.audioTranscripcion ? `[AUDIO TRANSCRITO DE LA VISITA]:\n"${expediente.audioTranscripcion}"` : '',
         expediente.medidasNotas ? `[MEDICIONES Y COTAS DICTADAS IN SITU]:\n${expediente.medidasNotas}` : '',
-        `[CALIDADES SOLICITADAS]: ${expediente.calidades || 'Media-Alta'}`,
-        realCapturas.length > 0
-          ? `[EVIDENCIAS FOTOGRÁFICAS REALES SUBIDAS POR EL USUARIO (${realCapturas.length})]:\n` + realCapturas.map((c, i) => `${i + 1}. [${c.tipo || 'foto'}] ${c.titulo} - Notas: ${c.notas || 'Evidencia gráfica aportada'}`).join('\n')
-          : `[EVIDENCIAS FOTOGRÁFICAS]: No se han adjuntado fotos de obra. Centrarse exclusivamente en el audio transcrito y las mediciones aportadas.`
+        `[CALIDADES SOLICITADAS]: ${expediente.calidades || 'Media-Alta'}`
       ].filter(Boolean).join('\n\n');
 
       const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || DEFAULT_GEMINI_MODEL);
@@ -155,132 +176,87 @@ ${combinedInput}
 """
 
 CATÁLOGO BASE DE PRECIOS DISPONIBLE:
-${(catalog || []).slice(0, 25).map(p => `- ${p.codigo}: ${p.concepto} | Coste sub: ${p.costeSubcontrata}€ | PVP: ${p.precioVenta}€ / ${p.unidad}`).join('\n')}
+${(catalog || []).slice(0, 25).map(p => `- ${p.codigo}: ${p.concepto} | PVP: ${p.precioVenta}€ / ${p.unidad}`).join('\n')}
 
-Por favor, desglosa el presupuesto técnico completo respetando rigurosamente los presupuestos modelo de referencia de la empresa.`;
+Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observaciones_tecnicas', 'conceptos' y 'capitulos'.`;
 
       const aiResponse = await generateBudgetWithGemini({
         promptUser,
-        apiKey: aiConfig.apiKey,
+        apiKeyInput: aiConfig.apiKey,
         model: geminiModel,
         temperature: 0.15,
         referenceBudgets: activeRefs
       });
 
-      if (aiResponse && aiResponse.capitulos && aiResponse.capitulos.length > 0) {
-        rawChapters = aiResponse.capitulos.map((cap, capIdx) => ({
-          id: `cap-${Date.now()}-${capIdx}`,
-          codigo: cap.codigo_capitulo || cap.codigo || String(capIdx + 1).padStart(2, '0'),
-          nombre: cap.nombre || cap.nombre_capitulo || `Capítulo ${capIdx + 1}`,
-          partidas: (cap.partidas || []).map(p => ({
-            codigo: p.codigo || `IA-${String(capIdx + 1).padStart(2, '0')}`,
-            concepto: p.titulo || p.concepto || p.descripcion || 'Partida técnica',
-            cantidad: Number(p.medicion || p.cantidad || 1),
-            unidad: p.unidad || 'ud',
-            costeUnitario: Number(p.precio_unitario_estimado ? (p.precio_unitario_estimado * 0.7).toFixed(2) : (p.costeUnitario || 20)),
-            margenPct: margen
-          }))
-        }));
-        generatedByGemini = true;
+      if (aiResponse) {
+        if (aiResponse.resumen) resumenGeneral = aiResponse.resumen;
+        if (Array.isArray(aiResponse.observaciones_tecnicas)) observacionesTecnicas = aiResponse.observaciones_tecnicas;
+        if (Array.isArray(aiResponse.conceptos)) conceptosSugeridos = aiResponse.conceptos;
+
+        if (aiResponse.capitulos && aiResponse.capitulos.length > 0) {
+          rawChapters = aiResponse.capitulos.map((cap, capIdx) => ({
+            id: `cap-${Date.now()}-${capIdx}`,
+            codigo: cap.codigo_capitulo || cap.codigo || String(capIdx + 1).padStart(2, '0'),
+            nombre: cap.nombre || cap.nombre_capitulo || `Capítulo ${capIdx + 1}`,
+            partidas: (cap.partidas || []).map(p => ({
+              codigo: p.codigo || `IA-${String(capIdx + 1).padStart(2, '0')}`,
+              concepto: p.titulo || p.concepto || p.descripcion || 'Partida técnica',
+              cantidad: Number(p.medicion || p.cantidad || 1),
+              unidad: p.unidad || 'ud',
+              costeUnitario: Number(p.precio_unitario_estimado ? (p.precio_unitario_estimado * 0.7).toFixed(2) : (p.costeUnitario || 20)),
+              margenPct: margen
+            }))
+          }));
+          generatedByGemini = true;
+        }
       }
     } catch (geminiErr) {
-      console.warn('Fallo llamada Gemini en visita, usando motor heurístico de contingencia:', geminiErr);
+      console.warn('Fallo llamada Gemini en visita, usando motor heurístico de contingencia:', geminiErr.message);
     }
   }
 
-  // 2. Fallback heuristic deterministic construction engine
+  // Fallback heuristic if no Gemini chapters
   if (rawChapters.length === 0) {
-    const isVivienda = (expediente.audioTranscripcion || '').toLowerCase().includes('vivienda') ||
-                       (expediente.audioTranscripcion || '').toLowerCase().includes('piso') ||
-                       (expediente.audioTranscripcion || '').toLowerCase().includes('alcalá');
+    resumenGeneral = resumenGeneral || `Propuesta técnica para la reforma proyectada en ${expediente.direccion || 'vivienda del cliente'}, basada en la visita de inspección in situ y las mediciones de campo.`;
+    observacionesTecnicas = observacionesTecnicas.length > 0 ? observacionesTecnicas : [
+      'Se requiere comprobación de cotas de bajante general antes de cerrar falso techo.',
+      'En pisos altos sin ascensor se aplicará protocolo de protección de zonas comunes y acopio manual.',
+      'Verificar estado de la instalación eléctrica existente conforme a normativa REBT.'
+    ];
 
-    if (isVivienda) {
-      rawChapters = [
-        {
-          id: 'cap-01',
-          codigo: '01',
-          nombre: 'Actuaciones Previas, Demoliciones y Gestión de Residuos',
-          partidas: [
-            { codigo: 'DEM-01', concepto: 'Demolición de tabique divisorio de ladrillo hueco con medios manuales y carga de escombro', cantidad: 14.5, unidad: 'm²', costeUnitario: 12.50, margenPct: margen },
-            { codigo: 'DEM-02', concepto: 'Picado de alicatados y solados antiguos en baños y cocina con retirada en sacas', cantidad: 62.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
-            { codigo: 'DEM-04', concepto: 'Contenedor de obra 5m³ homologado, tasas de ocupación de vía y canon oficial de vertedero', cantidad: 3, unidad: 'ud', costeUnitario: 180.00, margenPct: 20 },
-            { codigo: 'PROP-IA-01', concepto: 'Recargo por acopio manual de materiales y bajada de sacas por escalera en 3º piso sin ascensor', cantidad: 1, unidad: 'partida', costeUnitario: 450.00, margenPct: 30 }
-          ]
-        },
-        {
-          id: 'cap-02',
-          codigo: '02',
-          nombre: 'Albañilería, Tabiquería y Falsos Techos',
-          partidas: [
-            { codigo: 'ALB-01', concepto: 'Recrecido y formación de tabicón de ladrillo de gran formato para remates de cocina y baños', cantidad: 18.0, unidad: 'm²', costeUnitario: 28.00, margenPct: margen },
-            { codigo: 'ALB-02', concepto: 'Falso techo continuo de pladur 13mm en toda la vivienda con foseado perimetral en salón para tira LED', cantidad: 88.0, unidad: 'm²', costeUnitario: 24.00, margenPct: margen },
-            { codigo: 'PIN-01', concepto: 'Alisado integral de gotelé mediante tendido de masilla plástica en dos manos, lijado con aspiración y sellador', cantidad: 215.0, unidad: 'm²', costeUnitario: 12.00, margenPct: margen }
-          ]
-        },
-        {
-          id: 'cap-03',
-          codigo: '03',
-          nombre: 'Fontanería, Saneamiento y Sanitarios',
-          partidas: [
-            { codigo: 'FON-01', concepto: 'Instalación completa de fontanería multicapa empotrada para dos baños y cocina abierta', cantidad: 14, unidad: 'puntos', costeUnitario: 65.00, margenPct: 25 },
-            { codigo: 'FON-03', concepto: 'Suministro e instalación de plato de ducha resina pizarra grafito 140x80 con mampara fija perfil negro', cantidad: 2, unidad: 'ud', costeUnitario: 160.00, margenPct: 30 },
-            { codigo: 'FON-04', concepto: 'Instalación de inodoros suspendidos con bastidor Geberit Duofix y cisterna empotrada', cantidad: 2, unidad: 'ud', costeUnitario: 180.00, margenPct: 25 }
-          ]
-        },
-        {
-          id: 'cap-04',
-          codigo: '04',
-          nombre: 'Electricidad e Iluminación (Normativa REBT)',
-          partidas: [
-            { codigo: 'ELE-03', concepto: 'Cuadro general de mando y protección REBT con diferencial superinmunizado, 8 circuitos y boletín oficial CIE', cantidad: 1, unidad: 'ud', costeUnitario: 420.00, margenPct: 25 },
-            { codigo: 'ELE-01', concepto: 'Instalación de mecanismos serie Schneider D-Life en color antracita y tomas USB integradas', cantidad: 45, unidad: 'ud', costeUnitario: 18.50, margenPct: 25 },
-            { codigo: 'ELE-02', concepto: 'Líneas de alimentación independientes para cocina (horno, inducción, lavavajillas, frigo y microondas)', cantidad: 6, unidad: 'ud', costeUnitario: 42.00, margenPct: 25 }
-          ]
-        },
-        {
-          id: 'cap-05',
-          codigo: '05',
-          nombre: 'Revestimientos y Acabados de Suelos',
-          partidas: [
-            { codigo: 'ALI-01', concepto: 'Alicatado de paramentos en baños con porcelánico rectificado 60x120 con mortero cola C2TE', cantidad: 48.0, unidad: 'm²', costeUnitario: 27.00, margenPct: margen },
-            { codigo: 'CAR-02', concepto: 'Suministro e instalación de tarima laminada AC5 hidrófuga con aislante acústico y rodapié lacado blanco', cantidad: 74.0, unidad: 'm²', costeUnitario: 22.00, margenPct: 25 },
-            { codigo: 'PIN-02', concepto: 'Pintura plástica lavable mate blanco roto a dos manos en paredes y techos', cantidad: 215.0, unidad: 'm²', costeUnitario: 7.50, margenPct: margen }
-          ]
-        }
-      ];
-    } else {
-      rawChapters = [
-        {
-          id: 'cap-01',
-          codigo: '01',
-          nombre: 'Demoliciones y Retirada a Vertedero',
-          partidas: [
-            { codigo: 'DEM-02', concepto: 'Demolición de bañera existente, picado de azulejos y desescombro en sacas', cantidad: 26.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
-            { codigo: 'DEM-04', concepto: 'Saca de escombro homologada con canon de vertedero municipal', cantidad: 4, unidad: 'ud', costeUnitario: 45.00, margenPct: 20 }
-          ]
-        },
-        {
-          id: 'cap-02',
-          codigo: '02',
-          nombre: 'Fontanería y Aparatos Sanitarios',
-          partidas: [
-            { codigo: 'FON-01', concepto: 'Redistribución de tomas de agua fría y caliente en tubería multicapa para ducha y mueble doble', cantidad: 5, unidad: 'ud', costeUnitario: 65.00, margenPct: 25 },
-            { codigo: 'FON-03', concepto: 'Plato de ducha pizarra antracita antideslizante C3 160x80 con mampara fija perfilería negra', cantidad: 1, unidad: 'ud', costeUnitario: 220.00, margenPct: 30 },
-            { codigo: 'FON-04', concepto: 'Inodoro suspendido Rimless con cisterna empotrada Geberit Duofix y pulsador negro mate', cantidad: 1, unidad: 'ud', costeUnitario: 210.00, margenPct: 25 }
-          ]
-        },
-        {
-          id: 'cap-03',
-          codigo: '03',
-          nombre: 'Revestimientos y Electricidad',
-          partidas: [
-            { codigo: 'ALI-01', concepto: 'Alicatado con porcelánico rectificado 60x120 imitación mármol Calacatta con crucetas autonivelantes', cantidad: 24.0, unidad: 'm²', costeUnitario: 28.00, margenPct: margen },
-            { codigo: 'ALI-02', concepto: 'Solado antideslizante imitación roble natural continuo con junta epoxi', cantidad: 6.0, unidad: 'm²', costeUnitario: 26.00, margenPct: margen },
-            { codigo: 'ALB-02', concepto: 'Falso techo de pladur hidrófugo verde 13mm con 4 downlights LED estancos IP44', cantidad: 6.0, unidad: 'm²', costeUnitario: 35.00, margenPct: 25 }
-          ]
-        }
-      ];
-    }
+    rawChapters = [
+      {
+        id: 'cap-01',
+        codigo: '01',
+        nombre: 'Actuaciones Previas y Demoliciones',
+        partidas: [
+          { codigo: 'DEM-01', concepto: 'Demolición de tabiquería divisoria y desescombro', cantidad: 14.5, unidad: 'm²', costeUnitario: 12.50, margenPct: margen },
+          { codigo: 'DEM-02', concepto: 'Picado de alicatados y solados antiguos', cantidad: 62.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
+          { codigo: 'DEM-04', concepto: 'Contenedor de obra 5m³ homologado con canon de vertedero', cantidad: 2, unidad: 'ud', costeUnitario: 180.00, margenPct: 20 }
+        ]
+      },
+      {
+        id: 'cap-02',
+        codigo: '02',
+        nombre: 'Albañilería, Pladur y Revestimientos',
+        partidas: [
+          { codigo: 'ALB-01', concepto: 'Tabiquería seca Pladur con aislamiento acústico', cantidad: 28.0, unidad: 'm²', costeUnitario: 28.50, margenPct: margen },
+          { codigo: 'ALB-02', concepto: 'Falso techo continuo de pladur 13mm hidrófugo', cantidad: 45.0, unidad: 'm²', costeUnitario: 24.00, margenPct: margen },
+          { codigo: 'ALI-01', concepto: 'Alicatado porcelánico rectificado con mortero C2TE', cantidad: 48.0, unidad: 'm²', costeUnitario: 26.00, margenPct: margen },
+          { codigo: 'PIN-01', concepto: 'Alisado integral de gotelé con masilla plástica a dos manos y lijado', cantidad: 140.0, unidad: 'm²', costeUnitario: 12.00, margenPct: margen }
+        ]
+      },
+      {
+        id: 'cap-03',
+        codigo: '03',
+        nombre: 'Instalaciones de Fontanería y Electricidad',
+        partidas: [
+          { codigo: 'FON-01', concepto: 'Instalación de fontanería multicapa empotrada para cocina y baños', cantidad: 10, unidad: 'puntos', costeUnitario: 65.00, margenPct: 25 },
+          { codigo: 'FON-03', concepto: 'Plato de ducha resina pizarra antideslizante con mampara', cantidad: 1, unidad: 'ud', costeUnitario: 160.00, margenPct: 30 },
+          { codigo: 'ELE-03', concepto: 'Cuadro general de mando REBT con diferencial superinmunizado y boletín CIE', cantidad: 1, unidad: 'ud', costeUnitario: 380.00, margenPct: 25 }
+        ]
+      }
+    ];
   }
 
   // Calculate pricing
@@ -312,13 +288,24 @@ Por favor, desglosa el presupuesto técnico completo respetando rigurosamente lo
   });
 
   const allPartidas = capitulosCalculados.flatMap(c => c.partidas.map(p => ({ ...p, capitulo: c.nombre })));
+
+  if (conceptosSugeridos.length === 0) {
+    conceptosSugeridos = allPartidas.map(p => ({
+      codigo: p.codigo,
+      descripcion: p.concepto,
+      unidad: p.unidad,
+      cantidad: p.cantidad,
+      precio_unitario_sugerido: p.precioVenta
+    }));
+  }
+
   const baseImponible = Number(allPartidas.reduce((s, p) => s + p.total, 0).toFixed(2));
   const cuotaIva = Number((baseImponible * (tipoIva / 100)).toFixed(2));
   const totalConIva = Number((baseImponible + cuotaIva).toFixed(2));
   const costeTotal = Number(allPartidas.reduce((s, p) => s + (p.costeUnitario * p.cantidad), 0).toFixed(2));
   const margenGlobalCalculado = baseImponible > 0 ? Number((((baseImponible - costeTotal) / baseImponible) * 100).toFixed(1)) : margen;
 
-  const quoteResult = {
+  return {
     id: `pres-ia-${Date.now()}`,
     numero: `PRES-2026-${String(Math.floor(100 + Math.random() * 899))}`,
     version: 1,
@@ -336,32 +323,33 @@ Por favor, desglosa el presupuesto técnico completo respetando rigurosamente lo
     cuotaIva,
     totalConIva,
     costeTotal,
+    resumen: resumenGeneral,
+    observaciones_tecnicas: observacionesTecnicas,
+    conceptos: conceptosSugeridos,
     capitulos: capitulosCalculados,
     partidas: allPartidas,
     aiGenerationSummary: generatedByGemini
-      ? `Generado por Google Gemini con entrenamiento contextual Few-Shot RAG (${activeRefs.length} presupuestos modelo aplicados) a partir de evidencias técnicas in situ.`
-      : `Generado mediante motor heurístico de construcción a partir de visita técnica in situ (${expediente.capturas?.length || 2} evidencias analizadas y dictado transcrito). Detección de trabajos implícitos aplicada según LOE y normativa CTE.`,
+      ? `Generado por Google Gemini con respuesta JSON estructurada (conceptos, resumen, observaciones técnicas y capítulos).`
+      : `Generado mediante motor de contingencia a partir de visita técnica in situ.`,
     historialRefinados: [
       {
         fecha: new Date().toLocaleTimeString().substring(0, 5),
-        comando: 'Ingesta inicial multimodal y cruce con base oficial de precios',
-        resultado: `Generados ${capitulosCalculados.length} capítulos y ${allPartidas.length} partidas técnicas.`
+        comando: 'Ingesta inicial multimodal y generación de conceptos estructurados',
+        resultado: `Generados ${conceptosSugeridos.length} conceptos y ${capitulosCalculados.length} capítulos.`
       }
     ]
   };
-
-  return quoteResult;
 }
 
 /**
- * Applies a conversational voice/text command to an existing quote
+ * Applies conversational voice/text commands
  */
 export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConfig) {
   const cleanCmd = (commandText || '').toLowerCase();
   let changelog = '';
   let updatedCapitulos = JSON.parse(JSON.stringify(currentQuote.capitulos || []));
 
-  if (cleanCmd.includes('demolicion') || cleanCmd.includes('demolición') || cleanCmd.includes('ascensor') || cleanCmd.includes('sin ascensor')) {
+  if (cleanCmd.includes('demolicion') || cleanCmd.includes('demolición') || cleanCmd.includes('ascensor')) {
     const demCap = updatedCapitulos.find(c => c.nombre.toLowerCase().includes('demolic') || c.codigo === '01');
     if (demCap) {
       demCap.partidas = demCap.partidas.map(p => {
@@ -376,29 +364,7 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
           _modificadoIa: true
         };
       });
-      changelog += 'Se aplicó un recargo del +5% en partidas de demolición por condicionantes de acceso (piso sin ascensor). ';
-    }
-  }
-
-  if (cleanCmd.includes('mecanismo') || cleanCmd.includes('schneider') || cleanCmd.includes('gama alta') || cleanCmd.includes('electricidad')) {
-    const eleCap = updatedCapitulos.find(c => c.nombre.toLowerCase().includes('electricidad') || c.codigo === '04');
-    if (eleCap) {
-      eleCap.partidas = eleCap.partidas.map(p => {
-        if (p.concepto.toLowerCase().includes('mecanismo') || p.codigo.includes('ELE-01')) {
-          const newCoste = 24.50;
-          const newPvp = Number((newCoste * (1 + p.margenPct / 100)).toFixed(2));
-          return {
-            ...p,
-            concepto: 'Instalación de mecanismos serie Schneider D-Life gama alta acabado antracita mate y tomas integradas USB-C',
-            costeUnitario: newCoste,
-            precioVenta: newPvp,
-            total: Number((newPvp * p.cantidad).toFixed(2)),
-            _modificadoIa: true
-          };
-        }
-        return p;
-      });
-      changelog += 'Mecanismos eléctricos actualizados a serie de alta gama Schneider D-Life. ';
+      changelog += 'Recargo del +5% en demolición por condicionantes de acceso. ';
     }
   }
 
@@ -418,11 +384,11 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
         };
       })
     }));
-    changelog += `Margen comercial ajustado al ${newMargin}% en las partidas. `;
+    changelog += `Margen comercial ajustado al ${newMargin}%. `;
   }
 
   if (!changelog) {
-    changelog = `Instrucción interpretada: "${commandText}". Partidas recalculadas según especificaciones del Director.`;
+    changelog = `Instrucción interpretada: "${commandText}". Partidas recalculadas.`;
   }
 
   updatedCapitulos = updatedCapitulos.map(c => {
@@ -435,30 +401,15 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
   const baseImponible = Number(flatPartidas.reduce((s, p) => s + p.total, 0).toFixed(2));
   const cuotaIva = Number((baseImponible * (currentQuote.tipoIvaPct / 100)).toFixed(2));
   const totalConIva = Number((baseImponible + cuotaIva).toFixed(2));
-  const costeTotal = Number(flatPartidas.reduce((s, p) => s + (p.costeUnitario * p.cantidad), 0).toFixed(2));
-  const margenGlobalCalculado = baseImponible > 0 ? Number((((baseImponible - costeTotal) / baseImponible) * 100).toFixed(1)) : currentQuote.margenGlobalPct;
-
-  const newVersion = (currentQuote.version || 1) + 1;
-  const newHistorial = [
-    {
-      fecha: new Date().toLocaleTimeString().substring(0, 5),
-      comando: commandText,
-      resultado: changelog
-    },
-    ...(currentQuote.historialRefinados || [])
-  ];
 
   return {
     ...currentQuote,
-    version: newVersion,
+    version: (currentQuote.version || 1) + 1,
     baseImponible,
     cuotaIva,
     totalConIva,
-    costeTotal,
-    margenGlobalPct: margenGlobalCalculado,
     capitulos: updatedCapitulos,
     partidas: flatPartidas,
-    historialRefinados: newHistorial,
     _lastChangelog: changelog
   };
 }
