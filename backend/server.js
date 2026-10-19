@@ -4,7 +4,7 @@
  * Arquitectura de Producción SaaS:
  * - Centralización 100% de proveedores de IA (Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Azure OpenAI).
  * - Persistencia de datos en disco (db_presupuestos.json, db_obras.json, db_clientes.json, ai_settings.json, ai_audit_log.json).
- * - Centralized Gemini models with fallback cascade: gemini-2.5-flash -> gemini-2.0-flash -> gemini-1.5-flash
+ * - Centralized Gemini models with fallback cascade: gemini-1.5-flash -> gemini-3.8-flash -> gemini-1.5-pro
  * - Dynamic model discovery via `/api/ai/check-gemini-api`
  * - User-friendly error messages (sanitizing raw Google API error output)
  */
@@ -18,8 +18,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const USER_FRIENDLY_AI_ERROR = "No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.";
-const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
-const GEMINI_FALLBACK_CASCADE = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+const GEMINI_DEFAULT_MODEL = "gemini-1.5-flash";
+const GEMINI_FALLBACK_CASCADE = ["gemini-1.5-flash", "gemini-3.8-flash", "gemini-1.5-pro"];
 
 function loadEnv() {
   const envPath = path.join(__dirname, ".env");
@@ -80,7 +80,7 @@ function getDefaultAiConfig() {
     model: process.env.GEMINI_MODEL || process.env.AI_MODEL || GEMINI_DEFAULT_MODEL,
     temperature: Number(process.env.AI_TEMPERATURE) || 0.15,
     maxTokens: Number(process.env.AI_MAX_TOKENS) || 4096,
-    openRouterModel: process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash",
+    openRouterModel: process.env.OPENROUTER_MODEL || "google/gemini-1.5-flash",
     azureEndpoint: process.env.AZURE_OPENAI_ENDPOINT || "",
     azureDeployment: process.env.AZURE_OPENAI_DEPLOYMENT || ""
   };
@@ -193,7 +193,6 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
   }
 
   let preferredModel = model || GEMINI_DEFAULT_MODEL;
-  if (preferredModel.includes('1.5')) preferredModel = 'gemini-1.5-flash';
 
   const modelsToTry = [preferredModel];
   for (const m of GEMINI_FALLBACK_CASCADE) {
@@ -353,7 +352,7 @@ async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0
         "X-Title": "ObraMaster CRM"
       },
       body: JSON.stringify({
-        model: model || "google/gemini-2.5-flash",
+        model: model || "google/gemini-1.5-flash",
         messages,
         temperature,
         max_tokens: maxTokens
@@ -429,7 +428,7 @@ async function transcribeAudioUnified({ audioFile, config }) {
 Eres un transcriptor experto en construcción y arquitectura técnica de "ObraMaster".
 Escucha el audio adjunto y transcribe fielmente todo lo dicho en español, corrigiendo términos de obra (alicatados, rozas, falsos techos, etc.).
 
-Devuelve estrictamente un JSON válido con esta estructura exacta:
+Devuelve strictly un JSON válido con esta estructura exacta:
 {"transcripcion": "Texto fiel y literal en español"}
 `;
     const rawText = await callGeminiProvider({
@@ -688,6 +687,7 @@ async function handleRequest(req, res) {
 
       if (req.method === "POST" && pathname === "/api/ai/check-gemini-api") {
         const apiKey = (fields.apiKey || currentConfig.apiKey || "").trim();
+        const requestedModel = fields.model || currentConfig.model || GEMINI_DEFAULT_MODEL;
         if (!apiKey) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: USER_FRIENDLY_AI_ERROR }));
@@ -695,9 +695,9 @@ async function handleRequest(req, res) {
         }
 
         const availableModels = await fetchAvailableGeminiModelsFromGoogle(apiKey);
-        let selectedModel = GEMINI_FALLBACK_CASCADE.find(m => availableModels.includes(m));
+        let selectedModel = availableModels.includes(requestedModel) ? requestedModel : GEMINI_FALLBACK_CASCADE.find(m => availableModels.includes(m));
         if (!selectedModel) {
-          selectedModel = availableModels.find(id => id.includes("flash")) || availableModels[0] || GEMINI_DEFAULT_MODEL;
+          selectedModel = availableModels.find(id => id.includes("flash")) || availableModels[0] || requestedModel;
         }
 
         const updated = saveAiConfig({ provider: "google", apiKey, model: selectedModel });
@@ -758,7 +758,7 @@ async function handleRequest(req, res) {
           else items.unshift(fields);
         }
         writeJsonDb(DB_CLIENTES_FILE, items);
-        res.writeHead(200, { "Content-Type": "application/json" });
+        res.writeHead(200, { "Content-Type": "application/json text/plain" });
         res.end(JSON.stringify({ success: true, count: items.length }));
         return;
       }
@@ -792,7 +792,7 @@ async function handleRequest(req, res) {
         } else if (provider === "openrouter") {
           rawResponse = await callOpenRouterProvider({
             apiKey,
-            model: model || "google/gemini-2.5-flash",
+            model: model || "google/gemini-1.5-flash",
             messages: [{ role: "user", content: "Responde en JSON: {\"status\": \"PONG\", \"message\": \"Conexión exitosa\"}" }]
           });
         } else {
@@ -970,7 +970,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
         } else if (effectiveConfig.provider === "openrouter") {
           rawOutput = await callOpenRouterProvider({
             apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "google/gemini-2.5-flash",
+            model: effectiveConfig.model || "google/gemini-1.5-flash",
             messages: [
               { role: "system", content: systemInstruction },
               { role: "user", content: userPrompt }
@@ -982,8 +982,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
           rawOutput = await callGeminiProvider({
             apiKey: effectiveConfig.apiKey,
             model: effectiveConfig.model,
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-            systemInstruction
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }]
           });
         }
 
