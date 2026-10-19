@@ -2,52 +2,100 @@
  * ObraMaster - Google Gemini AI Service
  * 
  * Centralized Gemini API integration featuring:
- * 1. Default model configuration: gemini-2.5-flash
- * 2. Automatic fallback cascade chain: gemini-2.5-flash -> gemini-2.0-flash -> gemini-1.5-flash
- * 3. Live model discovery via Google Gemini REST API (`GET /v1beta/models`)
- * 4. Automatic auto-selection and validation of the best compatible model
- * 5. User-friendly error messaging (suppressing raw Google API technical errors in UI)
- * 6. Automatic markdown / codeblock sanitization for pure JSON parsing
+ * 1. SDK Support: Official @google/genai SDK integration
+ * 2. Credential provider: Fetches API Key from Supabase (`ai_integration_settings` / `company_settings`)
+ *    with fallback to environment variable `VITE_GEMINI_API_KEY`.
+ * 3. Model selection: Default model `gemini-1.5-flash` with support for `gemini-1.5-pro`.
+ * 4. Fallback cascade chain: gemini-1.5-flash -> gemini-2.5-flash -> gemini-1.5-pro
+ * 5. Detailed console logging and robust error handling for 401, 403, 429, and timeouts.
  */
 
+import { GoogleGenAI } from '@google/genai';
+import { supabase } from './supabaseClient';
 import { buildGeminiSystemPromptWithReferences } from './referenceBudgetService';
 
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
 
 export const GEMINI_FALLBACK_CASCADE = [
+  'gemini-1.5-flash',
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash'
+  'gemini-1.5-pro'
 ];
 
 export const GEMINI_MODELS = [
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Última Generación · Ultrarrápido & Multimodal)', speed: 'Ultrarrápido', context: '1M tokens' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Alta velocidad & Estabilidad)', speed: 'Ultrarrápido', context: '1M tokens' },
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Compatibilidad general)', speed: 'Ultrarrápido', context: '1M tokens' },
-  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Razonamiento de mediciones avanzadas)', speed: 'Rápido', context: '2M tokens' }
+  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Ultrarrápido · Modelo Predeterminado)', speed: 'Ultrarrápido', context: '1M tokens' },
+  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Razonamiento complejo · Mediciones extensas)', speed: 'Rápido', context: '2M tokens' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Generación Multimodal)', speed: 'Ultrarrápido', context: '1M tokens' }
 ];
 
 export const USER_FRIENDLY_AI_ERROR = 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.';
 
 /**
- * Fetches available models from Google Gemini API
- * @param {string} apiKey - Google Gemini API key
- * @returns {Promise<Array<{id: string, displayName: string, supportedGenerationMethods: string[]}>>}
+ * Resolves Gemini API key with priority:
+ * 1. Custom provided key
+ * 2. Supabase DB (`ai_integration_settings` or `company_settings`)
+ * 3. Environment variable `VITE_GEMINI_API_KEY`
  */
-export async function fetchAvailableGeminiModels(apiKey) {
-  const cleanKey = (apiKey || '').trim();
-  if (!cleanKey) {
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+export async function getGeminiApiKey(customKey = '') {
+  const cleanCustom = (customKey || '').trim();
+  if (cleanCustom) return cleanCustom;
+
+  try {
+    const { data: aiSettings, error: aiErr } = await supabase
+      .from('ai_integration_settings')
+      .select('encrypted_api_key, is_active')
+      .eq('provider', 'google')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!aiErr && aiSettings?.encrypted_api_key) {
+      const dbKey = aiSettings.encrypted_api_key.trim();
+      if (dbKey && !dbKey.startsWith('aes256_vault_sk_proj_demo')) {
+        return dbKey;
+      }
+    }
+  } catch (err) {
+    console.warn('[Gemini Service] Exception fetching key from Supabase:', err.message);
   }
 
-  const url = `${GEMINI_API_BASE}/models?key=${encodeURIComponent(cleanKey)}`;
+  const envKey = (
+    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
+    (typeof process !== 'undefined' && process.env && process.env.VITE_GEMINI_API_KEY) ||
+    ''
+  ).trim();
+
+  if (envKey && !envKey.includes('tu_clave_gemini_aqui')) {
+    return envKey;
+  }
+
+  return '';
+}
+
+/**
+ * Instantiates Official @google/genai Client
+ */
+export async function createGeminiClient(customKey = '') {
+  const apiKey = await getGeminiApiKey(customKey);
+  if (!apiKey) {
+    throw new Error('API Key de Google Gemini no configurada. Configure la clave en Ajustes o en VITE_GEMINI_API_KEY.');
+  }
+  return new GoogleGenAI({ apiKey });
+}
+
+/**
+ * Fetches available models from Google Gemini API
+ */
+export async function fetchAvailableGeminiModels(apiKeyInput = '') {
+  const apiKey = await getGeminiApiKey(apiKeyInput);
+  if (!apiKey) throw new Error('Se requiere una API Key válida para consultar los modelos disponibles.');
+
+  const url = `${GEMINI_API_BASE}/models?key=${encodeURIComponent(apiKey)}`;
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      console.error(`[Gemini List Models Error] HTTP ${response.status}`);
-      throw new Error(USER_FRIENDLY_AI_ERROR);
+      handleGeminiHttpError(response.status, 'Error al listar modelos de Gemini');
     }
     const data = await response.json();
     const rawList = data.models || [];
@@ -60,33 +108,30 @@ export async function fetchAvailableGeminiModels(apiKey) {
       }));
   } catch (err) {
     console.error('[Fetch Gemini Models Exception]', err);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    throw err;
   }
 }
 
 /**
- * Checks Gemini API key, discovers available models, and automatically selects best compatible model
- * @param {string} apiKey - Google Gemini API key
+ * Checks Gemini API key, discovers available models, and auto-selects best compatible model
  */
-export async function checkAndAutoSelectBestGeminiModel(apiKey) {
-  const cleanKey = (apiKey || '').trim();
-  if (!cleanKey) {
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+export async function checkAndAutoSelectBestGeminiModel(apiKeyInput = '') {
+  const apiKey = await getGeminiApiKey(apiKeyInput);
+  if (!apiKey) {
+    throw new Error('Se requiere una API Key para probar la conexión con Gemini.');
   }
 
   try {
-    const available = await fetchAvailableGeminiModels(cleanKey);
+    const available = await fetchAvailableGeminiModels(apiKey);
     const availableIds = available.map(m => m.id);
 
-    // Pick best model in order of priority preference
     let selectedModel = GEMINI_FALLBACK_CASCADE.find(m => availableIds.includes(m));
 
     if (!selectedModel) {
       selectedModel = availableIds.find(id => id.includes('flash')) || availableIds[0] || DEFAULT_GEMINI_MODEL;
     }
 
-    // Verify selected model with a test connection ping
-    const testRes = await testGeminiConnection(cleanKey, selectedModel);
+    const testRes = await testGeminiConnection(apiKey, selectedModel);
 
     return {
       success: true,
@@ -100,7 +145,7 @@ export async function checkAndAutoSelectBestGeminiModel(apiKey) {
     };
   } catch (err) {
     console.error('[Check Gemini API Failed]', err);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    throw err;
   }
 }
 
@@ -111,22 +156,9 @@ export function normalizeGeminiModel(rawModel) {
   if (!rawModel || typeof rawModel !== 'string') return DEFAULT_GEMINI_MODEL;
   const cleaned = rawModel.trim().toLowerCase();
 
-  const validModels = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-    'gemini-2.0-flash-exp'
-  ];
-
-  if (validModels.includes(cleaned)) {
-    return cleaned;
-  }
-
+  if (cleaned.includes('1.5-pro') || cleaned.includes('pro')) return 'gemini-1.5-pro';
+  if (cleaned.includes('1.5-flash') || cleaned.includes('1.5')) return 'gemini-1.5-flash';
   if (cleaned.includes('2.5')) return 'gemini-2.5-flash';
-  if (cleaned.includes('2.0')) return 'gemini-2.0-flash';
-  if (cleaned.includes('pro')) return 'gemini-1.5-pro';
-  if (cleaned.includes('1.5') || cleaned.includes('flash')) return 'gemini-1.5-flash';
 
   return DEFAULT_GEMINI_MODEL;
 }
@@ -154,12 +186,29 @@ export function cleanGeminiJsonResponse(rawText) {
 }
 
 /**
+ * Error classifier for HTTP status codes
+ */
+export function handleGeminiHttpError(status, detail = '') {
+  console.error(`[Google Gemini API HTTP Error ${status}] Detalle técnico:`, detail);
+  if (status === 429) {
+    throw new Error('Cuota excedida de la API de Gemini (Error 429). Por favor, espere un momento antes de volver a intentarlo.');
+  }
+  if (status === 401 || status === 403) {
+    throw new Error(`Clave de API de Gemini inválida o no autorizada (HTTP ${status}). Detalle: ${detail || 'Revise la clave en Ajustes.'}`);
+  }
+  if (status === 408 || status === 504) {
+    throw new Error('Tiempo de espera agotado al conectar con Gemini (Timeout). Inténtelo de nuevo.');
+  }
+  throw new Error(`Error en API Gemini (HTTP ${status}): ${detail || USER_FRIENDLY_AI_ERROR}`);
+}
+
+/**
  * Executes a Gemini generateContent request with automatic fallback cascade through models
  */
-async function executeGeminiRequestWithFallback({ apiKey, model, payload }) {
-  const cleanKey = (apiKey || '').trim();
-  if (!cleanKey) {
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+async function executeGeminiRequestWithFallback({ apiKeyInput, model, payload }) {
+  const apiKey = await getGeminiApiKey(apiKeyInput);
+  if (!apiKey) {
+    throw new Error('Clave de API de Gemini no configurada.');
   }
 
   let preferredModel = normalizeGeminiModel(model);
@@ -174,13 +223,19 @@ async function executeGeminiRequestWithFallback({ apiKey, model, payload }) {
   let lastError = null;
 
   for (const currentModel of modelsToTry) {
-    const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+    const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
@@ -195,74 +250,92 @@ async function executeGeminiRequestWithFallback({ apiKey, model, payload }) {
       try {
         const errJson = await response.json();
         errMessage = errJson.error?.message || errMessage;
-      } catch (e) {
-        // ignore
+      } catch (e) {}
+
+      console.error(`[Gemini API Error Response] Model: "${currentModel}", Status: ${response.status}, Detail:`, errMessage);
+
+      if (response.status === 429 || response.status === 401 || response.status === 403) {
+        handleGeminiHttpError(response.status, errMessage);
       }
 
-      console.error(`[Gemini API Error] Modelo "${currentModel}" HTTP ${response.status}:`, errMessage);
-
       if (response.status === 404 || errMessage.includes('not found') || errMessage.includes('is not supported')) {
-        console.warn(`[Gemini Fallback] El modelo "${currentModel}" no está disponible (404). Reintentando con el siguiente modelo del cascade...`);
+        console.warn(`[Gemini Fallback] El modelo "${currentModel}" no está disponible (404). Reintentando con el siguiente modelo...`);
         lastError = new Error(errMessage);
         continue;
       }
 
       throw new Error(errMessage);
     } catch (netErr) {
+      if (netErr.name === 'AbortError') {
+        throw new Error('Tiempo de espera agotado al comunicar con la IA de Gemini (Timeout 45s).');
+      }
       console.error(`[Gemini Request Exception] Modelo "${currentModel}":`, netErr.message || netErr);
       lastError = netErr;
       if (netErr.message && (netErr.message.includes('404') || netErr.message.includes('not found'))) {
         continue;
       }
-      break;
+      throw netErr;
     }
   }
 
   console.error('[Gemini Cascade Failed] Se agotaron todos los modelos del cascade. Último error técnico:', lastError);
-  throw new Error(USER_FRIENDLY_AI_ERROR);
+  throw lastError || new Error(USER_FRIENDLY_AI_ERROR);
 }
 
 /**
  * Pings Google Gemini API to test connection and measure latency
+ * Direct REST endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}
+ * Payload: { "contents": [{ "parts": [{ "text": "ping" }] }] }
  */
-export async function testGeminiConnection(apiKey, model = DEFAULT_GEMINI_MODEL) {
-  const cleanKey = (apiKey || '').trim();
-  if (!cleanKey) {
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEMINI_MODEL) {
+  const apiKey = await getGeminiApiKey(apiKeyInput);
+  if (!apiKey) {
+    throw new Error('Configuración de API Key de Gemini requerida.');
   }
 
+  const targetModel = normalizeGeminiModel(model) || DEFAULT_GEMINI_MODEL;
   const startTime = performance.now();
+  const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const payload = {
     contents: [
       {
-        role: 'user',
-        parts: [{ text: 'Responde exclusivamente con la palabra: PONG' }]
+        parts: [{ text: 'ping' }]
       }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 20
-    }
+    ]
   };
 
   try {
-    const { rawContent, modelUsed } = await executeGeminiRequestWithFallback({
-      apiKey: cleanKey,
-      model,
-      payload
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
     const elapsedMs = Math.round(performance.now() - startTime);
 
-    return {
-      success: true,
-      latencyMs: elapsedMs,
-      model: modelUsed,
-      message: `Conexión con Google Gemini (${modelUsed}) exitosa (${elapsedMs}ms). Respuesta: ${rawContent.trim()}`
-    };
+    if (response.ok) {
+      const data = await response.json();
+      const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text || 'PONG';
+      console.log(`[Gemini Ping Success] Status ${response.status}, Latency: ${elapsedMs}ms, Response:`, rawContent);
+      return {
+        success: true,
+        latencyMs: elapsedMs,
+        model: targetModel,
+        message: `Conexión con Google Gemini (${targetModel}) exitosa (${elapsedMs}ms). Respuesta: ${rawContent.trim()}`
+      };
+    }
+
+    let detailMsg = response.statusText;
+    try {
+      const errJson = await response.json();
+      detailMsg = errJson.error?.message || detailMsg;
+    } catch (e) {}
+
+    console.error(`[Gemini Ping Failure] Status: ${response.status}, StatusText: ${response.statusText}, Details:`, detailMsg);
+    handleGeminiHttpError(response.status, detailMsg);
   } catch (err) {
-    console.error('[Gemini Connection Test Failed]', err);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    console.error('[Gemini Connection Test Exception]', err.message || err);
+    throw err;
   }
 }
 
@@ -272,14 +345,14 @@ export async function testGeminiConnection(apiKey, model = DEFAULT_GEMINI_MODEL)
 export async function generateBudgetWithGemini({
   promptUser,
   systemPrompt,
-  apiKey,
+  apiKeyInput = '',
   model = DEFAULT_GEMINI_MODEL,
   temperature = 0.15,
   referenceBudgets = []
 }) {
-  const cleanKey = (apiKey || '').trim();
-  if (!cleanKey) {
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+  const apiKey = await getGeminiApiKey(apiKeyInput);
+  if (!apiKey) {
+    throw new Error('Clave API de Gemini requerida para generar el presupuesto.');
   }
 
   let effectiveSystemPrompt = systemPrompt;
@@ -305,7 +378,7 @@ export async function generateBudgetWithGemini({
 
   try {
     const { rawContent } = await executeGeminiRequestWithFallback({
-      apiKey: cleanKey,
+      apiKeyInput: apiKey,
       model,
       payload
     });
@@ -315,6 +388,6 @@ export async function generateBudgetWithGemini({
     return parsed;
   } catch (err) {
     console.error('[Gemini Budget Generation Failed]', err);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    throw err;
   }
 }

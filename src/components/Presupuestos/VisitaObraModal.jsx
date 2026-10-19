@@ -27,7 +27,8 @@ import {
   Image as ImageIcon,
   Volume2,
   Square,
-  FileAudio
+  FileAudio,
+  Check
 } from 'lucide-react';
 import { VISITA_TEMPLATES } from '../../services/siteVisitAIService';
 import confetti from 'canvas-confetti';
@@ -78,7 +79,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const [documentos, setDocumentos] = useState([]);
   const docFileInputRef = useRef(null);
 
-  // Captures (Only real uploaded photos from device / camera)
+  // Captures
   const [capturas, setCapturas] = useState([]);
   const [customPhotoUrl, setCustomPhotoUrl] = useState('');
   const [customPhotoTitle, setCustomPhotoTitle] = useState('');
@@ -88,6 +89,9 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [stepLabel, setStepLabel] = useState('');
+
+  // Structured Review State
+  const [generatedQuoteResult, setGeneratedQuoteResult] = useState(null);
 
   // Refine text via AI using historical reference budgets
   const handleRefineAudioWithAI = async () => {
@@ -148,7 +152,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     }
   };
 
-  // Documents upload handler
   const handleDocumentUpload = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -173,7 +176,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     showNotification('Documento eliminado del expediente.');
   };
 
-  // Switch template
   const handleSelectTemplate = (template) => {
     setSelectedTemplate(template);
     setIsManualMode(false);
@@ -187,10 +189,9 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     setAudioTranscript(template.audioMuestra);
     setAudioRefinedText('');
     setNotesRefinedText('');
-    // No se cargan fotos de muestra: solo se tendrán en cuenta las fotos subidas por el usuario
+    setGeneratedQuoteResult(null);
   };
 
-  // Upload local photos from device / camera
   const handleDevicePhotoUpload = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -212,7 +213,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     showNotification(`📸 ${files.length} foto(s) añadida(s) para análisis de la IA.`);
   };
 
-  // Delete a specific photo
   const handleDeleteCapture = (id) => {
     setCapturas(prev => {
       const target = prev.find(c => c.id === id);
@@ -226,7 +226,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     showNotification('Foto eliminada del expediente.');
   };
 
-  // Clear / Discard all photos
   const handleClearAllCaptures = () => {
     capturas.forEach(c => {
       if (c.isLocalBlob && c.url) {
@@ -265,7 +264,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     setIsProcessing(true);
     let effectiveTranscript = audioTranscript;
 
-    // Si hay archivo de audio y aún no se ha transcrito, transcribirlo primero
     if (audioFile && (!effectiveTranscript || !effectiveTranscript.trim())) {
       setStepLabel('Transcribiendo audio de la visita con IA...');
       try {
@@ -306,22 +304,24 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
         setStepLabel(progress.label);
       });
 
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.6 }
-      });
-
       setIsProcessing(false);
-      onClose();
-      if (onQuoteCreated) {
-        onQuoteCreated(newQuote);
-      }
+      setGeneratedQuoteResult(newQuote);
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      showNotification('✨ Análisis de IA finalizado. Revisa los conceptos estructurados antes de aplicarlos.');
     } catch (err) {
       console.error('Error generating quote from site visit', err);
       setIsProcessing(false);
       showNotification(`Error al procesar el expediente: ${err.message || 'Revisa la configuración del motor de IA'}`, 'error');
     }
+  };
+
+  const handleApplyStructuredQuote = () => {
+    if (!generatedQuoteResult) return;
+    onClose();
+    if (onQuoteCreated) {
+      onQuoteCreated(generatedQuoteResult);
+    }
+    showNotification(`¡Presupuesto ${generatedQuoteResult.numero} aplicado a la tabla con éxito!`);
   };
 
   return (
@@ -342,7 +342,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Captura unificada en campo: fotografías, grabación de voz, anotaciones, mediciones y documentos en una sola pantalla.
+                Captura unificada en campo: fotografías, grabación de voz, anotaciones, mediciones y JSON estructurado.
               </p>
             </div>
           </div>
@@ -369,7 +369,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               <p className="text-xs text-amber-400 font-mono font-semibold">{stepLabel}</p>
             </div>
 
-            {/* Stepper progress */}
             <div className="grid grid-cols-4 gap-2 w-full max-w-lg pt-4">
               {[
                 { s: 1, label: 'Transcripción Speech-to-Text' },
@@ -392,15 +391,109 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
             </div>
 
             <p className="text-[11px] text-slate-500 flex items-center justify-center gap-2 flex-wrap">
-              <span>Usando motor activo: <strong className="text-slate-300">{empresaConfig.aiConfig?.provider?.toUpperCase() || 'OPENAI'} ({empresaConfig.aiConfig?.modelName || 'gpt-4o'})</strong></span>
-              {activeRefBudgets.length > 0 && (
-                <span className="text-indigo-400 font-semibold">· 🧠 {activeRefBudgets.length} Presupuestos Modelo RAG Activos</span>
-              )}
+              <span>Usando motor activo: <strong className="text-slate-300">{empresaConfig.aiConfig?.provider?.toUpperCase() || 'GOOGLE'} ({empresaConfig.aiConfig?.modelName || 'gemini-1.5-flash'})</strong></span>
             </p>
           </div>
         )}
 
-        {!isProcessing && (
+        {/* Structured Review Screen (Requirement 3: Review and apply JSON response) */}
+        {!isProcessing && generatedQuoteResult && (
+          <div className="p-6 space-y-5 bg-slate-950/80 flex-1">
+            <div className="bg-emerald-950/30 border border-emerald-500/40 p-4 rounded-2xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">Respuesta Estructurada de Gemini Lista</h3>
+                  <p className="text-xs text-emerald-300/80">Revisa la propuesta técnica, observaciones e ítems antes de volcarlos al presupuesto.</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setGeneratedQuoteResult(null)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl transition"
+              >
+                Volver a Editar Visita
+              </button>
+            </div>
+
+            {/* Resumen General */}
+            {generatedQuoteResult.resumen && (
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-1.5">
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">Resumen General de la Obra</span>
+                <p className="text-xs text-slate-200 leading-relaxed">{generatedQuoteResult.resumen}</p>
+              </div>
+            )}
+
+            {/* Observaciones Técnicas */}
+            {generatedQuoteResult.observaciones_tecnicas && generatedQuoteResult.observaciones_tecnicas.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2">
+                <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">Observaciones Técnicas y Advertencias</span>
+                <ul className="space-y-1">
+                  {generatedQuoteResult.observaciones_tecnicas.map((obs, idx) => (
+                    <li key={idx} className="text-xs text-slate-300 flex items-start gap-2">
+                      <span className="text-indigo-400 font-bold">•</span>
+                      <span>{obs}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Tabla de Conceptos e Ítems */}
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                  Conceptos Sugeridos ({generatedQuoteResult.conceptos?.length || generatedQuoteResult.partidas?.length || 0} ítems)
+                </span>
+                <span className="text-xs font-mono font-bold text-amber-400">
+                  Total Estimado: {generatedQuoteResult.totalConIva?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300 border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
+                      <th className="py-2 px-2">Cód</th>
+                      <th className="py-2 px-2">Descripción del Concepto</th>
+                      <th className="py-2 px-2 text-center">Unidad</th>
+                      <th className="py-2 px-2 text-right">Cantidad</th>
+                      <th className="py-2 px-2 text-right">Precio Sugerido</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {(generatedQuoteResult.conceptos || generatedQuoteResult.partidas || []).map((c, i) => (
+                      <tr key={i} className="hover:bg-slate-800/40">
+                        <td className="py-2 px-2 font-mono text-[11px] text-amber-400 font-bold">{c.codigo || `PAR-${i+1}`}</td>
+                        <td className="py-2 px-2 text-slate-200">{c.descripcion || c.concepto}</td>
+                        <td className="py-2 px-2 text-center font-mono">{c.unidad}</td>
+                        <td className="py-2 px-2 text-right font-mono">{c.cantidad}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-emerald-400">
+                          {(c.precio_unitario_sugerido || c.precioVenta || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Apply Button */}
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleApplyStructuredQuote}
+                className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-emerald-500/20 flex items-center gap-2 active:scale-95"
+              >
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>Aplicar Conceptos al Presupuesto Final</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isProcessing && !generatedQuoteResult && (
           <div className="p-5 sm:p-6 space-y-6 flex-1">
             
             {/* Quick Preset Selector */}
@@ -742,7 +835,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                 </div>
 
                 <div className="flex items-center gap-2 self-start sm:self-auto">
-                  {/* Upload from device / camera */}
                   <input
                     type="file"
                     ref={photoFileInputRef}
@@ -760,7 +852,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                     <span>Subir Fotos</span>
                   </button>
 
-                  {/* Clear all photos */}
                   {capturas.length > 0 && (
                     <button
                       type="button"
@@ -802,7 +893,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                           {cap.tipo === 'croquis' ? '📐 Croquis Láser' : '📷 Estado Actual'}
                         </span>
 
-                        {/* Direct Delete / Discard Photo Button */}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -947,7 +1037,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
         )}
 
         {/* Footer Actions */}
-        {!isProcessing && (
+        {!isProcessing && !generatedQuoteResult && (
           <div className="p-5 border-t border-slate-800 bg-slate-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 sticky bottom-0">
             <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
