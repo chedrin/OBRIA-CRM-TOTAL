@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DEFAULT_GEMINI_MODEL, GEMINI_MODELS, checkAndAutoSelectBestGeminiModel, testGeminiConnection } from '../../services/geminiService';
+import { DEFAULT_GEMINI_MODEL, testGeminiConnection, checkAndAutoSelectBestGeminiModel } from '../../services/geminiService';
 import { checkBackendStatus, getBackendAiSettings, updateBackendAiSettings, testBackendAiConnection } from '../../services/backendAiService';
 import { supabase } from '../../services/supabaseClient';
 import {
@@ -12,16 +12,10 @@ import {
   Eye,
   EyeOff,
   Zap,
-  Cpu,
   RefreshCw,
   Server,
-  Camera,
-  Mic,
-  MessageSquare,
-  FileSpreadsheet,
   ExternalLink,
   Lock,
-  Check,
   Sliders,
   SearchCheck
 } from 'lucide-react';
@@ -32,9 +26,8 @@ const PROVIDERS = [
     id: 'google',
     name: 'Google Gemini',
     logo: '✨',
-    badge: 'Multimodal Nativo',
-    defaultModel: DEFAULT_GEMINI_MODEL,
-    models: GEMINI_MODELS,
+    badge: 'Multimodal Nativo (gemini-1.5-flash)',
+    defaultModel: 'gemini-1.5-flash',
     keyPrefix: 'AIza',
     helpUrl: 'https://aistudio.google.com/app/apikey'
   },
@@ -44,11 +37,6 @@ const PROVIDERS = [
     logo: '⚡',
     badge: 'Líder Multimodal',
     defaultModel: 'gpt-4o',
-    models: [
-      { id: 'gpt-4o', label: 'GPT-4o (Visión & Razonamiento Técnico)', speed: 'Muy Rápido', context: '128k' },
-      { id: 'gpt-4o-mini', label: 'GPT-4o Mini (Económico · Partes de Obra)', speed: 'Ultrarrápido', context: '128k' },
-      { id: 'o3-mini', label: 'o3-mini (Cálculo y Mediciones Complejas)', speed: 'Medio', context: '200k' }
-    ],
     keyPrefix: 'sk-',
     helpUrl: 'https://platform.openai.com/api-keys'
   },
@@ -58,11 +46,6 @@ const PROVIDERS = [
     logo: '🧠',
     badge: 'Máxima Precisión',
     defaultModel: 'claude-3-5-sonnet-20241022',
-    models: [
-      { id: 'claude-3-7-sonnet', label: 'Claude 3.7 Sonnet (Pensamiento Extendido)', speed: 'Muy Rápido', context: '200k' },
-      { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet (Análisis de Planos y Pliegos)', speed: 'Rápido', context: '200k' },
-      { id: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku (Respuestas Instantáneas)', speed: 'Instantáneo', context: '200k' }
-    ],
     keyPrefix: 'sk-ant-',
     helpUrl: 'https://console.anthropic.com/settings/keys'
   },
@@ -71,13 +54,7 @@ const PROVIDERS = [
     name: 'OpenRouter',
     logo: '🌐',
     badge: 'Multi-Modelo Universal',
-    defaultModel: 'google/gemini-2.5-flash',
-    models: [
-      { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (Vía OpenRouter)', speed: 'Ultrarrápido', context: '1M tokens' },
-      { id: 'openai/gpt-4o', label: 'GPT-4o (Vía OpenRouter)', speed: 'Muy Rápido', context: '128k' },
-      { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Vía OpenRouter)', speed: 'Rápido', context: '200k' },
-      { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3 (Vía OpenRouter)', speed: 'Rápido', context: '64k' }
-    ],
+    defaultModel: 'google/gemini-1.5-flash',
     keyPrefix: 'sk-or-',
     helpUrl: 'https://openrouter.ai/keys'
   }
@@ -88,7 +65,6 @@ export default function MotorIaConfig() {
 
   const [provider, setProvider] = useState('google');
   const [apiKey, setApiKey] = useState('');
-  const [modelName, setModelName] = useState(DEFAULT_GEMINI_MODEL);
   const [temperature, setTemperature] = useState(0.15);
   const [maxTokens, setMaxTokens] = useState(4096);
   const [showKey, setShowKey] = useState(false);
@@ -109,7 +85,6 @@ export default function MotorIaConfig() {
       const saved = await getBackendAiSettings();
       if (saved) {
         if (saved.provider) setProvider(saved.provider);
-        if (saved.model) setModelName(saved.model);
         if (saved.apiKey) setApiKey(saved.apiKey);
         if (saved.temperature !== undefined) setTemperature(saved.temperature);
         if (saved.maxTokens !== undefined) setMaxTokens(saved.maxTokens);
@@ -125,20 +100,16 @@ export default function MotorIaConfig() {
 
   const handleProviderChange = (newProvider) => {
     setProvider(newProvider);
-    const pObj = PROVIDERS.find(p => p.id === newProvider);
-    if (pObj) {
-      setModelName(pObj.defaultModel);
-    }
     setTestResult(null);
     setGeminiCheckResult(null);
   };
 
-  const updateSupabaseAiStatus = async (status, keyToSave = apiKey, modelToSave = modelName) => {
+  const updateSupabaseAiStatus = async (status, keyToSave = apiKey) => {
     try {
       await supabase.from('ai_integration_settings').upsert({
         provider: provider || 'google',
         encrypted_api_key: keyToSave,
-        model_name: modelToSave,
+        model_name: 'gemini-1.5-flash',
         is_active: status === 'active',
         last_tested_at: new Date().toISOString()
       });
@@ -157,13 +128,15 @@ export default function MotorIaConfig() {
     setGeminiCheckResult(null);
     setTestResult(null);
 
+    const fixedModel = 'gemini-1.5-flash';
+
     try {
       let res;
       try {
         const fetchRes = await fetch('/api/ai/check-gemini-api', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: apiKey.trim() })
+          body: JSON.stringify({ apiKey: apiKey.trim(), model: fixedModel })
         });
         if (fetchRes.ok) {
           res = await fetchRes.json();
@@ -173,27 +146,25 @@ export default function MotorIaConfig() {
       }
 
       if (!res || !res.success) {
-        res = await checkAndAutoSelectBestGeminiModel(apiKey.trim());
+        res = await checkAndAutoSelectBestGeminiModel(apiKey.trim(), fixedModel);
       }
 
-      const optimalModel = res.activeModel || DEFAULT_GEMINI_MODEL;
       setProvider('google');
-      setModelName(optimalModel);
 
       await updateBackendAiSettings({
         provider: 'google',
         apiKey: apiKey.trim(),
-        model: optimalModel,
+        model: fixedModel,
         temperature,
         maxTokens
       });
 
-      await updateSupabaseAiStatus('active', apiKey.trim(), optimalModel);
+      await updateSupabaseAiStatus('active', apiKey.trim());
 
       updateAiConfig({
         provider: 'google',
         apiKey: apiKey.trim(),
-        modelName: optimalModel,
+        modelName: fixedModel,
         temperature,
         maxTokens,
         isActive: true,
@@ -205,19 +176,19 @@ export default function MotorIaConfig() {
       setGeminiCheckResult({
         success: true,
         provider: 'Google Gemini',
-        activeModel: optimalModel,
+        activeModel: fixedModel,
         status: 'Operativo',
-        formattedOutput: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo: ${optimalModel}\nEstado: Operativo`
+        formattedOutput: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo: ${fixedModel}\nEstado: Operativo`
       });
 
       confetti({ particleCount: 50, spread: 60 });
-      showNotification(`API Gemini verificada. Modelo "${optimalModel}" seleccionado y estado activado en Supabase.`, 'success');
+      showNotification(`API Gemini verificada exitosamente con gemini-1.5-flash. Estado activado en Supabase.`, 'success');
     } catch (err) {
       setCheckingGemini(false);
       await updateSupabaseAiStatus('error');
       setGeminiCheckResult({
         success: false,
-        error: err.message || 'No ha sido posible conectar con la IA. Revise la clave o seleccione un modelo válido.'
+        error: err.message || 'No ha sido posible conectar con la IA. Revise la clave introducida.'
       });
       showNotification(err.message || 'Error al conectar con la API de Gemini', 'error');
     }
@@ -227,22 +198,24 @@ export default function MotorIaConfig() {
     setTesting(true);
     setTestResult(null);
 
+    const fixedModel = 'gemini-1.5-flash';
+
     try {
       let res;
       if (provider === 'google') {
-        res = await testGeminiConnection(apiKey.trim(), modelName);
+        res = await testGeminiConnection(apiKey.trim(), fixedModel);
       } else {
         res = await testBackendAiConnection({
           provider,
           apiKey: apiKey.trim(),
-          model: modelName,
+          model: fixedModel,
           temperature,
           maxTokens
         });
       }
 
       setTesting(false);
-      await updateSupabaseAiStatus('active');
+      await updateSupabaseAiStatus('active', apiKey.trim());
 
       setTestResult({
         success: true,
@@ -250,14 +223,14 @@ export default function MotorIaConfig() {
         message: res.message || 'Conexión verificada exitosamente'
       });
       confetti({ particleCount: 40, spread: 50 });
-      showNotification('Conexión con la API de IA verificada y guardada como activa en Supabase', 'success');
+      showNotification(`Conexión con gemini-1.5-flash verificada exitosamente`, 'success');
     } catch (err) {
       setTesting(false);
       await updateSupabaseAiStatus('error');
 
       setTestResult({
         success: false,
-        error: err.message || 'No ha sido posible conectar con la IA. Revise la configuración de la API.'
+        error: err.message || 'No ha sido posible conectar con la IA. Revise la clave de la API.'
       });
       showNotification(err.message || 'Error en prueba de conexión con la IA', 'error');
     }
@@ -267,11 +240,13 @@ export default function MotorIaConfig() {
     e.preventDefault();
     setSaving(true);
 
+    const fixedModel = 'gemini-1.5-flash';
+
     try {
       await updateBackendAiSettings({
         provider,
         apiKey: apiKey.trim(),
-        model: modelName,
+        model: fixedModel,
         temperature,
         maxTokens
       });
@@ -281,7 +256,7 @@ export default function MotorIaConfig() {
       updateAiConfig({
         provider,
         apiKey: apiKey.trim(),
-        modelName,
+        modelName: fixedModel,
         temperature,
         maxTokens,
         isActive: true,
@@ -290,7 +265,7 @@ export default function MotorIaConfig() {
       });
 
       setSaving(false);
-      showNotification('Configuración de la API Key de Gemini y estado actualizados en Supabase y Servidor', 'success');
+      showNotification('API Key de Gemini guardada correctamente en Supabase y Servidor', 'success');
       confetti({ particleCount: 30, spread: 40 });
     } catch (err) {
       setSaving(false);
@@ -310,13 +285,13 @@ export default function MotorIaConfig() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-base sm:text-lg font-black text-white">Motor Central de IA (Google Gemini / Supabase)</span>
+                <span className="text-base sm:text-lg font-black text-white">Motor Central de IA (Google Gemini)</span>
                 <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-mono font-bold">
-                  SUPABASE SYNC
+                  gemini-1.5-flash
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Configura tu clave API de Google Gemini (`gemini-1.5-flash` / `gemini-1.5-pro`). Se almacena de forma segura en Supabase (`ai_integration_settings`).
+                Simplemente introduce tu API Key de Google Gemini. El sistema utiliza automáticamente el modelo óptimo <code className="text-amber-400">gemini-1.5-flash</code> para todas las operaciones.
               </p>
             </div>
           </div>
@@ -327,7 +302,7 @@ export default function MotorIaConfig() {
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
             }`}>
-              <span>{apiKey && apiKey.trim() ? '🟢 API Key Lista' : '🔴 API Key Requerida'}</span>
+              <span>{apiKey && apiKey.trim() ? '🟢 API Key Configurada' : '🔴 API Key Requerida'}</span>
             </span>
           </div>
         </div>
@@ -338,7 +313,7 @@ export default function MotorIaConfig() {
             <div className="flex items-center gap-2">
               <Server className="w-4 h-4 text-amber-400" />
               <span className="font-bold text-white text-xs">
-                Proveedor Activo: <span className="text-amber-400 font-mono uppercase">{provider}</span> ({modelName})
+                Proveedor Activo: <span className="text-amber-400 font-mono uppercase">{provider}</span> (gemini-1.5-flash)
               </span>
             </div>
 
@@ -364,7 +339,7 @@ export default function MotorIaConfig() {
             </div>
             <div>
               <h4 className="font-extrabold text-white text-sm">Ajustes del Motor de Inteligencia Artificial</h4>
-              <p className="text-[11px] text-slate-400">Introduce la API Key de Google Gemini y selecciona el modelo (`gemini-1.5-flash` o `gemini-1.5-pro`)</p>
+              <p className="text-[11px] text-slate-400">Introduce tu API Key para activar las funciones de IA</p>
             </div>
           </div>
 
@@ -406,7 +381,6 @@ export default function MotorIaConfig() {
                   </div>
                   <div>
                     <h5 className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-300'}`}>{p.name}</h5>
-                    <span className="text-[10px] text-slate-500 block truncate">{p.defaultModel}</span>
                   </div>
                 </button>
               );
@@ -414,66 +388,41 @@ export default function MotorIaConfig() {
           </div>
         </div>
 
-        {/* Campo API Key & Selector de Modelo */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          
-          {/* API Key tipo Password */}
-          <div className="space-y-1.5 text-xs">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-slate-300 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                <span>API Key de {selectedProviderObj.name} (Password) *</span>
-              </label>
-              <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" />
-                <span>Supabase Sync</span>
-              </span>
-            </div>
-
-            <div className="relative">
-              <input
-                type={showKey ? 'text' : 'password'}
-                required
-                value={apiKey}
-                onChange={(e) => {
-                  setApiKey(e.target.value);
-                  setTestResult(null);
-                  setGeminiCheckResult(null);
-                }}
-                placeholder={`Introduce tu clave (${selectedProviderObj.keyPrefix}...)`}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3 pr-10 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-1"
-                title={showKey ? 'Ocultar clave' : 'Mostrar clave'}
-              >
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+        {/* Campo API Key solamente */}
+        <div className="space-y-1.5 text-xs">
+          <div className="flex items-center justify-between">
+            <label className="font-bold text-slate-300 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>API Key de {selectedProviderObj.name} *</span>
+            </label>
+            <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" />
+              <span>Supabase Sync</span>
+            </span>
           </div>
 
-          {/* Selector de Modelo */}
-          <div className="space-y-1.5 text-xs">
-            <label className="font-bold text-slate-300 block">Modelo de IA:</label>
-            <select
-              value={modelName}
+          <div className="relative">
+            <input
+              type={showKey ? 'text' : 'password'}
+              required
+              value={apiKey}
               onChange={(e) => {
-                setModelName(e.target.value);
+                setApiKey(e.target.value);
                 setTestResult(null);
                 setGeminiCheckResult(null);
               }}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-semibold text-xs focus:outline-none focus:border-amber-400"
+              placeholder={`Introduce tu clave (${selectedProviderObj.keyPrefix}...)`}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3 pr-10 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-1"
+              title={showKey ? 'Ocultar clave' : 'Mostrar clave'}
             >
-              {selectedProviderObj.models.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.label} · {m.speed}
-                </option>
-              ))}
-            </select>
+              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
           </div>
-
         </div>
 
         {/* Temperatura y Tokens Máximos */}
@@ -543,7 +492,7 @@ export default function MotorIaConfig() {
                 )}
                 <span className="font-bold">
                   {testResult.success
-                    ? `¡Conexión Exitosa con ${selectedProviderObj.name}! Ping PONG (HTTP 200 OK)`
+                    ? `¡Conexión Exitosa con ${selectedProviderObj.name}! (gemini-1.5-flash) Ping PONG (HTTP 200 OK)`
                     : testResult.error}
                 </span>
               </div>
@@ -566,7 +515,7 @@ export default function MotorIaConfig() {
               className="px-4 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl transition border border-amber-500/40 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {checkingGemini ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" /> : <SearchCheck className="w-3.5 h-3.5 text-amber-400" />}
-              <span>{checkingGemini ? 'Verificando modelos...' : 'Comprobar API Gemini'}</span>
+              <span>{checkingGemini ? 'Verificando...' : 'Comprobar API Gemini'}</span>
             </button>
 
             <button

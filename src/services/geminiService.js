@@ -5,8 +5,11 @@
  * 1. SDK Support: Official @google/genai SDK integration
  * 2. Credential provider: Fetches API Key from Supabase (`ai_integration_settings` / `company_settings`)
  *    with fallback to environment variable `VITE_GEMINI_API_KEY`.
- * 3. Model selection: Default model `gemini-1.5-flash` with support for `gemini-1.5-pro`.
- * 4. Fallback cascade chain: gemini-1.5-flash -> gemini-2.5-flash -> gemini-1.5-pro
+ * 3. Model selection:
+ *    - gemini-1.5-flash (Ultrarrápido - Recomendado)
+ *    - gemini-1.5-pro (Razonamiento complejo / Presupuestos extensos)
+ *    - gemini-3.8-flash
+ * 4. Fallback cascade chain: gemini-1.5-flash -> gemini-3.8-flash -> gemini-1.5-pro
  * 5. Detailed console logging and robust error handling for 401, 403, 429, and timeouts.
  */
 
@@ -20,14 +23,14 @@ export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
 
 export const GEMINI_FALLBACK_CASCADE = [
   'gemini-1.5-flash',
-  'gemini-2.5-flash',
+  'gemini-3.8-flash',
   'gemini-1.5-pro'
 ];
 
 export const GEMINI_MODELS = [
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Ultrarrápido · Modelo Predeterminado)', speed: 'Ultrarrápido', context: '1M tokens' },
-  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Razonamiento complejo · Mediciones extensas)', speed: 'Rápido', context: '2M tokens' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Generación Multimodal)', speed: 'Ultrarrápido', context: '1M tokens' }
+  { id: 'gemini-1.5-flash', label: 'gemini-1.5-flash (Ultrarrápido - Recomendado)', speed: 'Ultrarrápido', context: '1M tokens' },
+  { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro (Razonamiento complejo / Presupuestos extensos)', speed: 'Rápido', context: '2M tokens' },
+  { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash', speed: 'Ultrarrápido', context: '1M tokens' }
 ];
 
 export const USER_FRIENDLY_AI_ERROR = 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.';
@@ -115,30 +118,21 @@ export async function fetchAvailableGeminiModels(apiKeyInput = '') {
 /**
  * Checks Gemini API key, discovers available models, and auto-selects best compatible model
  */
-export async function checkAndAutoSelectBestGeminiModel(apiKeyInput = '') {
+export async function checkAndAutoSelectBestGeminiModel(apiKeyInput = '', modelInput = DEFAULT_GEMINI_MODEL) {
   const apiKey = await getGeminiApiKey(apiKeyInput);
   if (!apiKey) {
     throw new Error('Se requiere una API Key para probar la conexión con Gemini.');
   }
 
+  const selectedModel = normalizeGeminiModel(modelInput) || DEFAULT_GEMINI_MODEL;
+
   try {
-    const available = await fetchAvailableGeminiModels(apiKey);
-    const availableIds = available.map(m => m.id);
-
-    let selectedModel = GEMINI_FALLBACK_CASCADE.find(m => availableIds.includes(m));
-
-    if (!selectedModel) {
-      selectedModel = availableIds.find(id => id.includes('flash')) || availableIds[0] || DEFAULT_GEMINI_MODEL;
-    }
-
     const testRes = await testGeminiConnection(apiKey, selectedModel);
 
     return {
       success: true,
       provider: 'Google Gemini',
       activeModel: testRes.model || selectedModel,
-      availableModelsCount: available.length,
-      availableModels: availableIds,
       latencyMs: testRes.latencyMs,
       message: testRes.message,
       statusMessage: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo: ${testRes.model || selectedModel}\nEstado: Operativo`
@@ -157,10 +151,10 @@ export function normalizeGeminiModel(rawModel) {
   const cleaned = rawModel.trim().toLowerCase();
 
   if (cleaned.includes('1.5-pro') || cleaned.includes('pro')) return 'gemini-1.5-pro';
+  if (cleaned.includes('3.8')) return 'gemini-3.8-flash';
   if (cleaned.includes('1.5-flash') || cleaned.includes('1.5')) return 'gemini-1.5-flash';
-  if (cleaned.includes('2.5')) return 'gemini-2.5-flash';
 
-  return DEFAULT_GEMINI_MODEL;
+  return cleaned || DEFAULT_GEMINI_MODEL;
 }
 
 /**
@@ -284,7 +278,7 @@ async function executeGeminiRequestWithFallback({ apiKeyInput, model, payload })
 
 /**
  * Pings Google Gemini API to test connection and measure latency
- * Direct REST endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}
+ * Endpoint: https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}
  * Payload: { "contents": [{ "parts": [{ "text": "ping" }] }] }
  */
 export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEMINI_MODEL) {
@@ -316,7 +310,7 @@ export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEM
     if (response.ok) {
       const data = await response.json();
       const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text || 'PONG';
-      console.log(`[Gemini Ping Success] Status ${response.status}, Latency: ${elapsedMs}ms, Response:`, rawContent);
+      console.log(`[Gemini Ping Success] Model: ${targetModel}, Status ${response.status}, Latency: ${elapsedMs}ms, Response:`, rawContent);
       return {
         success: true,
         latencyMs: elapsedMs,
@@ -331,7 +325,7 @@ export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEM
       detailMsg = errJson.error?.message || detailMsg;
     } catch (e) {}
 
-    console.error(`[Gemini Ping Failure] Status: ${response.status}, StatusText: ${response.statusText}, Details:`, detailMsg);
+    console.error(`[Gemini Ping Failure] Model: ${targetModel}, Status: ${response.status}, StatusText: ${response.statusText}, Details:`, detailMsg);
     handleGeminiHttpError(response.status, detailMsg);
   } catch (err) {
     console.error('[Gemini Connection Test Exception]', err.message || err);

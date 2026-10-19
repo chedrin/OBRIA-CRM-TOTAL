@@ -63,7 +63,7 @@ async function runMigration() {
     const { error: aiErr } = await supabase.from('ai_integration_settings').upsert({
       provider: INITIAL_EMPRESA_CONFIG.aiConfig?.provider || 'google',
       encrypted_api_key: INITIAL_EMPRESA_CONFIG.aiConfig?.apiKey || '',
-      model_name: INITIAL_EMPRESA_CONFIG.aiConfig?.modelName || 'gemini-2.5-flash',
+      model_name: INITIAL_EMPRESA_CONFIG.aiConfig?.modelName || 'gemini-1.5-flash',
       is_active: true,
       last_tested_at: new Date().toISOString()
     });

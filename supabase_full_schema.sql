@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS public.ai_integration_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider VARCHAR(50) NOT NULL DEFAULT 'google',
   encrypted_api_key TEXT NOT NULL,
-  model_name VARCHAR(50) DEFAULT 'gemini-2.5-flash',
+  model_name VARCHAR(50) DEFAULT 'gemini-1.5-flash',
   is_active BOOLEAN DEFAULT true,
   last_tested_at TIMESTAMP WITH TIME ZONE,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
