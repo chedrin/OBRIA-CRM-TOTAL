@@ -34,6 +34,7 @@ import { VISITA_TEMPLATES } from '../../services/siteVisitAIService';
 import confetti from 'canvas-confetti';
 import { processScopeWithAI, transcribeAudio } from '../../services/aiAudioTextService';
 import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
+import AiImprovementControl from '../Common/AiImprovementControl';
 
 export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const {
@@ -577,43 +578,15 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                 />
 
                 <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-2xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Mejora Inteligente de Transcripción</span>
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={handleRefineAudioWithAI}
-                      disabled={isRefiningAudio || !audioTranscript?.trim()}
-                      className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 transition shadow-sm shadow-amber-500/20 active:scale-95 disabled:opacity-50"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
-                      <span>{isRefiningAudio ? 'Mejorando...' : '✨ Mejorar con IA'}</span>
-                    </button>
-                  </div>
-
-                  {audioRefinedText && (
-                    <div className="bg-slate-900 border border-amber-500/30 p-3 rounded-xl space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-400 font-bold border-b border-amber-500/20 pb-1.5">
-                        <span>VERSIÓN TÉCNICA IA</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAudioTranscript(audioRefinedText);
-                              showNotification('Sustituido con éxito');
-                            }}
-                            className="text-[11px] bg-amber-500 text-slate-950 font-black px-2 py-0.5 rounded transition"
-                          >
-                            Sustituir Original
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs text-slate-200 font-medium leading-relaxed">{audioRefinedText}</p>
-                    </div>
-                  )}
+                  <AiImprovementControl
+                    value={audioTranscript}
+                    onAccept={(improved) => {
+                      setAudioTranscript(improved);
+                      setAudioRefinedText(improved);
+                    }}
+                    context="Transcripción y notas de voz de visita de obra"
+                    buttonLabel="Mejorar Transcripción con IA"
+                  />
                 </div>
               </div>
 
@@ -624,26 +597,15 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                     <FileText className="w-3.5 h-3.5 text-indigo-400" />
                     <span>📝 Anotaciones, Mensajes de WhatsApp o Correo</span>
                   </span>
-                  <div className="flex items-center gap-2">
-                    {complementaryText && (
-                      <button
-                        type="button"
-                        onClick={() => { setComplementaryText(''); setNotesRefinedText(''); }}
-                        className="text-[10px] text-slate-500 hover:text-rose-400 transition"
-                      >
-                        Limpiar notas
-                      </button>
-                    )}
+                  {complementaryText && (
                     <button
                       type="button"
-                      onClick={handleRefineNotesWithAI}
-                      disabled={isRefiningNotes || !complementaryText?.trim()}
-                      className="px-3 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                      onClick={() => { setComplementaryText(''); setNotesRefinedText(''); }}
+                      className="text-[10px] text-slate-500 hover:text-rose-400 transition"
                     >
-                      <Sparkles className="w-3 h-3 text-indigo-400" />
-                      <span>{isRefiningNotes ? 'Mejorando...' : '✨ Mejorar con IA'}</span>
+                      Limpiar notas
                     </button>
-                  </div>
+                  )}
                 </div>
 
                 <textarea
@@ -656,6 +618,17 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   placeholder="Pega mensajes de WhatsApp, correos del cliente o notas in situ..."
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition"
                 ></textarea>
+
+                <AiImprovementControl
+                  value={complementaryText}
+                  onAccept={(improved) => {
+                    setComplementaryText(improved);
+                    setNotesRefinedText(improved);
+                  }}
+                  context="Anotaciones, mediciones y alcance de la obra"
+                  buttonLabel="Mejorar Notas con IA"
+                  buttonSize="small"
+                />
               </div>
 
               {/* Mediciones Manuales */}

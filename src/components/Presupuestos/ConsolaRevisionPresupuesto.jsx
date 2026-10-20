@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
 import confetti from 'canvas-confetti';
+import AiImprovementControl from '../Common/AiImprovementControl';
 
 export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
   const {
@@ -479,55 +480,67 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
         </div>
 
         {/* Input Bar with Mic */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleExecuteVoiceCommand();
-          }}
-          className="flex items-center gap-2"
-        >
-          {/* Speech Mic Button */}
-          <button
-            type="button"
-            onClick={toggleSpeechRecognition}
-            className={`p-2.5 rounded-xl transition flex items-center justify-center shrink-0 ${
-              isListening
-                ? 'bg-rose-600 text-white animate-pulse shadow-lg shadow-rose-600/30'
-                : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30'
-            }`}
-            title="Dictar ajuste por voz"
+        <div className="space-y-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleExecuteVoiceCommand();
+            }}
+            className="flex items-center gap-2"
           >
-            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          </button>
+            {/* Speech Mic Button */}
+            <button
+              type="button"
+              onClick={toggleSpeechRecognition}
+              className={`p-2.5 rounded-xl transition flex items-center justify-center shrink-0 ${
+                isListening
+                  ? 'bg-rose-600 text-white animate-pulse shadow-lg shadow-rose-600/30'
+                  : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30'
+              }`}
+              title="Dictar ajuste por voz"
+            >
+              {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            </button>
 
-          {/* Text Input */}
-          <input
-            type="text"
-            value={voiceCommand}
-            onChange={(e) => setVoiceCommand(e.target.value)}
-            placeholder="Habla o escribe un ajuste (ej: 'Sube los mecanismos a Schneider D-Life y añade 5% en demolición')..."
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
-          />
+            {/* Text Input */}
+            <input
+              type="text"
+              value={voiceCommand}
+              onChange={(e) => setVoiceCommand(e.target.value)}
+              placeholder="Habla o escribe un ajuste (ej: 'Sube los mecanismos a Schneider D-Life y añade 5% en demolición')..."
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+            />
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isApplyingVoice || !voiceCommand.trim()}
-            className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center gap-1.5 shrink-0 transition active:scale-95 shadow-md shadow-amber-500/20"
-          >
-            {isApplyingVoice ? (
-              <>
-                <Sparkles className="w-4 h-4 animate-spin" />
-                <span className="hidden sm:inline">Calculando...</span>
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4 fill-slate-950" />
-                <span>Aplicar Ajuste</span>
-              </>
-            )}
-          </button>
-        </form>
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isApplyingVoice || !voiceCommand.trim()}
+              className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center gap-1.5 shrink-0 transition active:scale-95 shadow-md shadow-amber-500/20"
+            >
+              {isApplyingVoice ? (
+                <>
+                  <Sparkles className="w-4 h-4 animate-spin" />
+                  <span className="hidden sm:inline">Calculando...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 fill-slate-950" />
+                  <span>Aplicar Ajuste</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          {voiceCommand && (
+            <AiImprovementControl
+              value={voiceCommand}
+              onAccept={(improved) => setVoiceCommand(improved)}
+              context="Ajuste o partida de presupuesto"
+              buttonLabel="Mejorar Instrucción con IA"
+              buttonSize="small"
+            />
+          )}
+        </div>
 
       </div>
 

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "log-1792505987752-a7h9h",
+    "timestamp": "2026-10-20T14:19:47.752Z",
+    "provider": "google",
+    "model": "gemini-1.5-flash",
+    "action": "/api/ai/improve-text",
+    "latencyMs": 0,
+    "success": false,
+    "error": "No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.",
+    "tokensUsed": 0,
+    "estimatedCostUsd": "0.000000"
+  }
+]

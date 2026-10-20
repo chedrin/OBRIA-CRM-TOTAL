@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import ObraDetail from './ObraDetail';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
+import AiImprovementControl from '../Common/AiImprovementControl';
 import {
   HardHat,
   Plus,
@@ -513,7 +514,7 @@ export default function ObrasList() {
                 </div>
 
                 <div>
-                  <label className="text-slate-400 block mb-1 font-medium">Observaciones de la Obra</label>
+                  <label className="text-slate-400 block mb-1 font-medium">Observaciones y Descripción de la Obra</label>
                   <textarea
                     rows="2"
                     placeholder="Detalles sobre licencias, accesos, llaves..."
@@ -521,6 +522,15 @@ export default function ObrasList() {
                     onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                   ></textarea>
+                  <div className="mt-2">
+                    <AiImprovementControl
+                      value={formData.notas}
+                      onAccept={(improved) => setFormData({ ...formData, notas: improved })}
+                      context="Observaciones y especificaciones de obra"
+                      buttonLabel="Mejorar Descripción con IA"
+                      buttonSize="small"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">

@@ -64,12 +64,23 @@ const PROVIDERS = [
 export default function MotorIaConfig() {
   const { empresaConfig, updateAiConfig, showNotification } = useApp();
 
-  const [provider, setProvider] = useState('google');
-  const [apiKey, setApiKey] = useState('');
+  const [activeProvider, setActiveProvider] = useState('google');
+  const [selectedProvider, setSelectedProvider] = useState('google');
+  const [apiKeys, setApiKeys] = useState({
+    google: '',
+    openai: '',
+    anthropic: '',
+    openrouter: ''
+  });
   const [modelName, setModelName] = useState(DEFAULT_GEMINI_MODEL);
   const [temperature, setTemperature] = useState(0.15);
   const [maxTokens, setMaxTokens] = useState(4096);
-  const [showKey, setShowKey] = useState(false);
+  const [showKeys, setShowKeys] = useState({
+    google: false,
+    openai: false,
+    anthropic: false,
+    openrouter: false
+  });
   const [testing, setTesting] = useState(false);
   const [checkingGemini, setCheckingGemini] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -86,12 +97,35 @@ export default function MotorIaConfig() {
     if (res.isAvailable) {
       const saved = await getBackendAiSettings();
       if (saved) {
-        if (saved.provider) setProvider(saved.provider);
+        const currentActive = saved.provider || 'google';
+        setActiveProvider(currentActive);
+        setSelectedProvider(currentActive);
+
+        const loadedKeys = {
+          google: saved.apiKeys?.google || (currentActive === 'google' ? saved.apiKey : '') || '',
+          openai: saved.apiKeys?.openai || (currentActive === 'openai' ? saved.apiKey : '') || '',
+          anthropic: saved.apiKeys?.anthropic || (currentActive === 'anthropic' ? saved.apiKey : '') || '',
+          openrouter: saved.apiKeys?.openrouter || (currentActive === 'openrouter' ? saved.apiKey : '') || ''
+        };
+
+        if (saved.apiKey && !loadedKeys[currentActive]) {
+          loadedKeys[currentActive] = saved.apiKey;
+        }
+
+        setApiKeys(loadedKeys);
         if (saved.model) setModelName(saved.model);
-        if (saved.apiKey) setApiKey(saved.apiKey);
         if (saved.temperature !== undefined) setTemperature(saved.temperature);
         if (saved.maxTokens !== undefined) setMaxTokens(saved.maxTokens);
       }
+    } else {
+      const appAi = empresaConfig?.aiConfig || {};
+      const currentActive = appAi.provider || 'google';
+      setActiveProvider(currentActive);
+      setSelectedProvider(currentActive);
+      if (appAi.apiKey) {
+        setApiKeys(prev => ({ ...prev, [currentActive]: appAi.apiKey }));
+      }
+      if (appAi.modelName || appAi.model) setModelName(appAi.modelName || appAi.model);
     }
   };
 
@@ -99,18 +133,46 @@ export default function MotorIaConfig() {
     loadSettingsFromBackend();
   }, []);
 
-  const selectedProviderObj = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0];
+  const selectedProviderObj = PROVIDERS.find(p => p.id === selectedProvider) || PROVIDERS[0];
+  const activeProviderObj = PROVIDERS.find(p => p.id === activeProvider) || PROVIDERS[0];
+  const currentKey = apiKeys[selectedProvider] || '';
 
   const handleProviderChange = (newProvider) => {
-    setProvider(newProvider);
+    setSelectedProvider(newProvider);
+    setTestResult(null);
+    setGeminiCheckResult(null);
+    const pObj = PROVIDERS.find(p => p.id === newProvider);
+    if (pObj && pObj.defaultModel) {
+      setModelName(pObj.defaultModel);
+    }
+  };
+
+  const handleKeyChange = (val) => {
+    setApiKeys(prev => ({
+      ...prev,
+      [selectedProvider]: val
+    }));
     setTestResult(null);
     setGeminiCheckResult(null);
   };
 
-  const updateSupabaseAiStatus = async (status, keyToSave = apiKey, modelToSave = modelName) => {
+  const toggleShowKey = (provId) => {
+    setShowKeys(prev => ({
+      ...prev,
+      [provId]: !prev[provId]
+    }));
+  };
+
+  const handleSetActiveProvider = (provId) => {
+    setActiveProvider(provId);
+    showNotification(`Motor principal de IA cambiado a ${PROVIDERS.find(p => p.id === provId)?.name || provId}`, 'success');
+  };
+
+  const updateSupabaseAiStatus = async (status, provToSave = activeProvider, modelToSave = modelName) => {
     try {
+      const keyToSave = apiKeys[provToSave] || '';
       await supabase.from('ai_integration_settings').upsert({
-        provider: provider || 'google',
+        provider: provToSave,
         encrypted_api_key: keyToSave,
         model_name: modelToSave,
         is_active: status === 'active',
@@ -122,7 +184,8 @@ export default function MotorIaConfig() {
   };
 
   const handleCheckGeminiApi = async () => {
-    if (!apiKey || !apiKey.trim()) {
+    const gKey = apiKeys.google?.trim() || '';
+    if (!gKey) {
       showNotification('Introduce una API Key de Google Gemini para realizar la autodetección.', 'error');
       return;
     }
@@ -137,7 +200,7 @@ export default function MotorIaConfig() {
         const fetchRes = await fetch('/api/ai/check-gemini-api', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: apiKey.trim() })
+          body: JSON.stringify({ apiKey: gKey })
         });
         if (fetchRes.ok) {
           res = await fetchRes.json();
@@ -147,26 +210,29 @@ export default function MotorIaConfig() {
       }
 
       if (!res || !res.success) {
-        res = await checkAndAutoSelectBestGeminiModel(apiKey.trim());
+        res = await checkAndAutoSelectBestGeminiModel(gKey);
       }
 
       const detectedModel = res.activeModel || DEFAULT_GEMINI_MODEL;
-      setProvider('google');
+      setSelectedProvider('google');
+      setActiveProvider('google');
       setModelName(detectedModel);
 
       await updateBackendAiSettings({
         provider: 'google',
-        apiKey: apiKey.trim(),
+        apiKey: gKey,
+        apiKeys: { ...apiKeys, google: gKey },
         model: detectedModel,
         temperature,
         maxTokens
       });
 
-      await updateSupabaseAiStatus('active', apiKey.trim(), detectedModel);
+      await updateSupabaseAiStatus('active', 'google', detectedModel);
 
       updateAiConfig({
         provider: 'google',
-        apiKey: apiKey.trim(),
+        apiKey: gKey,
+        apiKeys: { ...apiKeys, google: gKey },
         modelName: detectedModel,
         temperature,
         maxTokens,
@@ -188,7 +254,7 @@ export default function MotorIaConfig() {
       showNotification(`API Gemini verificada. Modelo activo detectado: "${detectedModel}".`, 'success');
     } catch (err) {
       setCheckingGemini(false);
-      await updateSupabaseAiStatus('error');
+      await updateSupabaseAiStatus('error', 'google');
       setGeminiCheckResult({
         success: false,
         error: err.message || 'No ha sido posible conectar con la IA. Revise la clave introducida.'
@@ -198,19 +264,25 @@ export default function MotorIaConfig() {
   };
 
   const handleTestConnection = async () => {
+    const provKey = (apiKeys[selectedProvider] || '').trim();
+    if (!provKey) {
+      showNotification(`Introduce una API Key para ${selectedProviderObj.name} antes de probar la conexión.`, 'error');
+      return;
+    }
+
     setTesting(true);
     setTestResult(null);
 
-    const targetModel = modelName || DEFAULT_GEMINI_MODEL;
+    const targetModel = modelName || selectedProviderObj.defaultModel;
 
     try {
       let res;
-      if (provider === 'google') {
-        res = await testGeminiConnection(apiKey.trim(), targetModel);
+      if (selectedProvider === 'google') {
+        res = await testGeminiConnection(provKey, targetModel);
       } else {
         res = await testBackendAiConnection({
-          provider,
-          apiKey: apiKey.trim(),
+          provider: selectedProvider,
+          apiKey: provKey,
           model: targetModel,
           temperature,
           maxTokens
@@ -218,7 +290,7 @@ export default function MotorIaConfig() {
       }
 
       setTesting(false);
-      await updateSupabaseAiStatus('active', apiKey.trim(), targetModel);
+      await updateSupabaseAiStatus('active', selectedProvider, targetModel);
 
       setTestResult({
         success: true,
@@ -226,10 +298,10 @@ export default function MotorIaConfig() {
         message: res.message || 'Conexión verificada exitosamente'
       });
       confetti({ particleCount: 40, spread: 50 });
-      showNotification(`Conexión con el modelo ${targetModel} verificada exitosamente`, 'success');
+      showNotification(`Conexión con ${selectedProviderObj.name} (${targetModel}) verificada exitosamente`, 'success');
     } catch (err) {
       setTesting(false);
-      await updateSupabaseAiStatus('error');
+      await updateSupabaseAiStatus('error', selectedProvider);
 
       setTestResult({
         success: false,
@@ -243,22 +315,25 @@ export default function MotorIaConfig() {
     e.preventDefault();
     setSaving(true);
 
-    const targetModel = modelName || DEFAULT_GEMINI_MODEL;
+    const activeKeyToSave = (apiKeys[activeProvider] || '').trim();
+    const targetModel = modelName || activeProviderObj.defaultModel;
 
     try {
       await updateBackendAiSettings({
-        provider,
-        apiKey: apiKey.trim(),
+        provider: activeProvider,
+        apiKey: activeKeyToSave,
+        apiKeys,
         model: targetModel,
         temperature,
         maxTokens
       });
 
-      await updateSupabaseAiStatus('active', apiKey.trim(), targetModel);
+      await updateSupabaseAiStatus('active', activeProvider, targetModel);
 
       updateAiConfig({
-        provider,
-        apiKey: apiKey.trim(),
+        provider: activeProvider,
+        apiKey: activeKeyToSave,
+        apiKeys,
         modelName: targetModel,
         temperature,
         maxTokens,
@@ -268,7 +343,7 @@ export default function MotorIaConfig() {
       });
 
       setSaving(false);
-      showNotification('Configuración de la API Key de Gemini guardada en Supabase y Servidor', 'success');
+      showNotification(`Configuración de IA (${activeProviderObj.name}) guardada y sincronizada`, 'success');
       confetti({ particleCount: 30, spread: 40 });
     } catch (err) {
       setSaving(false);
@@ -288,24 +363,24 @@ export default function MotorIaConfig() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-base sm:text-lg font-black text-white">Motor Central de IA (Google Gemini)</span>
+                <span className="text-base sm:text-lg font-black text-white">Motor Central de Inteligencia Artificial</span>
                 <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-mono font-bold">
-                  AUTODETECCIÓN DINÁMICA
+                  MULTI-PROVEEDOR ACTIVO
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Pega tu API Key de Google Gemini. La aplicación detecta dinámicamente el modelo activo en Google Cloud sin requerir selección manual.
+                Configura las claves API para Gemini, ChatGPT, Claude u OpenRouter. Selecciona cuál estará activa para realizar el procesamiento técnico y la mejora de descripciones de obra.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <span className={`px-3 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 ${
-              apiKey && apiKey.trim()
+              (apiKeys[activeProvider] || '').trim()
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
             }`}>
-              <span>{apiKey && apiKey.trim() ? '🟢 API Key Lista' : '🔴 API Key Requerida'}</span>
+              <span>{(apiKeys[activeProvider] || '').trim() ? `🟢 Motor Activo: ${activeProviderObj.name}` : `🔴 Sin Clave en ${activeProviderObj.name}`}</span>
             </span>
           </div>
         </div>
@@ -315,12 +390,13 @@ export default function MotorIaConfig() {
           <div className="flex items-center gap-2">
             <Cpu className="w-4 h-4 text-amber-400" />
             <span className="font-bold text-white text-xs">
-              Modelo activo detectado: <span className="text-amber-400 font-mono font-black">{modelName || DEFAULT_GEMINI_MODEL}</span>
+              Proveedor activo: <span className="text-amber-400 font-mono font-black">{activeProviderObj.name}</span>
+              <span className="text-slate-400 ml-2">({modelName || activeProviderObj.defaultModel})</span>
             </span>
           </div>
 
           <span className="text-[11px] text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-lg">
-            Sincronizado con Supabase
+            Persistido en Servidor & Supabase
           </span>
         </div>
       </div>
@@ -335,7 +411,7 @@ export default function MotorIaConfig() {
             </div>
             <div>
               <h4 className="font-extrabold text-white text-sm">Ajustes del Motor de Inteligencia Artificial</h4>
-              <p className="text-[11px] text-slate-400">Pega tu API Key de Google Gemini para activar el sistema</p>
+              <p className="text-[11px] text-slate-400">Introduce tus claves API por proveedor y selecciona la IA activa</p>
             </div>
           </div>
 
@@ -352,71 +428,92 @@ export default function MotorIaConfig() {
 
         {/* Selector de Proveedor */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-300 block">Proveedor IA:</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <label className="text-xs font-bold text-slate-300 block">Proveedores IA Soportados:</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             {PROVIDERS.map((p) => {
-              const isSelected = provider === p.id;
+              const isSelected = selectedProvider === p.id;
+              const isActive = activeProvider === p.id;
+              const hasKey = Boolean((apiKeys[p.id] || '').trim());
+
               return (
-                <button
+                <div
                   key={p.id}
-                  type="button"
                   onClick={() => handleProviderChange(p.id)}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between space-y-2 ${
+                  className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between space-y-3 cursor-pointer relative ${
                     isSelected
-                      ? 'bg-amber-500/10 border-amber-500/60 ring-2 ring-amber-500/20 shadow'
+                      ? 'bg-amber-500/10 border-amber-500/80 ring-2 ring-amber-500/20 shadow'
                       : 'bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xl">{p.logo}</span>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono ${
-                      isSelected ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'
+                    <span className="text-2xl">{p.logo}</span>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded font-mono ${
+                      isActive ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'
                     }`}>
-                      {p.badge}
+                      {isActive ? '● ACTIVO' : p.badge}
                     </span>
                   </div>
+
                   <div>
                     <h5 className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-300'}`}>{p.name}</h5>
+                    <div className="flex items-center justify-between mt-1 text-[10px]">
+                      <span className={hasKey ? 'text-emerald-400 font-semibold' : 'text-slate-500'}>
+                        {hasKey ? '🔑 Clave Guardada' : '⚠️ Sin Clave'}
+                      </span>
+                    </div>
                   </div>
-                </button>
+
+                  {!isActive && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSetActiveProvider(p.id);
+                      }}
+                      className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold rounded-xl transition border border-slate-700 flex items-center justify-center gap-1"
+                    >
+                      <span>Usar como Motor Activo</span>
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
         </div>
 
-        {/* Campo API Key únicamente */}
-        <div className="space-y-1.5 text-xs">
+        {/* Campo API Key para el proveedor seleccionado */}
+        <div className="space-y-1.5 text-xs bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div className="flex items-center justify-between">
             <label className="font-bold text-slate-300 flex items-center gap-1.5">
               <Lock className="w-3.5 h-3.5 text-amber-400" />
-              <span>API Key de {selectedProviderObj.name} *</span>
+              <span>API Key para {selectedProviderObj.name} *</span>
+              {selectedProvider === activeProvider && (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">
+                  Motor Principal Activo
+                </span>
+              )}
             </label>
             <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" />
-              <span>Supabase Sync</span>
+              <span>Guarda claves independientes</span>
             </span>
           </div>
 
           <div className="relative">
             <input
-              type={showKey ? 'text' : 'password'}
-              required
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value);
-                setTestResult(null);
-                setGeminiCheckResult(null);
-              }}
-              placeholder={`Introduce tu clave (${selectedProviderObj.keyPrefix}...)`}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3 pr-10 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
+              type={showKeys[selectedProvider] ? 'text' : 'password'}
+              value={currentKey}
+              onChange={(e) => handleKeyChange(e.target.value)}
+              placeholder={`Introduce la clave para ${selectedProviderObj.name} (${selectedProviderObj.keyPrefix}...)`}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-3 pr-10 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
             />
             <button
               type="button"
-              onClick={() => setShowKey(!showKey)}
+              onClick={() => toggleShowKey(selectedProvider)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-1"
-              title={showKey ? 'Ocultar clave' : 'Mostrar clave'}
+              title={showKeys[selectedProvider] ? 'Ocultar clave' : 'Mostrar clave'}
             >
-              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showKeys[selectedProvider] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
         </div>

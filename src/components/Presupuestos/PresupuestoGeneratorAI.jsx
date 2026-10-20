@@ -20,6 +20,7 @@ import PresupuestosModeloConfig from '../Configuracion/PresupuestosModeloConfig'
 import confetti from 'canvas-confetti';
 import { processScopeWithAI } from '../../services/aiAudioTextService';
 import { transcribeAudioViaBackend } from '../../services/backendAiService';
+import AiImprovementControl from '../Common/AiImprovementControl';
 
 export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   const {
@@ -347,6 +348,13 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
               placeholder="El texto transcrito de tus audios aparecerá aquí automáticamente. Puedes editarlo o modificarlo antes de generar el presupuesto."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed font-sans"
             ></textarea>
+
+            <AiImprovementControl
+              value={audioTranscript}
+              onAccept={(improved) => setAudioTranscript(improved)}
+              context="Alcance y descripción técnica de la reforma"
+              buttonLabel="Mejorar Texto con IA"
+            />
           </div>
 
           {/* 3. Fotos de la Obra */}

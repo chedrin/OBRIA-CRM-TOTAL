@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import TaskProgressSelector from '../PortalObrero/TaskProgressSelector';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
+import AiImprovementControl from '../Common/AiImprovementControl';
 
 export default function ObraDetail({ obraId, onBack }) {
   const {
@@ -1096,6 +1097,15 @@ export default function ObraDetail({ obraId, onBack }) {
                   placeholder="Ej: Se finalizan los rozas de electricidad y se alicatan 12m² de baño..."
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-amber-400"
                 ></textarea>
+                <div className="mt-2">
+                  <AiImprovementControl
+                    value={diarioForm.resumen}
+                    onAccept={(improved) => setDiarioForm({ ...diarioForm, resumen: improved })}
+                    context="Resumen de parte diario de obra"
+                    buttonLabel="Mejorar Redacción con IA"
+                    buttonSize="small"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1282,6 +1292,15 @@ export default function ObraDetail({ obraId, onBack }) {
                   onChange={(e) => setPriceForm({ ...priceForm, concepto: e.target.value })}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
                 ></textarea>
+                <div className="mt-2">
+                  <AiImprovementControl
+                    value={priceForm.concepto}
+                    onAccept={(improved) => setPriceForm({ ...priceForm, concepto: improved })}
+                    context="Descripción de partida de presupuesto"
+                    buttonLabel="Mejorar Partida con IA"
+                    buttonSize="small"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
