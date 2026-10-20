@@ -58,8 +58,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   const handleBackdropClick = (e) => {
     if (e.target === backdropRef.current) {
       onClose();
@@ -111,6 +109,8 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
   // Structured Review State
   const [generatedQuoteResult, setGeneratedQuoteResult] = useState(null);
+
+  if (!isOpen) return null;
 
   // Refine text via AI using historical reference budgets
   const handleRefineAudioWithAI = async () => {
