@@ -17,10 +17,12 @@ import {
   Send,
   Layers,
   Building,
+  BookOpen,
   User,
   HardHat,
   ChevronRight,
-  CheckCheck
+  CheckCheck,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -30,6 +32,7 @@ export default function AudioEmailCaptureView() {
     presupuestos = [],
     basePrecios = [],
     empresaConfig = {},
+    referenceBudgets = [],
     addPresupuesto,
     updatePresupuesto,
     addMaterialToObra,
@@ -57,6 +60,7 @@ export default function AudioEmailCaptureView() {
 
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStage, setProcessingStage] = useState('');
   const [aiResult, setAiResult] = useState(null);
 
   // Modal Insert into existing quote
@@ -65,6 +69,8 @@ export default function AudioEmailCaptureView() {
 
   // Copied alert
   const [copiedSection, setCopiedSection] = useState(null);
+
+  const activeRefBudgets = (referenceBudgets || []).filter(b => b.is_active);
 
   const handleCopy = (text, sec) => {
     navigator.clipboard.writeText(text);
@@ -82,23 +88,40 @@ export default function AudioEmailCaptureView() {
     }
 
     setIsProcessing(true);
+    setProcessingStage('Analizando transcripción...');
+
+    const timer1 = setTimeout(() => {
+      setProcessingStage('Consultando conocimiento técnico y presupuestos de ejemplo...');
+    }, 1200);
+
+    const timer2 = setTimeout(() => {
+      setProcessingStage('Generando presupuesto profesional...');
+    }, 2500);
+
     try {
       const result = await processScopeWithAI(
         textToProcess,
         contentType,
         targetProjectId,
         empresaConfig.aiConfig || {},
-        basePrecios
+        basePrecios,
+        activeRefBudgets
       );
+
+      clearTimeout(timer1);
+      clearTimeout(timer2);
 
       setAiResult(result);
       confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-      showNotification('✨ Requerimiento procesado y normalizado con estilo técnico.');
+      showNotification('✨ Requerimiento procesado y normalizado con estilo técnico de la empresa.');
     } catch (err) {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
       console.error('Error processing scope with AI:', err);
       showNotification('Error al procesar con IA.', 'error');
     } finally {
       setIsProcessing(false);
+      setProcessingStage('');
     }
   };
 
@@ -207,6 +230,8 @@ export default function AudioEmailCaptureView() {
     showNotification(`Anexo de ${items.length} partidas adicionales registrado en la obra.`);
   };
 
+  const currentInputText = captureMode === 'audio' ? audioTranscript : pastedText;
+
   return (
     <div className="space-y-6">
       
@@ -228,6 +253,17 @@ export default function AudioEmailCaptureView() {
                 Transforma audios dictados, WhatsApps o correos coloquiales en partidas formales de pliego de condiciones listas para presupuestar
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Reference Budgets Status Badge */}
+        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3.5 py-2 rounded-xl text-xs">
+          <BookOpen className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="text-left">
+            <span className="text-[10px] text-slate-400 uppercase font-bold block">Modelos de Estilo</span>
+            <span className="font-bold text-white">
+              {activeRefBudgets.length} Presupuestos de Ejemplo Activos
+            </span>
           </div>
         </div>
       </div>
@@ -350,16 +386,29 @@ export default function AudioEmailCaptureView() {
             </div>
           )}
 
+          {/* Multi-stage Progress Feedback */}
+          {isProcessing && (
+            <div className="bg-slate-900 border border-amber-500/40 p-4 rounded-2xl space-y-2 animate-pulse">
+              <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>{processingStage || 'Procesando con IA...'}</span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Imitando el tono, estructura y vocabulario de los presupuestos de ejemplo almacenados en Ajustes.
+              </p>
+            </div>
+          )}
+
           {/* Process Button */}
           <button
             onClick={handleProcessWithAI}
-            disabled={isProcessing}
+            disabled={isProcessing || !currentInputText.trim()}
             className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition shadow-xl shadow-amber-500/20 disabled:opacity-50"
           >
             {isProcessing ? (
               <>
                 <Sparkles className="w-5 h-5 animate-spin" />
-                <span>Normalizando Estilo & Generando Partidas...</span>
+                <span>{processingStage || 'Procesando...'}</span>
               </>
             ) : (
               <>
