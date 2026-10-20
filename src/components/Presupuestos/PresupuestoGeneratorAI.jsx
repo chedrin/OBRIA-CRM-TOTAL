@@ -19,7 +19,7 @@ import {
 import PresupuestosModeloConfig from '../Configuracion/PresupuestosModeloConfig';
 import confetti from 'canvas-confetti';
 import { processScopeWithAI } from '../../services/aiAudioTextService';
-import { transcribeAudioViaBackend } from '../../services/backendAiService';
+import { transcribeAudio } from '../../services/aiAudioTextService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 
 export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
@@ -70,8 +70,14 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
       setProgressStatus('Transcribiendo audio con Inteligencia Artificial...');
       setProgressPct(60);
 
-      const res = await transcribeAudioViaBackend(files);
-      const text = res.texto || res.transcripcion || '';
+      const transcribedTexts = [];
+      for (const file of files) {
+        const res = await transcribeAudio(file, empresaConfig?.aiConfig || {});
+        if (res && res.text) {
+          transcribedTexts.push(res.text);
+        }
+      }
+      const text = transcribedTexts.join('\n\n');
 
       setAudioTranscript(prev => (prev ? `${prev}\n\n${text}` : text));
       setHasTranscribed(true);

@@ -116,6 +116,104 @@ export async function fetchAvailableGeminiModels(apiKeyInput = '') {
 }
 
 /**
+ * Converts a Blob or File into a Base64 encoded string
+ */
+export function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const resultStr = reader.result || '';
+      const base64Str = resultStr.includes(',') ? resultStr.split(',')[1] : resultStr;
+      resolve(base64Str);
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Transcribes pre-recorded audio files directly using Gemini multimodal generateContent API
+ */
+export async function transcribeAudioWithGemini(audioBlob, customApiKey = '', model = DEFAULT_GEMINI_MODEL) {
+  const apiKey = await getGeminiApiKey(customApiKey);
+  if (!apiKey) {
+    throw new Error('Se requiere una clave API de Google Gemini para la transcripción.');
+  }
+
+  const base64Audio = await blobToBase64(audioBlob);
+
+  let mimeType = audioBlob.type || 'audio/webm';
+  if (audioBlob.name) {
+    const ext = audioBlob.name.split('.').pop().toLowerCase();
+    if (ext === 'mp3') mimeType = 'audio/mp3';
+    else if (ext === 'wav') mimeType = 'audio/wav';
+    else if (ext === 'm4a') mimeType = 'audio/mp4';
+    else if (ext === 'ogg') mimeType = 'audio/ogg';
+    else if (ext === 'webm') mimeType = 'audio/webm';
+  }
+
+  const preferredModel = normalizeGeminiModel(model) || DEFAULT_GEMINI_MODEL;
+  const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(preferredModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          {
+            text: 'Eres un transcriptor experto en construcción y arquitectura técnica de "ObraMaster". Escucha atentamente el audio adjunto y transcribe fielmente en español todo lo dicho en la grabación, corrigiendo términos técnicos de obra si es necesario. Devuelve estrictamente un JSON válido con la clave "transcripcion".'
+          },
+          {
+            inlineData: {
+              mimeType,
+              data: base64Audio
+            }
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.1
+    }
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: controller.signal
+  });
+
+  clearTimeout(timeoutId);
+
+  if (!response.ok) {
+    let errMessage = response.statusText;
+    try {
+      const errJson = await response.json();
+      errMessage = errJson.error?.message || errMessage;
+    } catch (e) {}
+    handleGeminiHttpError(response.status, errMessage);
+  }
+
+  const data = await response.json();
+  const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!rawContent) {
+    throw new Error('Respuesta vacía al transcribir el audio con Gemini.');
+  }
+
+  try {
+    const cleaned = cleanGeminiJsonResponse(rawContent);
+    const parsed = JSON.parse(cleaned);
+    return parsed.transcripcion || parsed.texto || rawContent.trim();
+  } catch (parseErr) {
+    return rawContent.trim();
+  }
+}
+
+/**
  * Dynamic Model Selection Algorithm:
  * - Priority 1: Model with "flash" in its name (e.g. gemini-1.5-flash-latest, gemini-1.5-flash, gemini-2.0-flash)
  * - Priority 2: First model supporting "generateContent"

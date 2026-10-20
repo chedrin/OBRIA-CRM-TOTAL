@@ -61,6 +61,8 @@ export default function AudioVoiceRecorder({
   const sourceRef = useRef(null);
   const streamRef = useRef(null);
   const recognitionRef = useRef(null);
+  const audioPlayerRef = useRef(null);
+  const mediaElementSourceRef = useRef(null);
 
   const aiConfig = empresaConfig?.aiConfig || {};
   const hasRealOpenAiKey =
@@ -346,6 +348,38 @@ export default function AudioVoiceRecorder({
     }
   };
 
+  // Connect Audio Player to Visualizer Analyser Node
+  const handleAudioPlay = () => {
+    setIsRecording(false);
+    setIsSimulatedRecording(true);
+    try {
+      if (audioPlayerRef.current && !mediaElementSourceRef.current) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = audioContextRef.current || new AudioCtx();
+          audioContextRef.current = audioCtx;
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+          }
+          const analyser = analyserRef.current || audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          analyserRef.current = analyser;
+
+          const source = audioCtx.createMediaElementSource(audioPlayerRef.current);
+          source.connect(analyser);
+          analyser.connect(audioCtx.destination);
+          mediaElementSourceRef.current = source;
+        }
+      }
+    } catch (err) {
+      console.warn('MediaElementSource visualization warning:', err);
+    }
+  };
+
+  const handleAudioPauseOrEnded = () => {
+    setIsSimulatedRecording(false);
+  };
+
   // Upload Audio File
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -362,7 +396,15 @@ export default function AudioVoiceRecorder({
     });
 
     showNotification(`Archivo "${file.name}" cargado. Procesando transcripción...`);
-    await processAudioTranscription(file, 'file', '');
+
+    // Auto-play preview audio so user hears and sees waveform
+    setTimeout(() => {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.play().catch(() => {});
+      }
+    }, 200);
+
+    await processAudioTranscription(file, 'file', liveSpeechText);
   };
 
   const handleDiscardAudio = () => {
@@ -372,6 +414,8 @@ export default function AudioVoiceRecorder({
       } catch (e) {}
     }
     setAudioPreview(null);
+    mediaElementSourceRef.current = null;
+    setIsSimulatedRecording(false);
     setTranscript('');
     notifyTranscript('', null);
     showNotification('Audio descartado.');
@@ -382,18 +426,21 @@ export default function AudioVoiceRecorder({
     setIsTranscribing(true);
     try {
       const res = await transcribeAudio(blobOrFile, aiConfig, speechFallback);
-      if (res.success && res.text) {
+      if (res && res.success && res.text) {
         setTranscript(res.text);
         notifyTranscript(res.text, blobOrFile);
         showNotification(
           res.source === 'whisper-api'
             ? '✨ Audio transcribido por OpenAI Whisper Cloud con éxito.'
+            : res.source === 'gemini-multimodal'
+            ? '✨ Audio transcribido por Google Gemini Multimodal con éxito.'
             : res.source === 'browser-speech-recognition'
             ? '🎙️ Audio transcribido mediante reconocimiento de voz del navegador.'
             : '📝 Audio de obra procesado por el motor de IA.'
         );
       }
     } catch (err) {
+      console.error('[Audio Processing Exception]', err);
       showNotification('Error al procesar la transcripción del audio.', 'error');
     } finally {
       setIsTranscribing(false);
@@ -570,7 +617,15 @@ export default function AudioVoiceRecorder({
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <audio src={audioPreview.url} controls className="h-8 w-full sm:w-60" />
+              <audio
+                ref={audioPlayerRef}
+                src={audioPreview.url}
+                controls
+                onPlay={handleAudioPlay}
+                onPause={handleAudioPauseOrEnded}
+                onEnded={handleAudioPauseOrEnded}
+                className="h-8 w-full sm:w-60"
+              />
               <button
                 type="button"
                 onClick={handleDiscardAudio}
