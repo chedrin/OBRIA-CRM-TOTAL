@@ -474,7 +474,7 @@ async function transcribeAudioUnified({ audioFile, config }) {
     return data.text || "";
   }
 
-  const geminiKey = (apiKey.startsWith("AIza") ? apiKey : process.env.GEMINI_API_KEY || "").trim();
+  const geminiKey = ((apiKey && !apiKey.startsWith("sk-ant") && !apiKey.startsWith("sk-or")) ? apiKey : process.env.GEMINI_API_KEY || "").trim();
   if (geminiKey || provider === "google") {
     const part = fileToPart(audioFile);
     const promptText = `
