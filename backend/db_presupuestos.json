@@ -1,5 +1,117 @@
 [
   {
+    "obraId": "obra-1",
+    "obraTitulo": "Reforma Integral Ático Velázquez",
+    "cliente": "Dña. Elena Santamaría (Cliente)",
+    "telefono": "+34 655 890 123",
+    "email": "cliente@ejemplo.es",
+    "tipoIvaPct": 10,
+    "margenGlobalPct": 30,
+    "baseImponible": 369.4,
+    "cuotaIva": 36.94,
+    "totalConIva": 406.34,
+    "partidas": [
+      {
+        "id": "p-new-1792513552216-mm97",
+        "codigo": "ELE-02",
+        "capitulo": "04. ELECTRICIDAD E ILUMINACIÓN",
+        "concepto": "Toma de corriente con toma de tierra Schuko 16A - Punto de fuerza con mecanismo serie media conmutado o schuko empotrado, tubo corrugado M-20 y conductores libres de halógenos de 2.5mm² según Reglamento Electrotécnico de Baja Tensión (REBT).",
+        "cantidad": 6,
+        "unidad": "ud",
+        "costeUnitario": 31.88,
+        "margenPct": 30,
+        "precioVenta": 42.5,
+        "total": 255
+      },
+      {
+        "id": "p-new-1792513552216-xbu7",
+        "codigo": "ELE-04",
+        "capitulo": "04. ELECTRICIDAD E ILUMINACIÓN",
+        "concepto": "Instalación de luminarias empotradas LED extraplanas - Perforación de falso techo y conexionado de downlights LED de 18W regulables con selector de temperatura de color (3000K-4000K) y driver de encendido rápido.",
+        "cantidad": 4,
+        "unidad": "ud",
+        "costeUnitario": 21.45,
+        "margenPct": 30,
+        "precioVenta": 28.6,
+        "total": 114.4
+      }
+    ],
+    "notasLegales": "Presupuesto confeccionado por IA según especificación técnica: Extracción de requerimientos de obra: Demoliciones selectivas, adecuación de instalaciones y acabados según normativa técnica vigente.",
+    "id": "pres-1792513552216",
+    "numero": "PRES-2026-004",
+    "fecha": "2026-10-20",
+    "estado": "borrador",
+    "validezDias": 30
+  },
+  {
+    "obraId": "obra-1",
+    "obraTitulo": "Reforma Integral Ático Velázquez",
+    "cliente": "Dña. Elena Santamaría (Cliente)",
+    "telefono": "+34 655 890 123",
+    "email": "cliente@ejemplo.es",
+    "tipoIvaPct": 10,
+    "margenGlobalPct": 30,
+    "baseImponible": 738.8,
+    "cuotaIva": 73.88,
+    "totalConIva": 812.68,
+    "partidas": [
+      {
+        "id": "p-new-1792513160717-z09m",
+        "codigo": "ELE-02",
+        "capitulo": "04. ELECTRICIDAD E ILUMINACIÓN",
+        "concepto": "Toma de corriente con toma de tierra Schuko 16A - Punto de fuerza con mecanismo serie media conmutado o schuko empotrado, tubo corrugado M-20 y conductores libres de halógenos de 2.5mm² según Reglamento Electrotécnico de Baja Tensión (REBT).",
+        "cantidad": 6,
+        "unidad": "ud",
+        "costeUnitario": 31.88,
+        "margenPct": 30,
+        "precioVenta": 42.5,
+        "total": 255
+      },
+      {
+        "id": "p-new-1792513160717-lqt8",
+        "codigo": "ELE-04",
+        "capitulo": "04. ELECTRICIDAD E ILUMINACIÓN",
+        "concepto": "Instalación de luminarias empotradas LED extraplanas - Perforación de falso techo y conexionado de downlights LED de 18W regulables con selector de temperatura de color (3000K-4000K) y driver de encendido rápido.",
+        "cantidad": 4,
+        "unidad": "ud",
+        "costeUnitario": 21.45,
+        "margenPct": 30,
+        "precioVenta": 28.6,
+        "total": 114.4
+      },
+      {
+        "id": "p-extra-1792513549768-gts5",
+        "codigo": "ELE-02",
+        "capitulo": "04. ELECTRICIDAD E ILUMINACIÓN",
+        "concepto": "Toma de corriente con toma de tierra Schuko 16A - Punto de fuerza con mecanismo serie media conmutado o schuko empotrado, tubo corrugado M-20 y conductores libres de halógenos de 2.5mm² según Reglamento Electrotécnico de Baja Tensión (REBT).",
+        "cantidad": 6,
+        "unidad": "ud",
+        "costeUnitario": 31.88,
+        "margenPct": 25,
+        "precioVenta": 42.5,
+        "total": 255
+      },
+      {
+        "id": "p-extra-1792513549768-ft3a",
+        "codigo": "ELE-04",
+        "capitulo": "04. ELECTRICIDAD E ILUMINACIÓN",
+        "concepto": "Instalación de luminarias empotradas LED extraplanas - Perforación de falso techo y conexionado de downlights LED de 18W regulables con selector de temperatura de color (3000K-4000K) y driver de encendido rápido.",
+        "cantidad": 4,
+        "unidad": "ud",
+        "costeUnitario": 21.45,
+        "margenPct": 25,
+        "precioVenta": 28.6,
+        "total": 114.4
+      }
+    ],
+    "notasLegales": "Presupuesto confeccionado por IA según especificación técnica: Extracción de requerimientos de obra: Demoliciones selectivas, adecuación de instalaciones y acabados según normativa técnica vigente.",
+    "id": "pres-1792513160717",
+    "numero": "PRES-2026-003",
+    "fecha": "2026-10-20",
+    "estado": "borrador",
+    "validezDias": 30
+  },
+  {
     "id": "pres-1",
     "numero": "PRES-2026-001",
     "obraId": "obra-1",
