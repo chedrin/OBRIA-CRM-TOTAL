@@ -344,51 +344,150 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
 /**
  * Applies conversational voice/text commands
  */
-export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConfig) {
+export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConfig = {}) {
   const cleanCmd = (commandText || '').toLowerCase();
   let changelog = '';
   let updatedCapitulos = JSON.parse(JSON.stringify(currentQuote.capitulos || []));
 
-  if (cleanCmd.includes('demolicion') || cleanCmd.includes('demolición') || cleanCmd.includes('ascensor')) {
-    const demCap = updatedCapitulos.find(c => c.nombre.toLowerCase().includes('demolic') || c.codigo === '01');
-    if (demCap) {
-      demCap.partidas = demCap.partidas.map(p => {
-        const extraFactor = 1.05;
-        const newCoste = Number((p.costeUnitario * extraFactor).toFixed(2));
-        const newPvp = Number((newCoste * (1 + p.margenPct / 100)).toFixed(2));
-        return {
-          ...p,
-          costeUnitario: newCoste,
-          precioVenta: newPvp,
-          total: Number((newPvp * p.cantidad).toFixed(2)),
-          _modificadoIa: true
-        };
+  // First, check if Gemini AI can process the voice command intelligently
+  if (aiConfig?.apiKey && (aiConfig?.provider === 'google' || !aiConfig?.provider)) {
+    try {
+      const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || DEFAULT_GEMINI_MODEL);
+      const promptUser = `
+PRESUPUESTO ACTUAL (ESTRUCTURA DE CAPÍTULOS Y PARTIDAS):
+${JSON.stringify(updatedCapitulos, null, 2)}
+
+INSTRUCCIÓN DE VOZ / TEXTO DEL USUARIO:
+"${commandText}"
+
+INSTRUCCIONES OBLIGATORIAS:
+1. Aplica la instrucción ÚNICAMENTE a las partidas o capítulos específicamente mencionados por el usuario (por ejemplo, si menciona "fon-03", "demolición", "baño", o un código de partida específico, modifica SOLAMENTE esas partidas).
+2. NO modifiques otras partidas salvo que el usuario pida explícitamente un cambio "global", "a todo el presupuesto" o "a todas las partidas".
+3. Devuelve un objeto JSON con la clave "capitulos" que contenga la lista completa de capítulos y sus partidas actualizadas, y una clave "changelog" con la explicación en español de qué partidas específicas han sido modificadas.
+`;
+
+      const aiResponse = await generateBudgetWithGemini({
+        promptUser,
+        apiKeyInput: aiConfig.apiKey,
+        model: geminiModel,
+        temperature: 0.1,
+        systemPrompt: "Eres el asistente de revisión de presupuestos de ObraMaster. Devuelve un JSON estructurado con 'capitulos' y 'changelog'."
       });
-      changelog += 'Recargo del +5% en demolición por condicionantes de acceso. ';
+
+      if (aiResponse?.capitulos && Array.isArray(aiResponse.capitulos) && aiResponse.capitulos.length > 0) {
+        updatedCapitulos = aiResponse.capitulos.map(cap => ({
+          ...cap,
+          partidas: (cap.partidas || []).map(p => {
+            const coste = Number(p.costeUnitario || 0);
+            const margen = Number(p.margenPct || 30);
+            const cant = Number(p.cantidad || 1);
+            const pvp = Number((coste * (1 + margen / 100)).toFixed(2));
+            const tot = Number((pvp * cant).toFixed(2));
+            return {
+              ...p,
+              costeUnitario: coste,
+              margenPct: margen,
+              cantidad: cant,
+              precioVenta: pvp,
+              total: tot
+            };
+          })
+        }));
+        changelog = aiResponse.changelog || `Ajuste aplicado por IA según instrucción: "${commandText}"`;
+      }
+    } catch (err) {
+      console.warn('Fallback a procesamiento heurístico para comando de voz:', err.message);
     }
   }
 
-  const marginMatch = cleanCmd.match(/(\d+)\s*%/);
-  if (cleanCmd.includes('margen') && marginMatch) {
-    const newMargin = Number(marginMatch[1]);
-    updatedCapitulos = updatedCapitulos.map(c => ({
-      ...c,
-      partidas: c.partidas.map(p => {
-        const pvp = Number((p.costeUnitario * (1 + newMargin / 100)).toFixed(2));
-        return {
-          ...p,
-          margenPct: newMargin,
-          precioVenta: pvp,
-          total: Number((pvp * p.cantidad).toFixed(2)),
-          _modificadoIa: true
-        };
-      })
-    }));
-    changelog += `Margen comercial ajustado al ${newMargin}%. `;
-  }
-
+  // Fallback heuristic if Gemini did not run or was not configured
   if (!changelog) {
-    changelog = `Instrucción interpretada: "${commandText}". Partidas recalculadas.`;
+    const allPartidas = updatedCapitulos.flatMap(c => c.partidas);
+    const targetPartidaIds = new Set();
+    const targetCapituloIds = new Set();
+
+    // Match partida by item code (e.g., "fon-03", "dem-01")
+    allPartidas.forEach(p => {
+      const codeClean = (p.codigo || '').toLowerCase();
+      if (codeClean && cleanCmd.includes(codeClean)) {
+        targetPartidaIds.add(p.id);
+      }
+    });
+
+    // Match chapter by code or name
+    updatedCapitulos.forEach(c => {
+      const capCodeClean = (c.codigo || '').toLowerCase();
+      const capNameClean = (c.nombre || '').toLowerCase();
+      if ((capCodeClean && cleanCmd.includes(capCodeClean)) ||
+          (capNameClean && cleanCmd.split(' ').some(word => word.length > 3 && capNameClean.includes(word)))) {
+        targetCapituloIds.add(c.id);
+      }
+    });
+
+    const isGlobal = cleanCmd.includes('global') || cleanCmd.includes('todas') || cleanCmd.includes('todo el presupuesto') || cleanCmd.includes('todos los capitulos');
+    const marginMatch = cleanCmd.match(/(\d+)\s*%/);
+
+    if (marginMatch) {
+      const newMargin = Number(marginMatch[1]);
+
+      updatedCapitulos = updatedCapitulos.map(c => {
+        const isTargetCap = targetCapituloIds.has(c.id);
+
+        const newPartidas = c.partidas.map(p => {
+          const isTargetItem = targetPartidaIds.has(p.id);
+          const shouldUpdate = isGlobal || isTargetItem || (targetPartidaIds.size === 0 && isTargetCap);
+
+          if (shouldUpdate) {
+            const pvp = Number((p.costeUnitario * (1 + newMargin / 100)).toFixed(2));
+            return {
+              ...p,
+              margenPct: newMargin,
+              precioVenta: pvp,
+              total: Number((pvp * p.cantidad).toFixed(2)),
+              _modificadoIa: true
+            };
+          }
+          return p;
+        });
+
+        return { ...c, partidas: newPartidas };
+      });
+
+      if (targetPartidaIds.size > 0) {
+        const codesStr = Array.from(targetPartidaIds)
+          .map(id => allPartidas.find(p => p.id === id)?.codigo)
+          .filter(Boolean)
+          .join(', ');
+        changelog += `Margen ajustado al ${newMargin}% en la(s) partida(s) especificada(s): ${codesStr}. `;
+      } else if (targetCapituloIds.size > 0 && !isGlobal) {
+        changelog += `Margen ajustado al ${newMargin}% en el capítulo especificado. `;
+      } else if (isGlobal || (targetPartidaIds.size === 0 && targetCapituloIds.size === 0)) {
+        changelog += `Margen comercial ajustado al ${newMargin}% global. `;
+      }
+    }
+
+    if (cleanCmd.includes('demolicion') || cleanCmd.includes('demolición') || cleanCmd.includes('ascensor')) {
+      const demCap = updatedCapitulos.find(c => c.nombre.toLowerCase().includes('demolic') || c.codigo === '01');
+      if (demCap) {
+        demCap.partidas = demCap.partidas.map(p => {
+          const extraFactor = 1.05;
+          const newCoste = Number((p.costeUnitario * extraFactor).toFixed(2));
+          const newPvp = Number((newCoste * (1 + p.margenPct / 100)).toFixed(2));
+          return {
+            ...p,
+            costeUnitario: newCoste,
+            precioVenta: newPvp,
+            total: Number((newPvp * p.cantidad).toFixed(2)),
+            _modificadoIa: true
+          };
+        });
+        changelog += 'Recargo del +5% en demolición por condicionantes de acceso. ';
+      }
+    }
+
+    if (!changelog) {
+      changelog = `Instrucción interpretada: "${commandText}". Partidas recalculadas.`;
+    }
   }
 
   updatedCapitulos = updatedCapitulos.map(c => {
@@ -401,6 +500,8 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
   const baseImponible = Number(flatPartidas.reduce((s, p) => s + p.total, 0).toFixed(2));
   const cuotaIva = Number((baseImponible * (currentQuote.tipoIvaPct / 100)).toFixed(2));
   const totalConIva = Number((baseImponible + cuotaIva).toFixed(2));
+  const costeTotal = Number(flatPartidas.reduce((s, p) => s + (p.costeUnitario * p.cantidad), 0).toFixed(2));
+  const margenGlobalCalculado = baseImponible > 0 ? Number((((baseImponible - costeTotal) / baseImponible) * 100).toFixed(1)) : currentQuote.margenGlobalPct;
 
   return {
     ...currentQuote,
@@ -408,6 +509,8 @@ export async function applyVoiceCommandToQuote(currentQuote, commandText, aiConf
     baseImponible,
     cuotaIva,
     totalConIva,
+    costeTotal,
+    margenGlobalPct: margenGlobalCalculado,
     capitulos: updatedCapitulos,
     partidas: flatPartidas,
     _lastChangelog: changelog
