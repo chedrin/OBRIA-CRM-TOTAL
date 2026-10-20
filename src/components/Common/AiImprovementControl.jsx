@@ -43,21 +43,33 @@ export default function AiImprovementControl({
           model: empresaConfig?.aiConfig?.modelName || empresaConfig?.aiConfig?.model
         });
       } catch (backendErr) {
-        console.warn('[AiImprovementControl] Backend fallo, pasando a fallback cliente:', backendErr.message);
-        const clientRes = await processScopeWithAI(
-          value,
-          'email_cliente',
-          null,
-          empresaConfig?.aiConfig || {},
-          basePrecios,
-          activeRefs
-        );
-        result = {
-          success: true,
-          originalText: value,
-          improvedText: clientRes?.redaccion_tecnica_estilo || clientRes?.resumen_alcance || value,
-          explicacionCambios: 'Vocabulario técnico y formato contractual aplicado.'
-        };
+        console.warn('[AiImprovementControl] Backend fallo, aplicando motor técnico determinista CTE:', backendErr.message);
+        try {
+          const clientRes = await processScopeWithAI(
+            value,
+            'email_cliente',
+            null,
+            empresaConfig?.aiConfig || {},
+            basePrecios,
+            activeRefs
+          );
+          result = {
+            success: true,
+            originalText: value,
+            improvedText: clientRes?.redaccion_tecnica_estilo || clientRes?.resumen_alcance || value,
+            explicacionCambios: 'Vocabulario técnico y formato contractual aplicado.'
+          };
+        } catch (clientErr) {
+          // Fallback a motor estático de edificación CTE
+          const { parseTextToConstructionSpecs } = await import('../../services/aiAudioTextService');
+          const ruleSpecs = parseTextToConstructionSpecs(value, basePrecios);
+          result = {
+            success: true,
+            originalText: value,
+            improvedText: ruleSpecs?.redaccion_tecnica_estilo || value,
+            explicacionCambios: 'Vocabulario técnico y norma CTE aplicados (Configure su API Key en Ajustes para LLM activo).'
+          };
+        }
       }
 
       if (result && result.improvedText) {
@@ -123,6 +135,11 @@ export default function AiImprovementControl({
             <span className="text-[10px] text-amber-400/90 font-mono flex items-center gap-1">
               <ShieldCheck className="w-3 h-3 text-amber-400" />
               <span>{activeRefs.length} modelo(s) de estilo activo(s)</span>
+            </span>
+          )}
+          {(!empresaConfig?.aiConfig?.apiKey || empresaConfig?.aiConfig?.apiKey.length < 5) && (
+            <span className="text-[10px] text-slate-400 italic">
+              (Motor técnico activo; añade tu API Key en Ajustes &gt; Motor IA)
             </span>
           )}
         </div>

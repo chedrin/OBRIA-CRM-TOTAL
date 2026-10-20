@@ -22,21 +22,40 @@ const GEMINI_DEFAULT_MODEL = "gemini-1.5-flash";
 const GEMINI_FALLBACK_CASCADE = ["gemini-1.5-flash", "gemini-3.8-flash", "gemini-1.5-pro"];
 
 function loadEnv() {
-  const envPath = path.join(__dirname, ".env");
-  if (fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, "utf-8").split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eqIdx = trimmed.indexOf("=");
-      if (eqIdx !== -1) {
-        const key = trimmed.substring(0, eqIdx).trim();
-        const val = trimmed.substring(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
-        if (key && !process.env[key]) {
-          process.env[key] = val;
+  const envPaths = [
+    path.join(__dirname, ".env"),
+    path.join(__dirname, "../.env")
+  ];
+  for (const envPath of envPaths) {
+    if (fs.existsSync(envPath)) {
+      const lines = fs.readFileSync(envPath, "utf-8").split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eqIdx = trimmed.indexOf("=");
+        if (eqIdx !== -1) {
+          const key = trimmed.substring(0, eqIdx).trim();
+          const val = trimmed.substring(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+          if (key && !process.env[key]) {
+            process.env[key] = val;
+          }
         }
       }
     }
+  }
+
+  // Map VITE_ variables if process.env equivalents are not directly set
+  if (!process.env.GEMINI_API_KEY && process.env.VITE_GEMINI_API_KEY) {
+    process.env.GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY;
+  }
+  if (!process.env.OPENAI_API_KEY && process.env.VITE_OPENAI_API_KEY) {
+    process.env.OPENAI_API_KEY = process.env.VITE_OPENAI_API_KEY;
+  }
+  if (!process.env.ANTHROPIC_API_KEY && process.env.VITE_ANTHROPIC_API_KEY) {
+    process.env.ANTHROPIC_API_KEY = process.env.VITE_ANTHROPIC_API_KEY;
+  }
+  if (!process.env.OPENROUTER_API_KEY && process.env.VITE_OPENROUTER_API_KEY) {
+    process.env.OPENROUTER_API_KEY = process.env.VITE_OPENROUTER_API_KEY;
   }
 }
 loadEnv();
@@ -789,7 +808,13 @@ async function handleRequest(req, res) {
 
         const targetProvider = fields.provider || currentConfig.provider || "google";
         const targetKeys = currentConfig.apiKeys || {};
-        const targetApiKey = fields.apiKey || targetKeys[targetProvider] || currentConfig.apiKey;
+        let targetApiKey = fields.apiKey || targetKeys[targetProvider] || currentConfig.apiKey;
+        if (!targetApiKey) {
+          if (targetProvider === "google") targetApiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
+          else if (targetProvider === "openai") targetApiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY || "";
+          else if (targetProvider === "anthropic") targetApiKey = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || "";
+          else if (targetProvider === "openrouter") targetApiKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY || "";
+        }
         const targetModel = fields.model || currentConfig.model;
 
         const systemInstruction = `
