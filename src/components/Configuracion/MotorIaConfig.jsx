@@ -603,7 +603,7 @@ export default function MotorIaConfig() {
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
-              disabled={checkingGemini || !apiKey}
+              disabled={checkingGemini || !currentKey}
               onClick={handleCheckGeminiApi}
               className="px-4 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl transition border border-amber-500/40 flex items-center justify-center gap-2 disabled:opacity-50"
             >
@@ -613,7 +613,7 @@ export default function MotorIaConfig() {
 
             <button
               type="button"
-              disabled={testing || !apiKey}
+              disabled={testing || !currentKey}
               onClick={handleTestConnection}
               className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition border border-slate-700 flex items-center justify-center gap-2 disabled:opacity-50"
             >
