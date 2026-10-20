@@ -74,9 +74,23 @@ function writeJsonDb(filepath, data) {
 }
 
 function getDefaultAiConfig() {
+  const googleKey = process.env.GEMINI_API_KEY || "";
+  const openaiKey = process.env.OPENAI_API_KEY || "";
+  const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
+  const openrouterKey = process.env.OPENROUTER_API_KEY || "";
+
+  const provider = process.env.AI_PROVIDER || "google";
+  const apiKeys = {
+    google: googleKey,
+    openai: openaiKey,
+    anthropic: anthropicKey,
+    openrouter: openrouterKey
+  };
+
   return {
-    provider: process.env.AI_PROVIDER || "google",
-    apiKey: process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || "",
+    provider,
+    apiKey: apiKeys[provider] || googleKey || openaiKey || anthropicKey || openrouterKey || "",
+    apiKeys,
     model: process.env.GEMINI_MODEL || process.env.AI_MODEL || GEMINI_DEFAULT_MODEL,
     temperature: Number(process.env.AI_TEMPERATURE) || 0.15,
     maxTokens: Number(process.env.AI_MAX_TOKENS) || 4096,
@@ -91,7 +105,27 @@ function getSavedAiConfig() {
     if (fs.existsSync(SETTINGS_FILE)) {
       const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
       const parsed = JSON.parse(raw);
-      return { ...getDefaultAiConfig(), ...parsed };
+      const defaultConfig = getDefaultAiConfig();
+      const mergedKeys = {
+        ...defaultConfig.apiKeys,
+        ...(parsed.apiKeys || {})
+      };
+      const provider = parsed.provider || defaultConfig.provider;
+      const activeKey = parsed.apiKey !== undefined && parsed.apiKey !== ""
+        ? parsed.apiKey
+        : (mergedKeys[provider] || "");
+
+      if (activeKey && !mergedKeys[provider]) {
+        mergedKeys[provider] = activeKey;
+      }
+
+      return {
+        ...defaultConfig,
+        ...parsed,
+        provider,
+        apiKey: activeKey,
+        apiKeys: mergedKeys
+      };
     }
   } catch (err) {
     console.warn("[Backend Settings] Error leyendo ai_settings.json:", err.message);
@@ -101,10 +135,29 @@ function getSavedAiConfig() {
 
 function saveAiConfig(newConfig) {
   const current = getSavedAiConfig();
+  const currentKeys = current.apiKeys || {};
+  const newKeys = newConfig.apiKeys || {};
+
+  const updatedApiKeys = {
+    google: newKeys.google !== undefined ? newKeys.google : (newConfig.googleApiKey !== undefined ? newConfig.googleApiKey : (currentKeys.google || "")),
+    openai: newKeys.openai !== undefined ? newKeys.openai : (newConfig.openaiApiKey !== undefined ? newConfig.openaiApiKey : (currentKeys.openai || "")),
+    anthropic: newKeys.anthropic !== undefined ? newKeys.anthropic : (newConfig.anthropicApiKey !== undefined ? newConfig.anthropicApiKey : (currentKeys.anthropic || "")),
+    openrouter: newKeys.openrouter !== undefined ? newKeys.openrouter : (newConfig.openrouterApiKey !== undefined ? newConfig.openrouterApiKey : (currentKeys.openrouter || ""))
+  };
+
+  const provider = newConfig.provider || current.provider || "google";
+
+  if (newConfig.apiKey !== undefined && newConfig.apiKey.trim() !== "") {
+    updatedApiKeys[provider] = newConfig.apiKey.trim();
+  }
+
+  const activeKey = updatedApiKeys[provider] || current.apiKey || "";
+
   const updated = {
     ...current,
-    provider: newConfig.provider || current.provider,
-    apiKey: newConfig.apiKey !== undefined ? newConfig.apiKey : current.apiKey,
+    provider,
+    apiKey: activeKey,
+    apiKeys: updatedApiKeys,
     model: newConfig.model || current.model,
     temperature: Number(newConfig.temperature) || current.temperature || 0.15,
     maxTokens: Number(newConfig.maxTokens) || current.maxTokens || 4096,
@@ -619,9 +672,22 @@ async function handleRequest(req, res) {
 
     if (pathname === "/api/settings/ai") {
       const config = getSavedAiConfig();
-      const maskedKey = config.apiKey ? (config.apiKey.substring(0, 6) + "..." + config.apiKey.slice(-4)) : "";
+      const apiKeys = config.apiKeys || {};
+      const mask = k => k ? (k.substring(0, 6) + "..." + k.slice(-4)) : "";
+      const maskedKeys = {
+        google: mask(apiKeys.google),
+        openai: mask(apiKeys.openai),
+        anthropic: mask(apiKeys.anthropic),
+        openrouter: mask(apiKeys.openrouter)
+      };
+      const activeKey = apiKeys[config.provider] || config.apiKey || "";
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ...config, apiKeyMasked: maskedKey }));
+      res.end(JSON.stringify({
+        ...config,
+        apiKey: activeKey,
+        apiKeyMasked: mask(activeKey),
+        apiKeysMasked: maskedKeys
+      }));
       return;
     }
 
@@ -673,14 +739,155 @@ async function handleRequest(req, res) {
     try {
       if (req.method === "PUT" && pathname === "/api/settings/ai") {
         const updated = saveAiConfig(fields);
+        const apiKeys = updated.apiKeys || {};
+        const mask = k => k ? (k.substring(0, 6) + "..." + k.slice(-4)) : "";
+        const maskedKeys = {
+          google: mask(apiKeys.google),
+          openai: mask(apiKeys.openai),
+          anthropic: mask(apiKeys.anthropic),
+          openrouter: mask(apiKeys.openrouter)
+        };
+        const activeKey = apiKeys[updated.provider] || updated.apiKey || "";
+
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           success: true,
           message: "Configuración del motor de IA actualizada correctamente",
           config: {
             ...updated,
-            apiKeyMasked: updated.apiKey ? (updated.apiKey.substring(0, 6) + "..." + updated.apiKey.slice(-4)) : ""
+            apiKey: activeKey,
+            apiKeyMasked: mask(activeKey),
+            apiKeysMasked: maskedKeys
           }
+        }));
+        return;
+      }
+
+      if (req.method === "POST" && (pathname === "/api/ai/improve-text" || pathname === "/api/ai/refine-text")) {
+        const startTime = performance.now();
+        const textToImprove = fields.text || fields.texto || fields.content || fields.input || "";
+        const context = fields.context || "Descripción técnica de trabajo";
+
+        if (!textToImprove || !textToImprove.trim()) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Introduce un texto para mejorar." }));
+          return;
+        }
+
+        let refBudgets = [];
+        try {
+          if (fields.referenceBudgets) {
+            refBudgets = typeof fields.referenceBudgets === "string" ? JSON.parse(fields.referenceBudgets) : fields.referenceBudgets;
+          }
+        } catch {}
+
+        const refBudgetsText = (refBudgets || [])
+          .filter(r => r.is_active !== false)
+          .slice(0, 5)
+          .map((r, idx) => `=== EJEMPLO MODELO DE EMPRESA ${idx + 1}: ${r.name || "Presupuesto Modelo"} ===\n${(r.extracted_text || r.text_content || "").substring(0, 2000)}`)
+          .join("\n\n");
+
+        const targetProvider = fields.provider || currentConfig.provider || "google";
+        const targetKeys = currentConfig.apiKeys || {};
+        const targetApiKey = fields.apiKey || targetKeys[targetProvider] || currentConfig.apiKey;
+        const targetModel = fields.model || currentConfig.model;
+
+        const systemInstruction = `
+Eres un Ingeniero Técnico de Edificación y Jefe de Obra experto de "ObraMaster".
+Tu objetivo es reescribir y mejorar borradores o descripciones de trabajos/partidas de presupuesto escritas por el usuario, convirtiéndolas al lenguaje profesional de un constructor o reformista, con la terminología técnica precisa del sector de la edificación (pliegos de condiciones, normativa CTE, saneado de soportes, medios auxiliares, imprimaciones, unidades normalizadas m2/ml/ud/pa, etc.).
+
+${refBudgetsText ? `PRESUPUESTOS Y EJEMPLOS DE REFERENCIA DE LA EMPRESA:\nUtiliza los siguientes ejemplos como referencia obligatoria de estilo, tono, formato y vocabulario técnico. Imita su forma de redactar:\n\n${refBudgetsText}\n` : ""}
+
+Devuelve STRICTLY un JSON válido con esta estructura exacta:
+{
+  "textoMejorado": "Texto completo reescrito en lenguaje técnico profesional de construcción y reformas",
+  "explicacionCambios": "Breve resumen ejecutivo de las mejoras técnicas y vocabulario introducido (1 frase)"
+}
+`;
+
+        const userPrompt = `
+TEXTO DRAFT ORIGINAL A MEJORAR Y REESCRIBIR (${context}):
+"""
+${textToImprove.trim()}
+"""
+`;
+
+        let rawOutput = "";
+        if (targetProvider === "google") {
+          rawOutput = await callGeminiProvider({
+            apiKey: targetApiKey,
+            model: targetModel,
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            systemInstruction,
+            temperature: 0.2
+          });
+        } else if (targetProvider === "openai") {
+          rawOutput = await callOpenAiProvider({
+            apiKey: targetApiKey,
+            model: targetModel || "gpt-4o",
+            messages: [
+              { role: "system", content: systemInstruction },
+              { role: "user", content: userPrompt }
+            ],
+            temperature: 0.2
+          });
+        } else if (targetProvider === "anthropic") {
+          rawOutput = await callAnthropicProvider({
+            apiKey: targetApiKey,
+            model: targetModel || "claude-3-5-sonnet-20241022",
+            systemPrompt: systemInstruction,
+            userPrompt,
+            temperature: 0.2
+          });
+        } else if (targetProvider === "openrouter") {
+          rawOutput = await callOpenRouterProvider({
+            apiKey: targetApiKey,
+            model: targetModel || "google/gemini-1.5-flash",
+            messages: [
+              { role: "system", content: systemInstruction },
+              { role: "user", content: userPrompt }
+            ],
+            temperature: 0.2
+          });
+        } else {
+          rawOutput = await callGeminiProvider({
+            apiKey: targetApiKey,
+            model: targetModel,
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            systemInstruction,
+            temperature: 0.2
+          });
+        }
+
+        const elapsedMs = Math.round(performance.now() - startTime);
+        let parsed = {};
+        try {
+          parsed = JSON.parse(cleanJsonOutput(rawOutput));
+        } catch {
+          parsed = { textoMejorado: rawOutput.trim(), explicacionCambios: "Reescrito con lenguaje técnico." };
+        }
+
+        const improvedText = parsed.textoMejorado || parsed.texto_mejorado || rawOutput.trim();
+        const explicacionCambios = parsed.explicacionCambios || parsed.explicacion || "Vocabulario técnico y precisión de obra aplicados.";
+
+        logAiCall({
+          provider: targetProvider,
+          model: targetModel,
+          action: "improve-text",
+          latencyMs: elapsedMs,
+          success: true,
+          tokensUsed: Math.ceil((userPrompt.length + improvedText.length) / 4)
+        });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          success: true,
+          originalText: textToImprove.trim(),
+          improvedText: improvedText,
+          explicacionCambios: explicacionCambios,
+          provider: targetProvider,
+          model: targetModel,
+          latencyMs: elapsedMs
         }));
         return;
       }
@@ -1007,9 +1214,10 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
       res.end(JSON.stringify({ error: `Endpoint no encontrado: ${pathname}` }));
     } catch (err) {
       console.error("[Backend AI Exception]", err);
+      const safeConfig = typeof currentConfig !== "undefined" ? currentConfig : getSavedAiConfig();
       logAiCall({
-        provider: currentConfig.provider,
-        model: currentConfig.model,
+        provider: safeConfig?.provider || "google",
+        model: safeConfig?.model || GEMINI_DEFAULT_MODEL,
         action: pathname,
         latencyMs: 0,
         success: false,

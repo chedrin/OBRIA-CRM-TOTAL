@@ -154,6 +154,48 @@ export async function transcribeAudioViaBackend(audioBlobOrFiles, customApiKey =
 /**
  * Genera el presupuesto técnico multimodal a través del backend de IA
  */
+/**
+ * Solicita la reescritura y mejora técnica de un texto a la IA activa, usando presupuestos de referencia como modelo
+ */
+export async function improveTextViaBackend({
+  text = '',
+  context = 'Descripción técnica de trabajo',
+  referenceBudgets = [],
+  provider = '',
+  apiKey = '',
+  model = ''
+}) {
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/improve-text`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      context,
+      referenceBudgets,
+      provider,
+      apiKey,
+      model
+    })
+  });
+
+  const rawText = await res.text();
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Error al mejorar texto con IA (${res.status}): ${rawText || res.statusText}`);
+    }
+    throw new Error(`Respuesta no válida del servidor al mejorar texto: ${rawText || 'Sin contenido'}`);
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || res.statusText);
+  }
+
+  return data;
+}
+
 export async function generateBudgetViaBackend({
   fotos = [],
   audios = [],
