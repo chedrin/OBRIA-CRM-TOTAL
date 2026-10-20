@@ -2,11 +2,18 @@
  * ObraMaster - Google Gemini AI Service
  * 
  * Centralized Gemini API integration featuring:
- * 1. SDK Support: Official @google/genai SDK integration
+ * 1. Official @google/genai SDK support
  * 2. Credential provider: Fetches API Key from Supabase (`ai_integration_settings` / `company_settings`)
  *    with fallback to environment variable `VITE_GEMINI_API_KEY`.
- * 3. Model selection: Automatically defaults to `gemini-1.5-flash`.
- * 4. Fallback cascade chain: gemini-1.5-flash -> gemini-2.0-flash -> gemini-1.5-pro
+ * 3. 100% Dynamic Model Auto-Discovery via `GET /v1beta/models`:
+ *    - Calls ListModels from Google Gemini API
+ *    - Filters models supporting "generateContent"
+ *    - Priority 1: Selects the best available model with "flash" in its name (e.g., gemini-1.5-flash, gemini-1.5-flash-latest, gemini-2.0-flash)
+ *    - Priority 2: Fallback to first compatible generateContent model
+ *    - Cleans model name with `.replace(/^models\//, '')`
+ * 4. Connection Ping against detectedModel:
+ *    `POST https://generativelanguage.googleapis.com/v1beta/models/${detectedModel}:generateContent?key=${apiKey}`
+ *    Body: `{ "contents": [{ "parts": [{ "text": "ping" }] }] }`
  * 5. Detailed console logging and robust error handling for 401, 403, 429, and timeouts.
  */
 
@@ -17,18 +24,6 @@ import { buildGeminiSystemPromptWithReferences } from './referenceBudgetService'
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
-
-export const GEMINI_FALLBACK_CASCADE = [
-  'gemini-1.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-pro'
-];
-
-export const GEMINI_MODELS = [
-  { id: 'gemini-1.5-flash', label: 'gemini-1.5-flash (Ultrarrápido - Recomendado)', speed: 'Ultrarrápido', context: '1M tokens' },
-  { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro (Razonamiento complejo / Presupuestos extensos)', speed: 'Rápido', context: '2M tokens' },
-  { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash (Alta velocidad)', speed: 'Ultrarrápido', context: '1M tokens' }
-];
 
 export const USER_FRIENDLY_AI_ERROR = 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.';
 
@@ -85,7 +80,10 @@ export async function createGeminiClient(customKey = '') {
 }
 
 /**
- * Fetches available models from Google Gemini API
+ * Dynamic Auto-Discovery of available models via `GET /v1beta/models`
+ * 1. Calls ListModels from Google API.
+ * 2. Filters models supporting "generateContent".
+ * 3. Normalizes name using `.replace(/^models\//, '')`.
  */
 export async function fetchAvailableGeminiModels(apiKeyInput = '') {
   const apiKey = await getGeminiApiKey(apiKeyInput);
@@ -95,17 +93,22 @@ export async function fetchAvailableGeminiModels(apiKeyInput = '') {
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      handleGeminiHttpError(response.status, 'Error al listar modelos de Gemini');
+      handleGeminiHttpError(response.status, 'Error al consultar la lista de modelos de Google Gemini');
     }
     const data = await response.json();
     const rawList = data.models || [];
-    return rawList
+    const validModels = rawList
       .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
-      .map(m => ({
-        id: (m.name || '').replace(/^models\//, ''),
-        displayName: m.displayName || m.name,
-        description: m.description || ''
-      }));
+      .map(m => {
+        const cleanName = (m.name || '').replace(/^models\//, '');
+        return {
+          id: cleanName,
+          displayName: m.displayName || cleanName,
+          description: m.description || ''
+        };
+      });
+
+    return validModels;
   } catch (err) {
     console.error('[Fetch Gemini Models Exception]', err);
     throw err;
@@ -113,26 +116,53 @@ export async function fetchAvailableGeminiModels(apiKeyInput = '') {
 }
 
 /**
- * Checks Gemini API key, discovers available models, and auto-selects best compatible model
+ * Dynamic Model Selection Algorithm:
+ * - Priority 1: Model with "flash" in its name (e.g. gemini-1.5-flash-latest, gemini-1.5-flash, gemini-2.0-flash)
+ * - Priority 2: First model supporting "generateContent"
  */
-export async function checkAndAutoSelectBestGeminiModel(apiKeyInput = '', modelInput = DEFAULT_GEMINI_MODEL) {
+export function autoSelectOptimalModel(availableModels) {
+  if (!Array.isArray(availableModels) || availableModels.length === 0) {
+    return DEFAULT_GEMINI_MODEL;
+  }
+
+  const modelIds = availableModels.map(m => (typeof m === 'string' ? m : m.id));
+
+  // Priority 1: Flash models
+  const flashModel = modelIds.find(id => id.includes('1.5-flash') || id.includes('flash'));
+  if (flashModel) return flashModel;
+
+  // Priority 2: First compatible model
+  return modelIds[0] || DEFAULT_GEMINI_MODEL;
+}
+
+/**
+ * Auto-Discovers, selects optimal model, and runs a ping connection test
+ */
+export async function checkAndAutoSelectBestGeminiModel(apiKeyInput = '') {
   const apiKey = await getGeminiApiKey(apiKeyInput);
   if (!apiKey) {
     throw new Error('Se requiere una API Key para probar la conexión con Gemini.');
   }
 
-  const selectedModel = normalizeGeminiModel(modelInput) || DEFAULT_GEMINI_MODEL;
-
   try {
-    const testRes = await testGeminiConnection(apiKey, selectedModel);
+    // 1. Discover models via GET /v1beta/models
+    const available = await fetchAvailableGeminiModels(apiKey);
+
+    // 2. Select optimal model dynamically
+    const detectedModel = autoSelectOptimalModel(available);
+
+    // 3. Ping connection test against detectedModel
+    const testRes = await testGeminiConnection(apiKey, detectedModel);
 
     return {
       success: true,
       provider: 'Google Gemini',
-      activeModel: testRes.model || selectedModel,
+      activeModel: detectedModel,
+      availableModelsCount: available.length,
+      availableModels: available.map(m => m.id),
       latencyMs: testRes.latencyMs,
       message: testRes.message,
-      statusMessage: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo: ${testRes.model || selectedModel}\nEstado: Operativo`
+      statusMessage: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo detectado: ${detectedModel}\nEstado: Operativo`
     };
   } catch (err) {
     console.error('[Check Gemini API Failed]', err);
@@ -145,13 +175,8 @@ export async function checkAndAutoSelectBestGeminiModel(apiKeyInput = '', modelI
  */
 export function normalizeGeminiModel(rawModel) {
   if (!rawModel || typeof rawModel !== 'string') return DEFAULT_GEMINI_MODEL;
-  const cleaned = rawModel.trim().toLowerCase();
-
-  if (cleaned.includes('1.5-pro') || cleaned.includes('pro')) return 'gemini-1.5-pro';
-  if (cleaned.includes('2.0')) return 'gemini-2.0-flash';
-  if (cleaned.includes('1.5-flash') || cleaned.includes('1.5')) return 'gemini-1.5-flash';
-
-  return DEFAULT_GEMINI_MODEL;
+  const cleaned = rawModel.trim().toLowerCase().replace(/^models\//, '');
+  return cleaned || DEFAULT_GEMINI_MODEL;
 }
 
 /**
@@ -194,7 +219,7 @@ export function handleGeminiHttpError(status, detail = '') {
 }
 
 /**
- * Executes a Gemini generateContent request with automatic fallback cascade through models
+ * Executes a Gemini generateContent request
  */
 async function executeGeminiRequestWithFallback({ apiKeyInput, model, payload }) {
   const apiKey = await getGeminiApiKey(apiKeyInput);
@@ -202,81 +227,57 @@ async function executeGeminiRequestWithFallback({ apiKeyInput, model, payload })
     throw new Error('Clave de API de Gemini no configurada.');
   }
 
-  let preferredModel = normalizeGeminiModel(model);
-  let modelsToTry = [preferredModel];
+  let preferredModel = normalizeGeminiModel(model) || DEFAULT_GEMINI_MODEL;
+  const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(preferredModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-  for (const fallbackModel of GEMINI_FALLBACK_CASCADE) {
-    if (!modelsToTry.includes(fallbackModel)) {
-      modelsToTry.push(fallbackModel);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawContent) {
+        throw new Error('Respuesta vacía recibida del servidor de Gemini');
+      }
+      return { data, rawContent, modelUsed: preferredModel };
     }
-  }
 
-  let lastError = null;
-
-  for (const currentModel of modelsToTry) {
-    const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    let errMessage = response.statusText;
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
+      const errJson = await response.json();
+      errMessage = errJson.error?.message || errMessage;
+    } catch (e) {}
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
+    console.error(`[Gemini API Error Response] Model: "${preferredModel}", Status: ${response.status}, Detail:`, errMessage);
 
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const data = await response.json();
-        const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawContent) {
-          throw new Error('Respuesta vacía recibida del servidor de Gemini');
-        }
-        return { data, rawContent, modelUsed: currentModel };
-      }
-
-      let errMessage = response.statusText;
-      try {
-        const errJson = await response.json();
-        errMessage = errJson.error?.message || errMessage;
-      } catch (e) {}
-
-      console.error(`[Gemini API Error Response] Model: "${currentModel}", Status: ${response.status}, Detail:`, errMessage);
-
-      if (response.status === 429 || response.status === 401 || response.status === 403) {
-        handleGeminiHttpError(response.status, errMessage);
-      }
-
-      if (response.status === 404 || errMessage.includes('not found') || errMessage.includes('is not supported')) {
-        console.warn(`[Gemini Fallback] El modelo "${currentModel}" no está disponible (404). Reintentando con el siguiente modelo...`);
-        lastError = new Error(errMessage);
-        continue;
-      }
-
-      throw new Error(errMessage);
-    } catch (netErr) {
-      if (netErr.name === 'AbortError') {
-        throw new Error('Tiempo de espera agotado al comunicar con la IA de Gemini (Timeout 45s).');
-      }
-      console.error(`[Gemini Request Exception] Modelo "${currentModel}":`, netErr.message || netErr);
-      lastError = netErr;
-      if (netErr.message && (netErr.message.includes('404') || netErr.message.includes('not found'))) {
-        continue;
-      }
-      throw netErr;
+    if (response.status === 429 || response.status === 401 || response.status === 403) {
+      handleGeminiHttpError(response.status, errMessage);
     }
-  }
 
-  console.error('[Gemini Cascade Failed] Se agotaron todos los modelos del cascade. Último error técnico:', lastError);
-  throw lastError || new Error(USER_FRIENDLY_AI_ERROR);
+    throw new Error(errMessage);
+  } catch (netErr) {
+    if (netErr.name === 'AbortError') {
+      throw new Error('Tiempo de espera agotado al comunicar con la IA de Gemini (Timeout 45s).');
+    }
+    console.error(`[Gemini Request Exception] Modelo "${preferredModel}":`, netErr.message || netErr);
+    throw netErr;
+  }
 }
 
 /**
- * Pings Google Gemini API to test connection and measure latency
- * Endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}
- * Payload: { "contents": [{ "parts": [{ "text": "ping" }] }] }
+ * Pings Google Gemini API to test connection against detectedModel
+ * Endpoint: POST https://generativelanguage.googleapis.com/v1beta/models/${detectedModel}:generateContent?key=${apiKey}
+ * Body: { "contents": [{ "parts": [{ "text": "ping" }] }] }
  */
 export async function testGeminiConnection(apiKeyInput = '', model = DEFAULT_GEMINI_MODEL) {
   const apiKey = await getGeminiApiKey(apiKeyInput);
