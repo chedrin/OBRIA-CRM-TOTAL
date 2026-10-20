@@ -82,9 +82,11 @@ export default function MotorIaConfig() {
     openrouter: false
   });
   const [testing, setTesting] = useState(false);
+  const [testingAll, setTestingAll] = useState(false);
   const [checkingGemini, setCheckingGemini] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [testAllResults, setTestAllResults] = useState(null);
   const [geminiCheckResult, setGeminiCheckResult] = useState(null);
 
   const [backendInfo, setBackendInfo] = useState({ checking: true, isAvailable: false, details: null });
@@ -308,6 +310,71 @@ export default function MotorIaConfig() {
         error: err.message || 'No ha sido posible conectar con la IA. Revise la clave de la API.'
       });
       showNotification(err.message || 'Error en prueba de conexión con la IA', 'error');
+    }
+  };
+
+  const handleTestAllConnections = async () => {
+    setTestingAll(true);
+    setTestAllResults(null);
+    setTestResult(null);
+
+    const results = [];
+
+    for (const p of PROVIDERS) {
+      const key = (apiKeys[p.id] || '').trim();
+      if (!key) {
+        results.push({
+          id: p.id,
+          name: p.name,
+          hasKey: false,
+          success: false,
+          error: 'Sin clave API configurada'
+        });
+        continue;
+      }
+
+      const targetModel = p.defaultModel;
+      try {
+        let res;
+        if (p.id === 'google') {
+          res = await testGeminiConnection(key, targetModel);
+        } else {
+          res = await testBackendAiConnection({
+            provider: p.id,
+            apiKey: key,
+            model: targetModel,
+            temperature,
+            maxTokens
+          });
+        }
+        results.push({
+          id: p.id,
+          name: p.name,
+          hasKey: true,
+          success: true,
+          latencyMs: res.latencyMs || 120,
+          message: res.message || 'Conexión OK (HTTP 200)'
+        });
+      } catch (err) {
+        results.push({
+          id: p.id,
+          name: p.name,
+          hasKey: true,
+          success: false,
+          error: err.message || 'Error al conectar'
+        });
+      }
+    }
+
+    setTestingAll(false);
+    setTestAllResults(results);
+
+    const anySuccess = results.some(r => r.success);
+    if (anySuccess) {
+      confetti({ particleCount: 50, spread: 60 });
+      showNotification('Prueba global de APIs completada.', 'success');
+    } else {
+      showNotification('Prueba global completada con advertencias o errores.', 'warning');
     }
   };
 
@@ -569,6 +636,56 @@ export default function MotorIaConfig() {
           </div>
         )}
 
+        {/* All APIs Test Result Card */}
+        {testAllResults && (
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <h5 className="text-xs font-bold text-white flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>Estado de Conexión de Todas las APIs:</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {testAllResults.filter(r => r.success).length} / {testAllResults.length} Operativas
+              </span>
+            </h5>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {testAllResults.map((r) => (
+                <div
+                  key={r.id}
+                  className={`p-3 rounded-xl border flex items-center justify-between ${
+                    r.success
+                      ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-300'
+                      : r.hasKey
+                      ? 'bg-rose-950/20 border-rose-500/40 text-rose-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-500'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {r.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className={`w-4 h-4 shrink-0 ${r.hasKey ? 'text-rose-400' : 'text-slate-500'}`} />
+                    )}
+                    <div className="truncate">
+                      <span className="font-bold block truncate">{r.name}</span>
+                      <span className="text-[10px] opacity-80 block truncate font-mono">
+                        {r.success ? r.message : r.error}
+                      </span>
+                    </div>
+                  </div>
+
+                  {r.success && (
+                    <span className="text-[10px] font-mono bg-emerald-500/20 px-2 py-0.5 rounded text-emerald-400 shrink-0 font-bold ml-2">
+                      {r.latencyMs} ms
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Test Result Box */}
         {testResult && (
           <div className={`p-4 rounded-xl border text-xs space-y-2 ${
@@ -618,7 +735,17 @@ export default function MotorIaConfig() {
               className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition border border-slate-700 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" /> : <Zap className="w-3.5 h-3.5 text-amber-400" />}
-              <span>{testing ? 'Probando...' : 'Probar conexión'}</span>
+              <span>{testing ? 'Probando...' : 'Probar Esta API'}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={testingAll}
+              onClick={handleTestAllConnections}
+              className="px-4 py-2.5 bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-300 font-bold text-xs rounded-xl transition border border-indigo-500/40 flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {testingAll ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <Server className="w-3.5 h-3.5 text-indigo-400" />}
+              <span>{testingAll ? 'Verificando todas...' : 'Probar Todas las APIs'}</span>
             </button>
           </div>
 
