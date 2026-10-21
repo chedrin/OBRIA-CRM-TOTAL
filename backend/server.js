@@ -1425,9 +1425,10 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
         const providedText = String(fields.text || fields.extracted_text || "");
         const pdfFile = (files.pdf || files.file || [])[0] || null;
 
-        if (!pdfFile && providedText.trim().length < 40) {
+        const isPlaceholderText = providedText.includes("[PRESUPUESTO MODELO DE REFERENCIA EXTRAÍDO") || providedText.startsWith("[DOCUMENTO PDF:");
+        if (!pdfFile && (providedText.trim().length < 40 || isPlaceholderText)) {
           res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "El presupuesto no tiene texto suficiente para analizarlo. Vuelve a subir el PDF o pega su contenido." }));
+          res.end(JSON.stringify({ error: "No se pudo leer el texto de este PDF. Bórralo y vuelve a subirlo (la IA lo lee entero al subirlo), o pega su contenido con el botón del ojo." }));
           return;
         }
 

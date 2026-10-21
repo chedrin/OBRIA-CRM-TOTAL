@@ -63,6 +63,18 @@ function toRecordMap(collection, value, single) {
   return map;
 }
 
+/**
+ * Postgres (jsonb) rechaza el carácter nulo \u0000 y los "surrogates" sueltos, que pueden colarse
+ * al extraer texto de un PDF. Una sola fila así hace fallar todo el guardado, así que se limpian antes.
+ */
+function toDbSafe(data) {
+  const json = JSON.stringify(data)
+    .replace(/(?<!\\)\\u0000/g, '')
+    .replace(/\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f][0-9a-f]{2})/gi, '')
+    .replace(/(?<!\\ud[89ab][0-9a-f]{2})\\ud[c-f][0-9a-f]{2}/gi, '');
+  return JSON.parse(json);
+}
+
 function chunk(list, size) {
   const out = [];
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
@@ -197,7 +209,7 @@ export function useCollectionSync({
       });
 
       for (const group of chunk(toWrite, WRITE_CHUNK)) {
-        const rows = group.map((record) => ({ collection, id: record.id, data: record.data }));
+        const rows = group.map((record) => ({ collection, id: record.id, data: toDbSafe(record.data) }));
         const request = canUpdate
           ? supabase.from(TABLE).upsert(rows, { onConflict: 'collection,id' })
           : supabase.from(TABLE).insert(rows);
@@ -217,7 +229,7 @@ export function useCollectionSync({
       console.error(`[Sync] No se pudo guardar "${collection}" en Supabase:`, err?.message || err);
       if (notify && Date.now() - lastErrorNoticeRef.current > 60000) {
         lastErrorNoticeRef.current = Date.now();
-        notify('No se pudieron guardar los últimos cambios en la nube. Se reintentará automáticamente.', 'error');
+        notify(`No se pudieron guardar los últimos cambios de "${collection}" en la nube (${err?.message || 'error desconocido'}). Se reintentará automáticamente.`, 'error');
       }
       const attempts = Math.min(retryRef.current.attempts + 1, 6);
       retryRef.current.attempts = attempts;
@@ -261,7 +273,7 @@ export function useCollectionSync({
           for (const group of chunk(toSeed, WRITE_CHUNK)) {
             const { error } = await supabase
               .from(TABLE)
-              .upsert(group.map((record) => ({ collection, id: record.id, data: record.data })), { onConflict: 'collection,id' });
+              .upsert(group.map((record) => ({ collection, id: record.id, data: toDbSafe(record.data) })), { onConflict: 'collection,id' });
             if (error) throw error;
             group.forEach((record) => baselineRef.current.set(record.id, record.json));
           }
