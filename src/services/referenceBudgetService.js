@@ -168,7 +168,15 @@ export async function extractTextFromPdfBlob(file) {
           }
         }
 
-        let extracted = textTokens.join(' ').replace(/\\(\d{3})/g, '').trim();
+        let extracted = textTokens.join(' ')
+          .replace(/\\(\d{3})/g, '')
+          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\uFFFD]/g, '')
+          .trim();
+
+        // La mayoría de PDF van comprimidos y esta lectura básica solo saca basura: si no parece texto,
+        // se deja una descripción y la IA lee el PDF completo en el servidor al analizarlo.
+        const readable = (extracted.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9\s.,;:()%€/-]/g) || []).length;
+        if (extracted.length && readable / extracted.length < 0.85) extracted = '';
 
         // If simple stream extraction extracted very little text, generate structured technical template summary based on filename
         if (extracted.length < 50) {

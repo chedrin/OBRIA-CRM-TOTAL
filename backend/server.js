@@ -363,7 +363,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
         let errText = await response.text();
         try { errText = JSON.parse(errText).error?.message || errText; } catch {}
         console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
-        failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 160)}`);
+        failures.push(`[${targetModel}] HTTP ${response.status}: ${/quota/i.test(errText) ? "cuota agotada" : errText.slice(0, 120)}`);
 
         const gone = response.status === 404 || /not found|is not supported|no longer available/i.test(errText);
         if (gone) {
@@ -372,7 +372,8 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
           continue;
         }
         if ([429, 500, 503].includes(response.status)) {
-          busyModels.push(targetModel);
+          // Cuota agotada no se recupera en segundos: solo se reintenta la saturación puntual.
+          if (!/quota/i.test(errText)) busyModels.push(targetModel);
           continue;
         }
 
@@ -670,9 +671,12 @@ async function callActiveProvider({ config, systemInstruction, userPrompt, tempe
         maxTokens
       });
     } catch (err) {
-      failures.push(`${provider}: ${err.detail || err.message}`);
+      failures.push(`${provider}: ${String(err.detail || err.message).slice(0, 350)}`);
       console.warn(`[IA] Falló ${provider}, probando el siguiente proveedor.`, err.detail || err.message);
     }
+  }
+  if (candidates.length === 1) {
+    failures.push("sin otra IA de respaldo: añade la clave de OpenAI o Claude en Ajustes > Motor IA y pulsa Guardar");
   }
   throw aiError(failures.join(" | "));
 }
@@ -1425,9 +1429,10 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
         const providedText = String(fields.text || fields.extracted_text || "");
         const pdfFile = (files.pdf || files.file || [])[0] || null;
 
-        if (!pdfFile && providedText.trim().length < 40) {
+        const isPlaceholderText = providedText.includes("[PRESUPUESTO MODELO DE REFERENCIA EXTRAÍDO") || providedText.startsWith("[DOCUMENTO PDF:");
+        if (!pdfFile && (providedText.trim().length < 40 || isPlaceholderText)) {
           res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "El presupuesto no tiene texto suficiente para analizarlo. Vuelve a subir el PDF o pega su contenido." }));
+          res.end(JSON.stringify({ error: "No se pudo leer el texto de este PDF. Bórralo y vuelve a subirlo (la IA lo lee entero al subirlo), o pega su contenido con el botón del ojo." }));
           return;
         }
 

@@ -289,6 +289,9 @@ export default function PresupuestosModeloConfig() {
                         )}
                       </div>
 
+                      {budget.ai_review_error && !budget.ai_reviewed_at && analyzingReferenceId !== budget.id && (
+                        <p className="text-[11px] text-rose-300/90">⚠ {budget.ai_review_error}</p>
+                      )}
                       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
                         <span>Tamaño: <strong className="text-slate-300">{sizeKb} KB</strong></span>
                         <span>·</span>
