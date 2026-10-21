@@ -247,6 +247,40 @@ function cleanJsonOutput(raw) {
   return str.replace(/,\s*([}\]])/g, "$1");
 }
 
+// Parsea el JSON de la IA. Si llega cortado (límite de tokens), lo cierra en el último objeto completo.
+function parseAiJson(raw) {
+  const cleaned = cleanJsonOutput(raw);
+  try {
+    return JSON.parse(cleaned);
+  } catch (firstErr) {
+    const str = String(raw || "").slice(Math.max(0, String(raw || "").indexOf("{")));
+    const stack = [];
+    let inString = false, escaped = false, lastCut = -1, lastStack = null;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === "{" || ch === "[") stack.push(ch);
+      else if (ch === "}" || ch === "]") {
+        stack.pop();
+        if (stack.length) { lastCut = i + 1; lastStack = [...stack]; }
+      }
+    }
+    if (lastCut > 0) {
+      const closers = lastStack.reverse().map(c => (c === "{" ? "}" : "]")).join("");
+      try {
+        return JSON.parse((str.slice(0, lastCut) + closers).replace(/,\s*([}\]])/g, "$1"));
+      } catch {}
+    }
+    throw aiError(`La IA devolvió una respuesta incompleta o no válida (${firstErr.message}).`);
+  }
+}
+
 function fileToPart(file) {
   let mimeType = (file.mimetype || "application/octet-stream").split(";")[0].trim();
   if (file.originalname) {
@@ -290,45 +324,65 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
   };
 
   const failures = [];
+  const preferredModel = modelsToTry[0];
+  let preferredGone = false;
+  let busyModels = [];
 
-  for (const targetModel of modelsToTry) {
-    const url = `${baseUrl}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bodyPayload)
-      });
+  // Segunda vuelta solo para los modelos saturados (429/500/503), tras una pausa breve.
+  for (let round = 0; round < 2; round++) {
+    const roundModels = round === 0 ? modelsToTry : busyModels;
+    if (!roundModels.length) break;
+    if (round > 0) await new Promise(r => setTimeout(r, 2500));
+    busyModels = [];
 
-      if (response.ok) {
-        const data = await response.json();
-        const candidate = data.candidates?.[0];
-        const rawText = (candidate?.content?.parts || [])
-          .filter(p => p.text && !p.thought)
-          .map(p => p.text)
-          .join("");
-        if (rawText) return rawText;
-        failures.push(`[${targetModel}] respuesta vacía (${candidate?.finishReason || data.promptFeedback?.blockReason || "sin motivo"})`);
-        console.error(`[Backend Gemini Error] ${failures[failures.length - 1]}`);
+    for (const targetModel of roundModels) {
+      const url = `${baseUrl}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyPayload)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const candidate = data.candidates?.[0];
+          const rawText = (candidate?.content?.parts || [])
+            .filter(p => p.text && !p.thought)
+            .map(p => p.text)
+            .join("");
+          if (rawText) {
+            if (preferredGone) replaceSavedGeminiModel(preferredModel, targetModel);
+            return rawText;
+          }
+          failures.push(`[${targetModel}] respuesta vacía (${candidate?.finishReason || data.promptFeedback?.blockReason || "sin motivo"})`);
+          console.error(`[Backend Gemini Error] ${failures[failures.length - 1]}`);
+          continue;
+        }
+
+        let errText = await response.text();
+        try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+        console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
+        failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 300)}`);
+
+        const gone = response.status === 404 || /not found|is not supported|no longer available/i.test(errText);
+        if (gone) {
+          markGeminiModelUnavailable(effectiveKey, targetModel);
+          if (targetModel === preferredModel) preferredGone = true;
+          continue;
+        }
+        if ([429, 500, 503].includes(response.status)) {
+          busyModels.push(targetModel);
+          continue;
+        }
+
+        round = 2;
+        break;
+      } catch (netErr) {
+        console.error(`[Backend Gemini Exception] Modelo "${targetModel}":`, netErr.message);
+        failures.push(`[${targetModel}] ${netErr.message}`);
         continue;
       }
-
-      let errText = await response.text();
-      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
-      console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
-      failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 300)}`);
-
-      if ([404, 429, 500, 503].includes(response.status) || /not found|is not supported|no longer available/i.test(errText)) {
-        if (response.status === 404) markGeminiModelUnavailable(effectiveKey, targetModel);
-        console.warn(`[Backend Gemini Cascade] Reintentando con el siguiente modelo tras fallo en ${targetModel}...`);
-        continue;
-      }
-
-      break;
-    } catch (netErr) {
-      console.error(`[Backend Gemini Exception] Modelo "${targetModel}":`, netErr.message);
-      failures.push(`[${targetModel}] ${netErr.message}`);
-      continue;
     }
   }
 
@@ -362,6 +416,19 @@ function markGeminiModelUnavailable(apiKey, modelId) {
   geminiModelsCache.get(apiKey)?.unavailable.add(modelId);
 }
 
+// Si el modelo guardado en Ajustes ya no existe, se sustituye por el que acaba de responder.
+function replaceSavedGeminiModel(oldModel, newModel) {
+  try {
+    const current = getSavedAiConfig();
+    if ((current.provider || "google") === "google" && current.model === oldModel) {
+      saveAiConfig({ model: newModel });
+      console.warn(`[Backend Gemini] Modelo guardado "${oldModel}" retirado; se usa "${newModel}".`);
+    }
+  } catch (err) {
+    console.warn("[Backend Gemini] No se pudo actualizar el modelo guardado:", err.message);
+  }
+}
+
 async function geminiModelsToTry(apiKey, preferredModel) {
   const { models, unavailable } = await listGeminiModelsCached(apiKey);
   const candidates = models.length
@@ -387,25 +454,39 @@ async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15,
   if (!effectiveKey) throw aiError("Falta la clave OPENAI_API_KEY.");
 
   const url = "https://api.openai.com/v1/chat/completions";
+  // Los modelos actuales usan max_completion_tokens y algunos solo admiten la temperatura por defecto.
+  const send = (withTemperature) => fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${effectiveKey}`
+    },
+    body: JSON.stringify({
+      model: model || "chat-latest",
+      messages,
+      response_format: { type: "json_object" },
+      ...(withTemperature ? { temperature } : {}),
+      max_completion_tokens: maxTokens
+    })
+  });
+
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${effectiveKey}`
-      },
-      body: JSON.stringify({
-        model: model || "chat-latest",
-        messages,
-        response_format: { type: "json_object" },
-        temperature,
-        max_tokens: maxTokens
-      })
-    });
+    let response = await send(true);
+    let errText = "";
+    if (!response.ok) {
+      errText = await response.text();
+      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+      if (response.status === 400 && /temperature/i.test(errText)) {
+        response = await send(false);
+        errText = "";
+        if (!response.ok) {
+          errText = await response.text();
+          try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+        }
+      }
+    }
 
     if (!response.ok) {
-      let errText = await response.text();
-      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
       console.error(`[OpenAI Error] HTTP ${response.status}: ${errText}`);
       throw aiError(`OpenAI HTTP ${response.status}: ${errText}`);
     }
@@ -1290,7 +1371,7 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
         const effectiveConfig = {
           ...configWithRequestKey(currentConfig, fields),
           temperature: currentConfig.temperature || 0.15,
-          maxTokens: Math.max(Number(currentConfig.maxTokens) || 0, 16384)
+          maxTokens: Math.max(Number(currentConfig.maxTokens) || 0, 32768)
         };
 
         const rawOutput = await callActiveProvider({
@@ -1303,7 +1384,7 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
         });
 
         const elapsedMs = Math.round(performance.now() - startTime);
-        const parsed = JSON.parse(cleanJsonOutput(rawOutput));
+        const parsed = parseAiJson(rawOutput);
 
         logAiCall({
           provider: effectiveConfig.provider,

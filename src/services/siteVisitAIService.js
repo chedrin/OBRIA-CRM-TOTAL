@@ -146,6 +146,7 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
   let observacionesTecnicas = [];
   let generatedBy = '';
   let lastError = null;
+  let backendError = null;
 
   if (onProgress) onProgress({ step: 1, label: 'Preparando dictado, notas y mediciones de la visita...' });
 
@@ -204,6 +205,7 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
     }
   } catch (backendErr) {
     lastError = backendErr;
+    backendError = backendErr;
     console.warn('Servidor de IA no disponible para generar el presupuesto:', backendErr.message);
   }
 
@@ -246,7 +248,9 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
         generatedBy = 'Google Gemini (clave del navegador)';
       }
     } catch (geminiErr) {
-      lastError = geminiErr;
+      lastError = backendError
+        ? new Error(`Servidor: ${backendError.message} | Navegador: ${geminiErr.message}`)
+        : geminiErr;
       console.warn('Fallo llamada Gemini en visita:', geminiErr.message);
     }
   }

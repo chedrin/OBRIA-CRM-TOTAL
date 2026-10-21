@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DEFAULT_GEMINI_MODEL, checkAndAutoSelectBestGeminiModel, testGeminiConnection } from '../../services/geminiService';
+import { DEFAULT_GEMINI_MODEL, checkAndAutoSelectBestGeminiModel } from '../../services/geminiService';
 import { checkBackendStatus, getBackendAiSettings, updateBackendAiSettings, testBackendAiConnection } from '../../services/backendAiService';
 import { supabase } from '../../services/supabaseClient';
 import {
@@ -278,18 +278,13 @@ export default function MotorIaConfig() {
     const targetModel = modelName || selectedProviderObj.defaultModel;
 
     try {
-      let res;
-      if (selectedProvider === 'google') {
-        res = await testGeminiConnection(provKey, targetModel);
-      } else {
-        res = await testBackendAiConnection({
-          provider: selectedProvider,
-          apiKey: provKey,
-          model: targetModel,
-          temperature,
-          maxTokens
-        });
-      }
+      const res = await testBackendAiConnection({
+        provider: selectedProvider,
+        apiKey: provKey,
+        model: targetModel,
+        temperature,
+        maxTokens
+      });
 
       setTesting(false);
       await updateSupabaseAiStatus('active', selectedProvider, targetModel);
@@ -335,18 +330,14 @@ export default function MotorIaConfig() {
 
       const targetModel = p.defaultModel;
       try {
-        let res;
-        if (p.id === 'google') {
-          res = await testGeminiConnection(key, targetModel);
-        } else {
-          res = await testBackendAiConnection({
-            provider: p.id,
-            apiKey: key,
-            model: targetModel,
-            temperature,
-            maxTokens
-          });
-        }
+        // Todas por el servidor: allí Gemini prueba otros modelos si uno está saturado o retirado.
+        const res = await testBackendAiConnection({
+          provider: p.id,
+          apiKey: key,
+          model: targetModel,
+          temperature,
+          maxTokens
+        });
         results.push({
           id: p.id,
           name: p.name,
@@ -667,9 +658,9 @@ export default function MotorIaConfig() {
                     ) : (
                       <AlertCircle className={`w-4 h-4 shrink-0 ${r.hasKey ? 'text-rose-400' : 'text-slate-500'}`} />
                     )}
-                    <div className="truncate">
+                    <div className="min-w-0">
                       <span className="font-bold block truncate">{r.name}</span>
-                      <span className="text-[10px] opacity-80 block truncate font-mono">
+                      <span className={`text-[10px] opacity-80 block font-mono ${r.success ? 'truncate' : 'break-words'}`}>
                         {r.success ? r.message : r.error}
                       </span>
                     </div>
