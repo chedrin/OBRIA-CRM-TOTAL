@@ -43,6 +43,8 @@ export default function ObraDetail({ obraId, onBack }) {
     addMaterialToObra,
     updateMaterialStatus,
     obreros,
+    employees,
+    users,
     presupuestos,
     facturas,
     facturasProveedores,
@@ -61,6 +63,23 @@ export default function ObraDetail({ obraId, onBack }) {
   const obra = obras.find(o => o.id === obraId);
   const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, documentos, catalogo_precios, equipo
   const [expandedFases, setExpandedFases] = useState({});
+  const [editingFase, setEditingFase] = useState(null); // copia de la fase en edición
+
+  // Operarios disponibles: fichas de operario, empleados de RRHH y usuarios con rol obrero (sin bajas ni duplicados).
+  const operariosDisponibles = (() => {
+    const seen = new Set();
+    const list = [];
+    const add = (nombre, detalle) => {
+      const clean = (nombre || '').trim();
+      if (!clean || seen.has(clean.toLowerCase())) return;
+      seen.add(clean.toLowerCase());
+      list.push({ nombre: clean, detalle: (detalle || '').split('/')[0].trim() });
+    };
+    (obreros || []).filter(o => o.estado !== 'baja').forEach(o => add(o.nombre, o.puesto || o.especialidad));
+    (employees || []).filter(e => e.estado !== 'baja').forEach(e => add(`${e.nombre || ''} ${e.apellidos || ''}`, e.especialidad || e.categoria));
+    (users || []).filter(u => u.role === 'obrero' && u.isActive !== false).forEach(u => add(u.fullName || u.username, u.trade));
+    return list;
+  })();
 
   const toggleFaseExpand = (faseId) => {
     setExpandedFases(prev => ({
@@ -94,9 +113,39 @@ export default function ObraDetail({ obraId, onBack }) {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [newTaskForm, setNewTaskForm] = useState({
     nombre: '',
-    responsable: obreros[0]?.nombre || 'Operario',
+    responsable: '',
     dias: 4
   });
+
+  const openNewTaskModal = () => {
+    setNewTaskForm(prev => ({ ...prev, responsable: prev.responsable || operariosDisponibles[0]?.nombre || '' }));
+    setShowNewTaskModal(true);
+  };
+
+  const startEditFase = (fase) => {
+    setEditingFase({ ...fase, tareas: (fase.tareas || []).map(t => ({ ...t })) });
+    setExpandedFases(prev => ({ ...prev, [fase.id]: true }));
+  };
+
+  const updateEditingTarea = (tareaId, changes) => {
+    setEditingFase(prev => ({ ...prev, tareas: prev.tareas.map(t => (t.id === tareaId ? { ...t, ...changes } : t)) }));
+  };
+
+  const handleSaveFase = () => {
+    if (!editingFase?.nombre?.trim()) return;
+    const original = (obra.fases || []).find(f => f.id === editingFase.id) || {};
+    const tareas = editingFase.tareas.map(t => {
+      const prev = (original.tareas || []).find(o => o.id === t.id) || {};
+      // Marca lo editado a mano para que una resincronización con el presupuesto no lo pise.
+      const tituloEditado = prev.tituloEditado || prev.titulo !== t.titulo;
+      return { ...t, tituloEditado };
+    });
+    const fases = (obra.fases || []).map(f => (f.id === editingFase.id
+      ? { ...editingFase, tareas, nombreEditado: original.nombreEditado || original.nombre !== editingFase.nombre }
+      : f));
+    updateObra(obra.id, { fases });
+    setEditingFase(null);
+  };
 
   const [showNewAlertModal, setShowNewAlertModal] = useState(false);
   const [alertForm, setAlertForm] = useState({
@@ -247,7 +296,7 @@ export default function ObraDetail({ obraId, onBack }) {
     if (!newTaskForm.nombre) return;
     broadcastAdminTask(obra.id, newTaskForm);
     setShowNewTaskModal(false);
-    setNewTaskForm({ nombre: '', responsable: obreros[0]?.nombre || 'Operario', dias: 4 });
+    setNewTaskForm({ nombre: '', responsable: newTaskForm.responsable, dias: 4 });
   };
 
   const handleSaveNewAlert = (e) => {
@@ -446,7 +495,7 @@ export default function ObraDetail({ obraId, onBack }) {
 
               <button
                 type="button"
-                onClick={() => setShowNewTaskModal(true)}
+                onClick={openNewTaskModal}
                 className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow"
               >
                 <Plus className="w-4 h-4" />
@@ -512,6 +561,9 @@ export default function ObraDetail({ obraId, onBack }) {
                             </>
                           )}
                         </div>
+                        {fase.descripcion && (
+                          <p className="text-xs text-slate-300 mt-1.5 whitespace-pre-line">{fase.descripcion}</p>
+                        )}
                       </div>
                     </div>
 
@@ -533,6 +585,15 @@ export default function ObraDetail({ obraId, onBack }) {
                         </span>
                       </div>
 
+                      <button
+                        type="button"
+                        onClick={() => startEditFase(fase)}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 transition"
+                        title="Editar etapa"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+
                       {hasTasks && (
                         <button
                           type="button"
@@ -546,8 +607,114 @@ export default function ObraDetail({ obraId, onBack }) {
                     </div>
                   </div>
 
+                  {/* Editor de la etapa */}
+                  {editingFase?.id === fase.id && (
+                    <div className="bg-slate-950/90 border-t border-amber-500/30 p-4 sm:p-5 space-y-4 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="text-slate-300 block mb-1 font-bold">Nombre de la etapa:</label>
+                          <input
+                            type="text"
+                            value={editingFase.nombre || ''}
+                            onChange={(e) => setEditingFase({ ...editingFase, nombre: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-300 block mb-1 font-bold">Responsable:</label>
+                          <select
+                            value={editingFase.responsable || ''}
+                            onChange={(e) => setEditingFase({ ...editingFase, responsable: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                          >
+                            {editingFase.responsable && !operariosDisponibles.some(o => o.nombre === editingFase.responsable) && (
+                              <option value={editingFase.responsable}>{editingFase.responsable}</option>
+                            )}
+                            {operariosDisponibles.map(o => (
+                              <option key={o.nombre} value={o.nombre}>{o.nombre}{o.detalle ? ` (${o.detalle})` : ''}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-slate-300 block mb-1 font-bold">Descripción de la etapa:</label>
+                        <textarea
+                          rows={3}
+                          value={editingFase.descripcion || ''}
+                          onChange={(e) => setEditingFase({ ...editingFase, descripcion: e.target.value })}
+                          placeholder="Trabajos que incluye, medios, condiciones de ejecución..."
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                        />
+                        <div className="mt-2">
+                          <AiImprovementControl
+                            value={editingFase.descripcion || ''}
+                            onAccept={(improved) => setEditingFase(prev => ({ ...prev, descripcion: improved }))}
+                            context={`Descripción de la etapa de obra "${editingFase.nombre || ''}"`}
+                            buttonSize="small"
+                          />
+                        </div>
+                      </div>
+
+                      {editingFase.tareas.length > 0 && (
+                        <div className="space-y-3">
+                          <span className="text-slate-300 font-bold block">Partidas de la etapa:</span>
+                          {editingFase.tareas.map((tarea) => (
+                            <div key={tarea.id} className="p-3 rounded-xl border border-slate-800 bg-slate-900 space-y-2">
+                              <div className="flex items-center gap-2">
+                                {tarea.codigo && (
+                                  <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded shrink-0">
+                                    {tarea.codigo}
+                                  </span>
+                                )}
+                                <select
+                                  value={tarea.asignadoA || ''}
+                                  onChange={(e) => updateEditingTarea(tarea.id, { asignadoA: e.target.value })}
+                                  className="ml-auto bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-white text-[11px] focus:outline-none focus:border-amber-400"
+                                >
+                                  <option value="">Responsable de la etapa</option>
+                                  {tarea.asignadoA && !operariosDisponibles.some(o => o.nombre === tarea.asignadoA) && (
+                                    <option value={tarea.asignadoA}>{tarea.asignadoA}</option>
+                                  )}
+                                  {operariosDisponibles.map(o => (
+                                    <option key={o.nombre} value={o.nombre}>{o.nombre}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <textarea
+                                rows={2}
+                                value={tarea.titulo || ''}
+                                onChange={(e) => updateEditingTarea(tarea.id, { titulo: e.target.value })}
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-amber-400"
+                              />
+                              <AiImprovementControl
+                                value={tarea.titulo || ''}
+                                onAccept={(improved) => updateEditingTarea(tarea.id, { titulo: improved })}
+                                context="Descripción técnica de partida de obra"
+                                buttonSize="small"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                        <button type="button" onClick={() => setEditingFase(null)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl">
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveFase}
+                          className="px-5 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 text-slate-950 font-black rounded-xl shadow"
+                        >
+                          Guardar etapa
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Tasks Breakdown (Partidas del Presupuesto Firmado) */}
-                  {hasTasks && isExpanded && (
+                  {hasTasks && isExpanded && editingFase?.id !== fase.id && (
                     <div className="bg-slate-950/80 border-t border-slate-800 p-4 sm:p-5 space-y-3">
                       <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-800/80 pb-2">
                         <span className="font-bold text-white flex items-center gap-1.5">
@@ -1433,8 +1600,9 @@ export default function ObraDetail({ obraId, onBack }) {
                     onChange={(e) => setNewTaskForm({ ...newTaskForm, responsable: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-medium focus:outline-none focus:border-amber-400"
                   >
-                    {obreros.map(o => (
-                      <option key={o.id} value={o.nombre}>{o.nombre} ({o.puesto.split('/')[0]})</option>
+                    {operariosDisponibles.length === 0 && <option value="">No hay operarios dados de alta</option>}
+                    {operariosDisponibles.map(o => (
+                      <option key={o.nombre} value={o.nombre}>{o.nombre}{o.detalle ? ` (${o.detalle})` : ''}</option>
                     ))}
                   </select>
                 </div>
