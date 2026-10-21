@@ -75,6 +75,31 @@ function toDbSafe(data) {
   return JSON.parse(json);
 }
 
+// ---------------------------------------------------------------------------
+// Copia local de cambios pendientes: lo que aún no se ha confirmado en Supabase se guarda en el
+// navegador, para que una recarga (p. ej. tras un despliegue) o un fallo de red no lo pierda.
+// ---------------------------------------------------------------------------
+const pendingKey = (userId, collection) => `obramaster_pending_${userId}_${collection}`;
+
+function readPending(userId, collection) {
+  try {
+    const raw = localStorage.getItem(pendingKey(userId, collection));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePending(userId, collection, pending) {
+  try {
+    if (Object.keys(pending).length === 0) localStorage.removeItem(pendingKey(userId, collection));
+    else localStorage.setItem(pendingKey(userId, collection), JSON.stringify(pending));
+  } catch (err) {
+    console.warn(`[Sync] No se pudo guardar la copia local de "${collection}":`, err?.message || err);
+  }
+}
+
 function chunk(list, size) {
   const out = [];
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
@@ -165,6 +190,17 @@ export function useCollectionSync({
   const oversizedNoticeRef = useRef(new Set()); // ids ya avisados por superar el tamaño máximo
   const sentRef = useRef(new Map()); // id -> [{ json, at }] lo que acabamos de enviar (para ignorar su eco)
   const pushRef = useRef(() => {});
+  const keepPending = !single; // solo colecciones de registros (obras, presupuestos...)
+
+  // Guarda en el navegador los registros que todavía no coinciden con lo que hay en Supabase.
+  const savePendingCopy = () => {
+    if (!keepPending || !userId || !loadedRef.current || role !== 'admin') return;
+    const pending = {};
+    toRecordMap(collection, valueRef.current, single).forEach((record, id) => {
+      if (baselineRef.current.get(id) !== record.json) pending[id] = record.data;
+    });
+    writePending(userId, collection, pending);
+  };
 
   valueRef.current = value;
 
@@ -247,7 +283,9 @@ export function useCollectionSync({
       }
 
       retryRef.current.attempts = 0;
+      savePendingCopy();
     } catch (err) {
+      savePendingCopy();
       console.error(`[Sync] No se pudo guardar "${collection}" en Supabase:`, err?.message || err);
       if (notify && Date.now() - lastErrorNoticeRef.current > 60000) {
         lastErrorNoticeRef.current = Date.now();
@@ -284,10 +322,31 @@ export function useCollectionSync({
         const rows = await fetchAllRows(collection);
         if (cancelled) return;
 
-        if (rows.length > 0) {
+        // Registros que este navegador no llegó a guardar en la nube (se vuelven a subir).
+        const pending = keepPending && role === 'admin' ? readPending(userId, collection) : {};
+        const remoteMap = toRecordMap(collection, rows.map((row) => row.data), single);
+        const recovered = Object.entries(pending).filter(([id, data]) => {
+          const remote = remoteMap.get(id);
+          return data && (!remote || remote.json !== stableStringify(data));
+        });
+
+        if (rows.length > 0 || recovered.length > 0) {
           const records = rows.map((row) => row.data);
           baselineRef.current = toRecordMap(collection, single ? records[0] : records, single);
-          setValue(single ? records[0] : records);
+          if (single) {
+            setValue(records[0]);
+          } else {
+            const recoveredIds = new Set(recovered.map(([id]) => id));
+            const merged = [
+              ...recovered.filter(([id]) => !remoteMap.has(id)).map(([, data]) => data),
+              ...records.map((rec) => (recoveredIds.has(String(rec?.id)) ? pending[String(rec.id)] : rec))
+            ];
+            valueRef.current = merged;
+            setValue(merged);
+            if (recovered.length && notify) {
+              notify(`Recuperados ${recovered.length} cambio(s) de "${collection}" que no se habían guardado en la nube. Guardando...`);
+            }
+          }
         } else if (role === 'admin' && hadLocalData) {
           // Supabase vacío + datos locales de la versión antigua: se suben una sola vez.
           const local = toRecordMap(collection, valueRef.current, single);
@@ -332,6 +391,7 @@ export function useCollectionSync({
   useEffect(() => {
     if (!loadedRef.current || !userId) return undefined;
     clearTimeout(timerRef.current);
+    savePendingCopy();
     timerRef.current = setTimeout(() => pushRef.current(), PUSH_DELAY_MS);
     return () => clearTimeout(timerRef.current);
   }, [value, userId]);
