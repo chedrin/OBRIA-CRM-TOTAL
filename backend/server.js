@@ -1307,7 +1307,7 @@ Eres el Jefe de Presupuestos de la constructora "ObraMaster". Analizas un presup
 Devuelve SOLO un JSON válido:
 {
   "texto_extraido": "Contenido del presupuesto en texto plano: capítulos, códigos, títulos y descripciones completas de partidas con sus unidades (sin precios si no aportan). Máximo 6000 caracteres.",
-  "aprendizajes": "Lista de 8 a 15 pautas concretas y reutilizables, una por línea empezando por '- ', sobre: estructura y orden de capítulos, numeración de capítulos y partidas, cómo se redactan títulos y descripciones (frases tipo, nivel de detalle, materiales y marcas, medios auxiliares, residuos), unidades, condiciones generales y cualquier costumbre propia de la empresa. Nada de datos del cliente.",
+  "aprendizajes": "Lista de 10 a 30 pautas concretas y reutilizables, una por línea empezando por '- ', sobre: estructura y orden de capítulos, numeración de capítulos y partidas, cómo se redactan títulos y descripciones (frases tipo, nivel de detalle, materiales y marcas, medios auxiliares, residuos), unidades, condiciones generales y cualquier costumbre propia de la empresa. Nada de datos del cliente.",
   "capitulos_detectados": ["01 ...", "02 ..."]
 }`;
 

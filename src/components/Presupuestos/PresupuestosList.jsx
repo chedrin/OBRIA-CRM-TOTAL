@@ -39,7 +39,7 @@ export default function PresupuestosList() {
 
   const [viewMode, setViewMode] = useState('list'); // list, new_ai, revision_consola
   const [selectedQuoteId, setSelectedQuoteId] = useState(null);
-  const [showVisitaModal, setShowVisitaModal] = useState(false);
+  const [asistenteKey, setAsistenteKey] = useState(0); // al cambiar, el asistente IA 360° se vacía
   const [showConvertModal, setShowConvertModal] = useState(null); // presupuesto object
   const [quoteToSend, setQuoteToSend] = useState(null);
   const [convertPorcentaje, setConvertPorcentaje] = useState(40);
@@ -118,41 +118,29 @@ export default function PresupuestosList() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => setShowVisitaModal(true)}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
-          >
-            <Sparkles className="w-4 h-4 text-slate-950" />
-            <span>🚀 Presupuesto IA 360°</span>
-          </button>
-        </div>
       </div>
 
-      {/* Hero Banner for Unified AI Generator */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950/30 p-5 rounded-2xl border border-amber-500/30 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
-            <Sparkles className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <h3 className="font-bold text-white text-base flex items-center gap-2">
-              <span>🚀 Asistente de Presupuestación IA 360°</span>
-            </h3>
-            <p className="text-xs text-slate-300 mt-0.5">
-              Captura fotos, graba audio de voz, añade anotaciones de WhatsApp/Email y mediciones para generar un presupuesto automático por capítulos y partidas.
-            </p>
-          </div>
-        </div>
+      {/* Asistente IA 360° integrado en la página (antes era una ventana emergente) */}
+      <VisitaObraModal
+        key={asistenteKey}
+        isOpen
+        inline
+        onClose={() => setAsistenteKey(k => k + 1)}
+        onQuoteCreated={(newQuote) => {
+          setAsistenteKey(k => k + 1);
+          setSelectedQuoteId(newQuote.id);
+          setViewMode('revision_consola');
+        }}
+      />
 
-        <button
-          onClick={() => setShowVisitaModal(true)}
-          className="px-5 py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl flex items-center gap-2 shrink-0 transition shadow-md shadow-amber-500/20 active:scale-95"
-        >
-          <Sparkles className="w-4 h-4 fill-slate-950" />
-          <span>Iniciar Asistente IA 360°</span>
-        </button>
-      </div>
+      <h2 className="text-sm font-black text-slate-200 uppercase tracking-wider pt-2">
+        Presupuestos guardados ({presupuestos.length})
+      </h2>
+      {presupuestos.length === 0 && (
+        <div className="p-6 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+          Aún no hay presupuestos. Graba o sube el audio de la visita arriba y pulsa "Generar Presupuesto con IA".
+        </div>
+      )}
 
       {/* Presupuestos List */}
       <div className="space-y-4">
@@ -377,16 +365,6 @@ export default function PresupuestosList() {
           </div>
         </div>
       )}
-
-      {/* Modal Visita de Obra Multimodal */}
-      <VisitaObraModal
-        isOpen={showVisitaModal}
-        onClose={() => setShowVisitaModal(false)}
-        onQuoteCreated={(newQuote) => {
-          setSelectedQuoteId(newQuote.id);
-          setViewMode('revision_consola');
-        }}
-      />
 
       {/* Modal Enviar Presupuesto por Email / WhatsApp */}
       <SendDocumentModal
