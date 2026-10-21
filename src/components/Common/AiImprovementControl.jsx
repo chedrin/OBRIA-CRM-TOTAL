@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { improveTextViaBackend, recordAiCorrection } from '../../services/backendAiService';
-import { processScopeWithAI } from '../../services/aiAudioTextService';
 import { Sparkles, Check, X, RefreshCw, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -11,9 +10,10 @@ export default function AiImprovementControl({
   context = 'Descripción técnica de trabajo',
   buttonLabel = 'Mejorar con IA',
   buttonSize = 'normal', // 'small' | 'normal'
-  className = ''
+  className = '',
+  autoRunToken = null // al cambiar, lanza la mejora sola (p. ej. al terminar una transcripción)
 }) {
-  const { referenceBudgets, empresaConfig, basePrecios, showNotification } = useApp();
+  const { referenceBudgets, empresaConfig, showNotification } = useApp();
 
   const [isImproving, setIsImproving] = useState(false);
   const [improvedResult, setImprovedResult] = useState(null);
@@ -32,45 +32,15 @@ export default function AiImprovementControl({
     setErrorMsg(null);
 
     try {
-      let result;
-      try {
-        result = await improveTextViaBackend({
-          text: value,
-          context,
-          referenceBudgets: activeRefs,
-          provider: empresaConfig?.aiConfig?.provider,
-          apiKey: empresaConfig?.aiConfig?.apiKey,
-          model: empresaConfig?.aiConfig?.modelName || empresaConfig?.aiConfig?.model
-        });
-      } catch (backendErr) {
-        console.warn('[AiImprovementControl] Backend fallo, aplicando motor técnico determinista CTE:', backendErr.message);
-        try {
-          const clientRes = await processScopeWithAI(
-            value,
-            'email_cliente',
-            null,
-            empresaConfig?.aiConfig || {},
-            basePrecios,
-            activeRefs
-          );
-          result = {
-            success: true,
-            originalText: value,
-            improvedText: clientRes?.redaccion_tecnica_estilo || clientRes?.resumen_alcance || value,
-            explicacionCambios: 'Vocabulario técnico y formato contractual aplicado.'
-          };
-        } catch (clientErr) {
-          // Fallback a motor estático de edificación CTE
-          const { parseTextToConstructionSpecs } = await import('../../services/aiAudioTextService');
-          const ruleSpecs = parseTextToConstructionSpecs(value, basePrecios);
-          result = {
-            success: true,
-            originalText: value,
-            improvedText: ruleSpecs?.redaccion_tecnica_estilo || value,
-            explicacionCambios: 'Vocabulario técnico y norma CTE aplicados (Configure su API Key en Ajustes para LLM activo).'
-          };
-        }
-      }
+      // El servidor añade la memoria de la IA (Ajustes) y los presupuestos de referencia activos.
+      const result = await improveTextViaBackend({
+        text: value,
+        context,
+        referenceBudgets: activeRefs,
+        provider: empresaConfig?.aiConfig?.provider,
+        apiKey: empresaConfig?.aiConfig?.apiKey,
+        model: empresaConfig?.aiConfig?.modelName || empresaConfig?.aiConfig?.model
+      });
 
       if (result && result.improvedText) {
         setImprovedResult(result);
@@ -88,6 +58,13 @@ export default function AiImprovementControl({
       setIsImproving(false);
     }
   };
+
+  const lastAutoRunRef = useRef(autoRunToken);
+  useEffect(() => {
+    if (autoRunToken === null || autoRunToken === lastAutoRunRef.current) return;
+    lastAutoRunRef.current = autoRunToken;
+    if (value?.trim() && !isImproving) handleRunImprovement();
+  }, [autoRunToken]);
 
   const handleAccept = () => {
     if (improvedResult?.improvedText && onAccept) {
@@ -154,11 +131,6 @@ export default function AiImprovementControl({
             <span className="text-[10px] text-amber-400/90 font-mono flex items-center gap-1">
               <ShieldCheck className="w-3 h-3 text-amber-400" />
               <span>{activeRefs.length} modelo(s) de estilo activo(s)</span>
-            </span>
-          )}
-          {(!empresaConfig?.aiConfig?.apiKey || empresaConfig?.aiConfig?.apiKey.length < 5) && (
-            <span className="text-[10px] text-slate-400 italic">
-              (Motor técnico activo; añade tu API Key en Ajustes &gt; Motor IA)
             </span>
           )}
         </div>
@@ -238,7 +210,7 @@ export default function AiImprovementControl({
               className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
             >
               <X className="w-4 h-4 text-rose-400" />
-              <span>Descartar Original</span>
+              <span>Descartar Mejora</span>
             </button>
 
             <button

@@ -17,7 +17,7 @@ import {
   getGeminiApiKey
 } from './geminiService';
 import { buildFewShotReferenceContext, buildGeminiSystemPromptWithReferences } from './referenceBudgetService';
-import { checkBackendStatus, transcribeAudioViaBackend, generateBudgetViaBackend, getBackendAiSettings } from './backendAiService';
+import { checkBackendStatus, transcribeAudioViaBackend, generateBudgetViaBackend } from './backendAiService';
 
 /**
  * Direct client-side OpenAI Whisper transcription API
@@ -84,83 +84,54 @@ FORMATO DE SALIDA (ESTRICTO JSON):
  * Transcribes audio via OpenAI Whisper API, Gemini Multimodal API, or client fallback
  */
 export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallback = '') {
-  let apiKey = (aiConfig.apiKey || '').trim();
+  // Las claves viven en el servidor; aiConfig.apiKey solo existe en configuraciones antiguas del navegador.
+  const apiKey = (aiConfig.apiKey || '').trim();
+  const hasAudio = audioBlob && audioBlob.size > 0;
+  let lastError = null;
 
-  if (!apiKey) {
-    try {
-      const savedBackendSettings = await getBackendAiSettings();
-      if (savedBackendSettings && savedBackendSettings.apiKey) {
-        apiKey = savedBackendSettings.apiKey.trim();
-      }
-    } catch (e) {
-      console.warn('No se pudieron consultar los ajustes del backend:', e);
-    }
-  }
-
-  // 1. Transcripción vía Backend de Producción
-  if (audioBlob && audioBlob.size > 0) {
+  // 1. Transcripción en el servidor (Whisper si hay clave de OpenAI, si no Gemini)
+  if (hasAudio) {
     try {
       const transResult = await transcribeAudioViaBackend(audioBlob, apiKey);
-      if (transResult && (transResult.texto || transResult.transcripcion)) {
-        return {
-          success: true,
-          text: transResult.texto || transResult.transcripcion,
-          source: 'backend-ai'
-        };
-      }
+      const text = (transResult?.texto || transResult?.transcripcion || '').trim();
+      if (text) return { success: true, text, source: 'backend-ai' };
     } catch (bErr) {
+      lastError = bErr;
       console.warn('Backend transcripción no disponible o devolvió error:', bErr.message);
     }
   }
 
-  // 2. Transcripción cliente directa con OpenAI Whisper si hay clave sk-
-  if (audioBlob && audioBlob.size > 0 && apiKey && apiKey.startsWith('sk-') && !apiKey.startsWith('sk-ant') && !apiKey.startsWith('sk-or')) {
+  // 2. Transcripción directa con OpenAI Whisper si el navegador tiene clave sk-
+  if (hasAudio && apiKey.startsWith('sk-') && !apiKey.startsWith('sk-ant') && !apiKey.startsWith('sk-or')) {
     try {
       const openAiText = await transcribeAudioWithOpenAI(audioBlob, apiKey);
-      if (openAiText) {
-        return { success: true, text: openAiText, source: 'whisper-api' };
-      }
+      if (openAiText) return { success: true, text: openAiText, source: 'whisper-api' };
     } catch (oErr) {
+      lastError = oErr;
       console.warn('Transcripción directa con OpenAI Whisper falló:', oErr.message);
     }
   }
 
-  // 3. Transcripción cliente directa con Gemini Multimodal
-  if (audioBlob && audioBlob.size > 0) {
+  // 3. Transcripción directa con Gemini si el navegador tiene clave
+  if (hasAudio && apiKey) {
     try {
       const geminiApiKey = await getGeminiApiKey(apiKey);
       if (geminiApiKey) {
         const geminiText = await transcribeAudioWithGemini(audioBlob, geminiApiKey, aiConfig.model || DEFAULT_GEMINI_MODEL);
-        if (geminiText) {
-          return { success: true, text: geminiText, source: 'gemini-multimodal' };
-        }
+        if (geminiText) return { success: true, text: geminiText, source: 'gemini-multimodal' };
       }
     } catch (gErr) {
+      lastError = gErr;
       console.warn('Transcripción directa con Google Gemini falló:', gErr.message);
     }
   }
 
-  // 4. Transcripción por reconocimiento de voz del navegador
+  // 4. Lo que haya captado el reconocimiento de voz del navegador mientras se grababa
   if (liveSpeechFallback && liveSpeechFallback.trim().length > 3) {
-    return {
-      success: true,
-      text: liveSpeechFallback.trim(),
-      source: 'browser-speech-recognition'
-    };
+    return { success: true, text: liveSpeechFallback.trim(), source: 'browser-speech-recognition' };
   }
 
-  // 5. Fallback inteligente de respaldo para archivos grabados
-  if (audioBlob && audioBlob.name) {
-    const cleanName = audioBlob.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-    const fallbackText = `Grabación de audio de obra "${cleanName}": Revisión e inspección técnica in situ para medición y desglose de partidas.`;
-    return {
-      success: true,
-      text: fallbackText,
-      source: 'audio-metadata-processed'
-    };
-  }
-
-  throw new Error(USER_FRIENDLY_AI_ERROR);
+  throw new Error(lastError?.message || USER_FRIENDLY_AI_ERROR);
 }
 
 /**

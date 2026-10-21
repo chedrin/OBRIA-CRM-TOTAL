@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAuthRoutes, enforceApiAuth } from "./authRoutes.js";
-import { handleMemoryRoutes, buildMemoryContext } from "./aiMemory.js";
+import { handleMemoryRoutes, buildMemoryContext, saveReferenceLearning } from "./aiMemory.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -239,7 +239,7 @@ function cleanJsonOutput(raw) {
 }
 
 function fileToPart(file) {
-  let mimeType = file.mimetype || "application/octet-stream";
+  let mimeType = (file.mimetype || "application/octet-stream").split(";")[0].trim();
   if (file.originalname) {
     const ext = file.originalname.split(".").pop().toLowerCase();
     if (ext === "mp3") mimeType = "audio/mp3";
@@ -250,6 +250,7 @@ function fileToPart(file) {
     else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
     else if (ext === "png") mimeType = "image/png";
     else if (ext === "webp") mimeType = "image/webp";
+    else if (ext === "pdf") mimeType = "application/pdf";
   }
 
   return {
@@ -450,83 +451,166 @@ async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0
   }
 }
 
-// Transcripción de Audio Robusta
+const ENV_KEY_BY_PROVIDER = {
+  google: "GEMINI_API_KEY",
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  openrouter: "OPENROUTER_API_KEY"
+};
+
+// Clave de un proveedor concreto: ajustes guardados y, si no hay, variable de entorno.
+function resolveProviderKey(config, provider) {
+  const saved = (config.apiKeys || {})[provider] || (config.provider === provider ? config.apiKey : "");
+  return String(saved || process.env[ENV_KEY_BY_PROVIDER[provider]] || "").trim();
+}
+
+// El modelo guardado solo vale para su proveedor (un "claude-..." no sirve para Gemini).
+function modelForProvider(config, provider) {
+  const model = config.model || "";
+  if (provider === "google") return model.startsWith("gemini") ? model : GEMINI_DEFAULT_MODEL;
+  if (provider === "anthropic") return model.startsWith("claude") ? model : "claude-sonnet-5-5";
+  if (provider === "openai") return model && !model.startsWith("gemini") && !model.startsWith("claude") ? model : "chat-latest";
+  return model || config.openRouterModel || "google/gemini-3.8-flash";
+}
+
+/**
+ * Llama al proveedor activo con un prompt de texto y devuelve el texto bruto.
+ * `geminiParts` (fotos, PDF...) solo se envían cuando el proveedor es Gemini.
+ */
+async function callActiveProvider({ config, systemInstruction, userPrompt, temperature = 0.15, maxTokens = 4096, geminiParts = [] }) {
+  const provider = (config.provider || "google").toLowerCase();
+  const apiKey = resolveProviderKey(config, provider);
+  const model = modelForProvider(config, provider);
+
+  if (provider === "openai") {
+    return callOpenAiProvider({
+      apiKey, model, temperature, maxTokens,
+      messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
+    });
+  }
+  if (provider === "anthropic") {
+    return callAnthropicProvider({ apiKey, model, systemPrompt: systemInstruction, userPrompt, temperature, maxTokens });
+  }
+  if (provider === "openrouter") {
+    return callOpenRouterProvider({
+      apiKey, model, temperature, maxTokens,
+      messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
+    });
+  }
+  return callGeminiProvider({
+    apiKey,
+    model,
+    contents: [{ role: "user", parts: [{ text: userPrompt }, ...geminiParts] }],
+    systemInstruction,
+    temperature,
+    maxTokens
+  });
+}
+
+// Texto de los presupuestos de referencia activos que se envía como modelo de estilo.
+function buildReferenceBudgetsText(refBudgets, { max = 4, chars = 3500 } = {}) {
+  return (refBudgets || [])
+    .filter(r => r && r.is_active !== false)
+    .slice(0, max)
+    .map((r, idx) => `=== PRESUPUESTO DE REFERENCIA ${idx + 1}: ${r.name || "Presupuesto modelo"}${r.tipo_obra ? ` (${r.tipo_obra})` : ""} ===\n${String(r.extracted_text || r.text_content || "").substring(0, chars)}`)
+    .join("\n\n");
+}
+
+// Transcripción de Audio Robusta: Whisper (OpenAI) si hay clave; si no, o si falla, Gemini.
 async function transcribeAudioUnified({ audioFile, config }) {
   const provider = (config.provider || "google").toLowerCase();
-  const apiKey = (config.apiKey || "").trim();
+  const requestKey = (config.apiKey || "").trim();
+  const isOpenAiKey = k => k.startsWith("sk-") && !k.startsWith("sk-ant") && !k.startsWith("sk-or");
+  const openAiKey = isOpenAiKey(requestKey) ? requestKey : resolveProviderKey(config, "openai");
+  const geminiKey = requestKey.startsWith("AIza") ? requestKey : resolveProviderKey(config, "google");
 
-  if ((provider === "openai" || apiKey.startsWith("sk-")) && !apiKey.startsWith("sk-ant") && !apiKey.startsWith("sk-or")) {
-    const boundary = "--------------------------" + Math.random().toString(36).substring(2);
-    const filename = audioFile.originalname || "audio-grabacion.webm";
-    const mime = audioFile.mimetype || "audio/webm";
+  const attempts = [];
+  if (openAiKey && (provider === "openai" || !geminiKey)) attempts.push("openai");
+  if (geminiKey) attempts.push("google");
+  if (openAiKey && !attempts.includes("openai")) attempts.push("openai");
 
-    const bodyParts = [];
-    bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`));
-    bodyParts.push(audioFile.buffer);
-    bodyParts.push(Buffer.from("\r\n"));
-    bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`));
-    bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nes\r\n`));
-    bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\nConstrucción y reformas: alicatados, rozas, solado porcelánico, pladur, bajantes, REBT, CTE.\r\n`));
-    bodyParts.push(Buffer.from(`--${boundary}--\r\n`));
-
-    const payloadBuffer = Buffer.concat(bodyParts);
-    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body: payloadBuffer
-    });
-
-    const rawText = await res.text();
-    let data = {};
+  let lastError = null;
+  for (const engine of attempts) {
     try {
-      data = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      throw new Error(USER_FRIENDLY_AI_ERROR);
+      const text = engine === "openai"
+        ? await transcribeWithWhisper(audioFile, openAiKey)
+        : await transcribeWithGemini(audioFile, geminiKey, modelForProvider(config, "google"));
+      if (text && text.trim()) return text.trim();
+    } catch (err) {
+      lastError = err;
+      console.warn(`[Transcripción] Falló con ${engine}:`, err.message);
     }
+  }
+  if (lastError) throw lastError;
+  throw new Error("No hay ninguna clave de IA para transcribir audio (GEMINI_API_KEY u OPENAI_API_KEY).");
+}
 
-    if (!res.ok) {
-      console.error(`[Whisper Error] ${res.status}:`, data);
-      throw new Error(USER_FRIENDLY_AI_ERROR);
-    }
+async function transcribeWithWhisper(audioFile, apiKey) {
+  const boundary = "--------------------------" + Math.random().toString(36).substring(2);
+  const filename = audioFile.originalname || "audio-grabacion.webm";
+  const mime = audioFile.mimetype || "audio/webm";
 
-    return data.text || "";
+  const bodyParts = [];
+  bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`));
+  bodyParts.push(audioFile.buffer);
+  bodyParts.push(Buffer.from("\r\n"));
+  bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`));
+  bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nes\r\n`));
+  bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\nConstrucción y reformas: alicatados, rozas, solado porcelánico, pladur, bajantes, REBT, CTE.\r\n`));
+  bodyParts.push(Buffer.from(`--${boundary}--\r\n`));
+
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      "Authorization": `Bearer ${apiKey}`
+    },
+    body: Buffer.concat(bodyParts)
+  });
+
+  const rawText = await res.text();
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    throw new Error(USER_FRIENDLY_AI_ERROR);
   }
 
-  const geminiKey = ((apiKey && !apiKey.startsWith("sk-ant") && !apiKey.startsWith("sk-or")) ? apiKey : process.env.GEMINI_API_KEY || "").trim();
-  if (geminiKey || provider === "google") {
-    const part = fileToPart(audioFile);
-    const promptText = `
-Eres un transcriptor experto en construcción y arquitectura técnica de "ObraMaster".
-Escucha el audio adjunto y transcribe fielmente todo lo dicho en español, corrigiendo términos de obra (alicatados, rozas, falsos techos, etc.).
+  if (!res.ok) {
+    console.error(`[Whisper Error] ${res.status}:`, data);
+    throw new Error(USER_FRIENDLY_AI_ERROR);
+  }
 
-Devuelve strictly un JSON válido con esta estructura exacta:
+  return data.text || "";
+}
+
+async function transcribeWithGemini(audioFile, apiKey, model) {
+  const promptText = `
+Eres un transcriptor experto en construcción y reformas de "ObraMaster".
+Escucha el audio adjunto y transcribe fielmente todo lo dicho en español, corrigiendo términos de obra (alicatados, rozas, falsos techos, etc.).
+No resumas ni inventes: si una parte no se entiende, escribe [inaudible].
+
+Devuelve estrictamente un JSON válido con esta estructura exacta:
 {"transcripcion": "Texto fiel y literal en español"}
 `;
-    const rawText = await callGeminiProvider({
-      apiKey: geminiKey || process.env.GEMINI_API_KEY,
-      model: config.model || GEMINI_DEFAULT_MODEL,
-      contents: [{ role: "user", parts: [{ text: promptText }, part] }],
-      temperature: 0.1,
-      responseMimeType: "application/json"
-    });
+  const rawText = await callGeminiProvider({
+    apiKey,
+    model,
+    contents: [{ role: "user", parts: [{ text: promptText }, fileToPart(audioFile)] }],
+    temperature: 0.1,
+    maxTokens: 8192,
+    responseMimeType: "application/json"
+  });
 
-    try {
-      const cleaned = cleanJsonOutput(rawText);
-      if (!cleaned || cleaned === "{}") {
-        return rawText ? rawText.trim() : "";
-      }
-      const parsed = JSON.parse(cleaned);
-      return parsed.transcripcion || parsed.texto || rawText.trim() || "";
-    } catch (parseErr) {
-      console.warn("[Backend Gemini Transcribe] Fallo al parsear JSON, usando texto raw:", parseErr.message);
-      return rawText ? rawText.trim() : "";
-    }
+  try {
+    const cleaned = cleanJsonOutput(rawText);
+    if (!cleaned || cleaned === "{}") return rawText ? rawText.trim() : "";
+    const parsed = JSON.parse(cleaned);
+    return parsed.transcripcion || parsed.texto || rawText.trim() || "";
+  } catch (parseErr) {
+    console.warn("[Backend Gemini Transcribe] Fallo al parsear JSON, usando texto raw:", parseErr.message);
+    return rawText ? rawText.trim() : "";
   }
-
-  throw new Error(USER_FRIENDLY_AI_ERROR);
 }
 
 // Servidor Estático
@@ -811,11 +895,7 @@ async function handleRequest(req, res) {
           }
         } catch {}
 
-        const refBudgetsText = (refBudgets || [])
-          .filter(r => r.is_active !== false)
-          .slice(0, 5)
-          .map((r, idx) => `=== EJEMPLO MODELO DE EMPRESA ${idx + 1}: ${r.name || "Presupuesto Modelo"} ===\n${(r.extracted_text || r.text_content || "").substring(0, 2000)}`)
-          .join("\n\n");
+        const refBudgetsText = buildReferenceBudgetsText(refBudgets, { max: 5, chars: 2500 });
 
         const targetProvider = fields.provider || currentConfig.provider || "google";
         const targetKeys = currentConfig.apiKeys || {};
@@ -1070,8 +1150,9 @@ ${textToImprove.trim()}
 
         const startTime = performance.now();
         const effectiveConfig = {
+          ...currentConfig,
           provider: fields.provider || currentConfig.provider,
-          apiKey: fields.apiKey || currentConfig.apiKey,
+          apiKey: fields.apiKey || "",
           model: fields.model || currentConfig.model
         };
 
@@ -1123,38 +1204,44 @@ ${textToImprove.trim()}
         try { if (fields.referenceBudgets) refBudgets = typeof fields.referenceBudgets === "string" ? JSON.parse(fields.referenceBudgets) : fields.referenceBudgets; } catch {}
 
         const catalogText = (catalogList || [])
-          .slice(0, 30)
-          .map(p => `- [${p.codigo || "GEN"}]: ${p.concepto || p.titulo} | Coste: ${p.costeUnitario || 20}€ | PVP: ${p.precioVenta || 28}€ / ${p.unidad || "ud"}`)
+          .slice(0, 40)
+          .map(p => `- [${p.codigo || "GEN"}] ${p.capitulo ? `(${p.capitulo}) ` : ""}${p.concepto || p.titulo} | Coste: ${p.costeUnitario ?? p.costeSubcontrata ?? "?"}€ | PVP: ${p.precioVenta ?? "?"}€ / ${p.unidad || "ud"}`)
           .join("\n");
 
-        const refBudgetsText = (refBudgets || [])
-          .filter(r => r.is_active !== false)
-          .slice(0, 3)
-          .map((r, idx) => `=== MODELO EMPRESA ${idx + 1}: ${r.name || "Presupuesto Modelo"} ===\n${(r.text_content || "").substring(0, 2000)}`)
-          .join("\n\n");
-
+        const refBudgetsText = buildReferenceBudgetsText(refBudgets);
         const memoryContext = await buildMemoryContext("presupuesto");
+        const tipoIva = Number(fields.tipoIva) || 10;
 
         const systemInstruction = `
-Eres el Ingeniero Técnico de Edificación y Jefe de Presupuestos de la constructora "ObraMaster".
+Eres el Ingeniero Técnico de Edificación y Jefe de Presupuestos de la constructora "ObraMaster" (España: LOE, CTE, REBT).
+Conviertes lo que el director de obra dicta en la visita (audio transcrito, notas, mensajes, fotos) en un presupuesto profesional ORGANIZADO POR CAPÍTULOS, con la redacción técnica más afinada posible.
+
+CÓMO TRABAJAS:
+1. Lee todo el dictado y detecta TODOS los trabajos, incluidos los implícitos (protecciones, demoliciones previas, desescombro y gestión de residuos, rozas y ayudas de albañilería, limpieza final).
+2. Agrupa las partidas en capítulos numerados en orden de ejecución de obra (por ejemplo: 01 Actuaciones previas y demoliciones, 02 Albañilería, 03 Fontanería y saneamiento, 04 Electricidad e iluminación, 05 Revestimientos y solados, 06 Carpintería, 07 Pintura, 08 Varios y gestión de residuos). Usa solo los capítulos que correspondan.
+3. Cada partida lleva un título corto y una descripción completa en estilo pliego de condiciones: qué se suministra y ejecuta, materiales y calidades, medios auxiliares, preparación del soporte, remates, limpieza y retirada de restos cuando proceda. Nada de lenguaje coloquial.
+4. Unidades normalizadas (m2, ml, ud, pa, m3, kg). Usa las mediciones dictadas; si falta alguna, estima con criterio y dilo en "observaciones_tecnicas".
+5. Precios: usa la base de precios de la empresa cuando exista la partida; si no, estima un coste realista de mercado en España. "costeUnitario" es el coste; "precioVenta" = coste × (1 + margen).
+6. IMITA el estilo, la estructura de capítulos, la forma de numerar y el vocabulario de los presupuestos de referencia de la empresa y obedece la memoria de la IA (instrucciones del director, aprendizajes y correcciones). Tienen prioridad sobre estas pautas generales.
 ${memoryContext}
-Genera un presupuesto técnico detallado, profesional y riguroso en formato JSON estricto:
+Devuelve SOLO un JSON válido con esta estructura:
 {
-  "resumen_obra": "Resumen ejecutivo del alcance físico de los trabajos...",
+  "resumen_obra": "Resumen técnico del alcance (2-4 frases)",
+  "observaciones_tecnicas": ["Supuestos, mediciones estimadas, riesgos o aspectos a confirmar"],
   "capitulos": [
     {
       "codigo_capitulo": "01",
-      "nombre_capitulo": "01. Demoliciones y Gestión de Residuos",
+      "nombre_capitulo": "ACTUACIONES PREVIAS Y DEMOLICIONES",
       "partidas": [
         {
-          "codigo": "DEM-01",
-          "concepto": "Demolición de tabique cerámico...",
-          "cantidad": 14.5,
+          "codigo": "01.01",
+          "titulo": "Demolición de tabique cerámico",
+          "descripcion": "Demolición de tabique de ladrillo hueco doble de hasta 10 cm de espesor con medios manuales, incluso ...",
           "unidad": "m2",
-          "costeUnitario": 12.50,
+          "cantidad": 14.5,
+          "costeUnitario": 12.5,
           "margenPct": ${margenGlobal},
-          "precioVenta": 16.00,
-          "total": 232.00
+          "precioVenta": 16.0
         }
       ]
     }
@@ -1164,76 +1251,36 @@ Genera un presupuesto técnico detallado, profesional y riguroso en formato JSON
 
         const userPrompt = `
 DATOS DE OBRA:
-- Cliente: ${cliente} | Ubicación: ${direccion} | Calidades: ${calidades} | Margen: ${margenGlobal}%
+- Obra: ${fields.titulo || "Reforma"} | Cliente: ${cliente} | Ubicación: ${direccion}
+- Calidades: ${calidades} | Margen objetivo: ${margenGlobal}% | IVA: ${tipoIva}%${fields.plazo ? ` | Plazo deseado: ${fields.plazo}` : ""}
 
-TRANSCRIPCIÓN O NOTAS TÉCNICAS RECIBIDAS:
+DICTADO DE LA VISITA (AUDIO TRANSCRITO Y NOTAS):
 """
-${dictadoTexto || "Procesar evidencias adjuntas."}
-${medidasNotas ? `\nMediciones:\n${medidasNotas}` : ""}
+${dictadoTexto || "Sin dictado: analiza las evidencias adjuntas."}
+${medidasNotas ? `\nMediciones y anotaciones:\n${medidasNotas}` : ""}
 """
-
-${catalogText ? `BASE DE PRECIOS OFICIAL DE EMPRESA:\n${catalogText}\n` : ""}
-${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
+${fotos.length ? `\nSe adjuntan ${fotos.length} foto(s) del estado actual.\n` : ""}
+${catalogText ? `BASE DE PRECIOS DE LA EMPRESA:\n${catalogText}\n` : ""}
+${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y estructura):\n${refBudgetsText}\n` : ""}
 `;
 
         const effectiveConfig = {
+          ...currentConfig,
           provider: fields.provider || currentConfig.provider,
-          apiKey: fields.apiKey || currentConfig.apiKey,
           model: fields.model || currentConfig.model,
           temperature: currentConfig.temperature || 0.15,
-          maxTokens: currentConfig.maxTokens || 4096
+          maxTokens: Math.max(Number(currentConfig.maxTokens) || 0, 16384)
         };
+        if (fields.apiKey) effectiveConfig.apiKeys = { ...(currentConfig.apiKeys || {}), [effectiveConfig.provider]: fields.apiKey };
 
-        let rawOutput = "";
-        if (effectiveConfig.provider === "google") {
-          const fotoParts = fotos.map(fileToPart);
-          const audioParts = audios.map(fileToPart);
-          rawOutput = await callGeminiProvider({
-            apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model,
-            contents: [{ role: "user", parts: [{ text: userPrompt }, ...audioParts, ...fotoParts] }],
-            systemInstruction,
-            temperature: effectiveConfig.temperature,
-            maxTokens: effectiveConfig.maxTokens
-          });
-        } else if (effectiveConfig.provider === "openai") {
-          rawOutput = await callOpenAiProvider({
-            apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "chat-latest",
-            messages: [
-              { role: "system", content: systemInstruction },
-              { role: "user", content: userPrompt }
-            ],
-            temperature: effectiveConfig.temperature,
-            maxTokens: effectiveConfig.maxTokens
-          });
-        } else if (effectiveConfig.provider === "anthropic") {
-          rawOutput = await callAnthropicProvider({
-            apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "claude-sonnet-5-5",
-            systemPrompt: systemInstruction,
-            userPrompt,
-            temperature: effectiveConfig.temperature,
-            maxTokens: effectiveConfig.maxTokens
-          });
-        } else if (effectiveConfig.provider === "openrouter") {
-          rawOutput = await callOpenRouterProvider({
-            apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "google/gemini-3.8-flash",
-            messages: [
-              { role: "system", content: systemInstruction },
-              { role: "user", content: userPrompt }
-            ],
-            temperature: effectiveConfig.temperature,
-            maxTokens: effectiveConfig.maxTokens
-          });
-        } else {
-          rawOutput = await callGeminiProvider({
-            apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model,
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }]
-          });
-        }
+        const rawOutput = await callActiveProvider({
+          config: effectiveConfig,
+          systemInstruction,
+          userPrompt,
+          temperature: effectiveConfig.temperature,
+          maxTokens: effectiveConfig.maxTokens,
+          geminiParts: [...audios.map(fileToPart), ...fotos.map(fileToPart)]
+        });
 
         const elapsedMs = Math.round(performance.now() - startTime);
         const parsed = JSON.parse(cleanJsonOutput(rawOutput));
@@ -1249,6 +1296,77 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(parsed));
+        return;
+      }
+
+      // Análisis único de un presupuesto de referencia (Ajustes > Presupuestos modelo).
+      // Extrae lo que la IA debe aprender (estructura, estilo, vocabulario) y lo guarda en la memoria de la IA.
+      if (req.method === "POST" && pathname === "/api/ai/reference-budgets/analyze") {
+        const startTime = performance.now();
+        const name = String(fields.name || "Presupuesto de referencia").slice(0, 90);
+        const tipoObra = fields.tipoObra || fields.tipo_obra || "";
+        const providedText = String(fields.text || fields.extracted_text || "");
+        const pdfFile = (files.pdf || files.file || [])[0] || null;
+
+        if (!pdfFile && providedText.trim().length < 40) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "El presupuesto no tiene texto suficiente para analizarlo. Vuelve a subir el PDF o pega su contenido." }));
+          return;
+        }
+
+        const systemInstruction = `
+Eres el Jefe de Presupuestos de la constructora "ObraMaster". Analizas un presupuesto real de la empresa para que la IA aprenda a redactar los próximos igual.
+Devuelve SOLO un JSON válido:
+{
+  "texto_extraido": "Contenido del presupuesto en texto plano: capítulos, códigos, títulos y descripciones completas de partidas con sus unidades (sin precios si no aportan). Máximo 6000 caracteres.",
+  "aprendizajes": "Lista de 8 a 15 pautas concretas y reutilizables, una por línea empezando por '- ', sobre: estructura y orden de capítulos, numeración de capítulos y partidas, cómo se redactan títulos y descripciones (frases tipo, nivel de detalle, materiales y marcas, medios auxiliares, residuos), unidades, condiciones generales y cualquier costumbre propia de la empresa. Nada de datos del cliente.",
+  "capitulos_detectados": ["01 ...", "02 ..."]
+}`;
+
+        const userPrompt = `PRESUPUESTO DE REFERENCIA: ${name}${tipoObra ? ` (${tipoObra})` : ""}
+${pdfFile ? "Se adjunta el PDF original." : ""}
+${providedText.trim() ? `TEXTO DISPONIBLE:\n"""\n${providedText.slice(0, 20000)}\n"""` : ""}`;
+
+        // El PDF solo lo lee Gemini; con otro proveedor se analiza el texto extraído.
+        const geminiKey = resolveProviderKey(currentConfig, "google");
+        const analysisConfig = pdfFile && geminiKey ? { ...currentConfig, provider: "google" } : currentConfig;
+        const rawOutput = await callActiveProvider({
+          config: analysisConfig,
+          systemInstruction,
+          userPrompt,
+          temperature: 0.1,
+          maxTokens: 16384,
+          geminiParts: pdfFile ? [fileToPart(pdfFile)] : []
+        });
+
+        let parsed = {};
+        try { parsed = JSON.parse(cleanJsonOutput(rawOutput)); } catch { parsed = { aprendizajes: rawOutput.trim() }; }
+        const learnings = String(parsed.aprendizajes || "").trim();
+        if (!learnings) throw new Error("La IA no devolvió aprendizajes del presupuesto.");
+
+        const saved = await saveReferenceLearning({
+          memoryId: fields.memoryId || "",
+          title: `Presupuesto de referencia: ${name}`,
+          content: `Aprendido del presupuesto "${name}"${tipoObra ? ` (${tipoObra})` : ""}:\n${learnings}`
+        });
+
+        logAiCall({
+          provider: analysisConfig.provider,
+          model: analysisConfig.model,
+          action: "analyze-reference-budget",
+          latencyMs: Math.round(performance.now() - startTime),
+          success: true,
+          tokensUsed: Math.ceil((userPrompt.length + rawOutput.length) / 4)
+        });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          success: true,
+          memoryId: saved?.id || null,
+          learnings,
+          extractedText: String(parsed.texto_extraido || "").trim(),
+          chapters: Array.isArray(parsed.capitulos_detectados) ? parsed.capitulos_detectados : []
+        }));
         return;
       }
 

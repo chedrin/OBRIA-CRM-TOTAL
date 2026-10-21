@@ -17,8 +17,10 @@ import {
   BookOpen,
   X,
   FileCheck2,
-  FileUp
+  FileUp,
+  Brain
 } from 'lucide-react';
+import { SAMPLE_REFERENCE_BUDGET_IDS } from '../../services/referenceBudgetService';
 import confetti from 'canvas-confetti';
 
 const TIPOS_OBRA_PRESETS = [
@@ -38,6 +40,8 @@ export default function PresupuestosModeloConfig() {
     toggleReferenceBudget,
     deleteReferenceBudget,
     updateReferenceBudgetText,
+    reanalyzeReferenceBudget,
+    analyzingReferenceId,
     showNotification
   } = useApp();
 
@@ -257,6 +261,32 @@ export default function PresupuestosModeloConfig() {
                             Pausado
                           </span>
                         )}
+                        {SAMPLE_REFERENCE_BUDGET_IDS.includes(budget.id) ? (
+                          <span className="bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                            Ejemplo de muestra (no se memoriza)
+                          </span>
+                        ) : analyzingReferenceId === budget.id ? (
+                          <span className="bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            <span>Analizando con IA...</span>
+                          </span>
+                        ) : budget.ai_reviewed_at ? (
+                          <span
+                            className="bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
+                            title={budget.ai_learnings || 'Guardado en Ajustes > Memoria de la IA'}
+                          >
+                            <Brain className="w-3 h-3" />
+                            <span>En la memoria de la IA</span>
+                          </span>
+                        ) : budget.ai_review_error ? (
+                          <span className="bg-rose-500/15 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold" title={budget.ai_review_error}>
+                            Análisis fallido
+                          </span>
+                        ) : (
+                          <span className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                            Pendiente de análisis
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
@@ -288,6 +318,19 @@ export default function PresupuestosModeloConfig() {
                       <span className={`w-2 h-2 rounded-full ${budget.is_active ? 'bg-emerald-400' : 'bg-slate-600'}`}></span>
                       <span>{budget.is_active ? 'Referencia Activa' : 'Activar'}</span>
                     </button>
+
+                    {/* Volver a analizar con IA */}
+                    {!SAMPLE_REFERENCE_BUDGET_IDS.includes(budget.id) && (budget.ai_reviewed_at || budget.ai_review_error) && (
+                      <button
+                        type="button"
+                        onClick={() => reanalyzeReferenceBudget(budget.id)}
+                        disabled={Boolean(analyzingReferenceId)}
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 rounded-xl text-xs transition disabled:opacity-50"
+                        title="Volver a analizar y actualizar lo aprendido en la memoria de la IA"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    )}
 
                     {/* Preview / Inspect Extracted Text */}
                     <button

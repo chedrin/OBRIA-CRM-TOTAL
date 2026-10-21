@@ -10,6 +10,7 @@
  */
 
 import { generateBudgetWithGemini, normalizeGeminiModel, DEFAULT_GEMINI_MODEL, USER_FRIENDLY_AI_ERROR } from './geminiService';
+import { generateBudgetViaBackend } from './backendAiService';
 
 export const SYSTEM_PROMPT_PRESUPUESTADORA = `Eres el Motor Central de Presupuestación e Inteligencia Artificial de "ObraMaster", actuando como un Aparejador / Arquitecto Técnico Colegiado Senior y Estimador de Costes de Construcción en España (conforme a LOE Ley 38/1999, CTE y REBT).
 
@@ -135,30 +136,80 @@ Devuelve un JSON estructurado con los campos 'resumen', 'observaciones_tecnicas'
 export async function processSiteVisitExpediente(expediente, catalog, aiConfig, onProgress, referenceBudgets = []) {
   const activeRefs = (referenceBudgets || []).filter(b => b.is_active);
 
-  if (onProgress) onProgress({ step: 1, label: 'Transcribiendo audios de visita y normalizando notas...' });
-  await new Promise(r => setTimeout(r, 400));
-
-  if (onProgress) onProgress({ step: 2, label: 'Analizando croquis con visión artificial y detectando trabajos...' });
-  await new Promise(r => setTimeout(r, 400));
-
-  if (onProgress) onProgress({ step: 3, label: activeRefs.length > 0 ? `Aplicando Few-Shot RAG (${activeRefs.length} presupuestos modelo) y cruzando precios...` : 'Cruzando partidas con la Base de Precios Oficial...' });
-  await new Promise(r => setTimeout(r, 400));
-
-  if (onProgress) onProgress({ step: 4, label: 'Estructurando resumen, observaciones técnicas y conceptos de obra...' });
-  await new Promise(r => setTimeout(r, 300));
-
   const margen = Number(expediente.margenGlobalPct || 30);
   const tipoIva = Number(expediente.tipoIvaPct || 10);
+  const realCapturas = (expediente.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
 
   let rawChapters = [];
   let conceptosSugeridos = [];
   let resumenGeneral = '';
   let observacionesTecnicas = [];
-  let generatedByGemini = false;
+  let generatedBy = '';
+  let lastError = null;
 
-  if (aiConfig.apiKey && (aiConfig.provider === 'google' || !aiConfig.provider)) {
+  if (onProgress) onProgress({ step: 1, label: 'Preparando dictado, notas y mediciones de la visita...' });
+
+  // Partida de la IA -> partida de presupuesto. El concepto lleva la redacción técnica completa.
+  const toPartida = (p, capIdx, pIdx) => {
+    const titulo = (p.titulo || p.concepto || '').trim();
+    const descripcion = (p.descripcion || '').trim();
+    const cantidad = Number(p.cantidad ?? p.medicion ?? 1) || 1;
+    const pvp = Number(p.precioVenta ?? p.precio_unitario_estimado ?? p.precio_unitario ?? 0);
+    const mPct = Number(p.margenPct ?? p.margen_pct ?? margen);
+    const coste = Number(p.costeUnitario ?? (pvp ? pvp / (1 + mPct / 100) : 20));
+    return {
+      codigo: p.codigo || `${String(capIdx + 1).padStart(2, '0')}.${String(pIdx + 1).padStart(2, '0')}`,
+      titulo,
+      descripcion,
+      concepto: descripcion && titulo && !descripcion.startsWith(titulo) ? `${titulo}. ${descripcion}` : (descripcion || titulo || 'Partida técnica'),
+      cantidad,
+      unidad: p.unidad || 'ud',
+      costeUnitario: Number(coste.toFixed(2)),
+      margenPct: mPct
+    };
+  };
+
+  const toChapters = (capitulos = []) => capitulos
+    .filter(cap => Array.isArray(cap.partidas) && cap.partidas.length > 0)
+    .map((cap, capIdx) => ({
+      id: `cap-${Date.now()}-${capIdx}`,
+      codigo: cap.codigo_capitulo || cap.codigo || String(capIdx + 1).padStart(2, '0'),
+      nombre: (cap.nombre_capitulo || cap.nombre || `Capítulo ${capIdx + 1}`).replace(/^\d+\.\s*/, ''),
+      partidas: cap.partidas.map((p, pIdx) => toPartida(p, capIdx, pIdx))
+    }));
+
+  // 1. Servidor: usa las claves del servidor, la memoria de la IA (Ajustes) y los presupuestos de referencia.
+  if (onProgress) onProgress({ step: 2, label: activeRefs.length > 0 ? `Aplicando memoria de la IA y ${activeRefs.length} presupuesto(s) de referencia...` : 'Aplicando memoria de la IA...' });
+  try {
+    if (onProgress) onProgress({ step: 3, label: 'Redactando partidas y agrupando por capítulos...' });
+    const result = await generateBudgetViaBackend({
+      fotos: realCapturas.map(c => c.file).filter(Boolean),
+      dictado: expediente.audioTranscripcion || '',
+      medidasNotas: expediente.medidasNotas || '',
+      cliente: expediente.cliente || '',
+      direccion: expediente.direccion || '',
+      calidades: expediente.calidades || 'Media-Alta',
+      titulo: expediente.titulo || '',
+      plazo: expediente.plazoMeses || '',
+      basePrecios: catalog || [],
+      referenceBudgets: activeRefs,
+      margenGlobal: margen,
+      tipoIva
+    });
+    rawChapters = toChapters(result?.capitulos);
+    if (rawChapters.length > 0) {
+      resumenGeneral = result.resumen_obra || result.resumen || '';
+      observacionesTecnicas = Array.isArray(result.observaciones_tecnicas) ? result.observaciones_tecnicas : [];
+      generatedBy = 'el motor de IA del servidor (memoria de la IA + presupuestos de referencia)';
+    }
+  } catch (backendErr) {
+    lastError = backendErr;
+    console.warn('Servidor de IA no disponible para generar el presupuesto:', backendErr.message);
+  }
+
+  // 2. Compatibilidad: clave de Gemini guardada en el navegador (configuraciones antiguas).
+  if (rawChapters.length === 0 && aiConfig.apiKey && (aiConfig.provider === 'google' || !aiConfig.provider)) {
     try {
-      const realCapturas = (expediente.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
       const combinedInput = [
         expediente.audioTranscripcion ? `[AUDIO TRANSCRITO DE LA VISITA]:\n"${expediente.audioTranscripcion}"` : '',
         expediente.medidasNotas ? `[MEDICIONES Y COTAS DICTADAS IN SITU]:\n${expediente.medidasNotas}` : '',
@@ -169,7 +220,7 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
       const promptUser = `
 EXPEDIENTE DE VISITA DE OBRA:
 - Cliente: ${expediente.cliente || 'Particular'}
-- Dirección: ${expediente.direccion || 'Madrid'}
+- Dirección: ${expediente.direccion || ''}
 - Alcance / Dictado de Visita:
 """
 ${combinedInput}
@@ -178,7 +229,7 @@ ${combinedInput}
 CATÁLOGO BASE DE PRECIOS DISPONIBLE:
 ${(catalog || []).slice(0, 25).map(p => `- ${p.codigo}: ${p.concepto} | PVP: ${p.precioVenta}€ / ${p.unidad}`).join('\n')}
 
-Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observaciones_tecnicas', 'conceptos' y 'capitulos'.`;
+Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observaciones_tecnicas' y 'capitulos' (cada partida con titulo, descripcion técnica completa, unidad, medicion y precio_unitario_estimado).`;
 
       const aiResponse = await generateBudgetWithGemini({
         promptUser,
@@ -188,76 +239,28 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
         referenceBudgets: activeRefs
       });
 
-      if (aiResponse) {
-        if (aiResponse.resumen) resumenGeneral = aiResponse.resumen;
+      rawChapters = toChapters(aiResponse?.capitulos);
+      if (rawChapters.length > 0) {
+        resumenGeneral = aiResponse.resumen || aiResponse.resumen_obra || '';
         if (Array.isArray(aiResponse.observaciones_tecnicas)) observacionesTecnicas = aiResponse.observaciones_tecnicas;
-        if (Array.isArray(aiResponse.conceptos)) conceptosSugeridos = aiResponse.conceptos;
-
-        if (aiResponse.capitulos && aiResponse.capitulos.length > 0) {
-          rawChapters = aiResponse.capitulos.map((cap, capIdx) => ({
-            id: `cap-${Date.now()}-${capIdx}`,
-            codigo: cap.codigo_capitulo || cap.codigo || String(capIdx + 1).padStart(2, '0'),
-            nombre: cap.nombre || cap.nombre_capitulo || `Capítulo ${capIdx + 1}`,
-            partidas: (cap.partidas || []).map(p => ({
-              codigo: p.codigo || `IA-${String(capIdx + 1).padStart(2, '0')}`,
-              concepto: p.titulo || p.concepto || p.descripcion || 'Partida técnica',
-              cantidad: Number(p.medicion || p.cantidad || 1),
-              unidad: p.unidad || 'ud',
-              costeUnitario: Number(p.precio_unitario_estimado ? (p.precio_unitario_estimado * 0.7).toFixed(2) : (p.costeUnitario || 20)),
-              margenPct: margen
-            }))
-          }));
-          generatedByGemini = true;
-        }
+        generatedBy = 'Google Gemini (clave del navegador)';
       }
     } catch (geminiErr) {
-      console.warn('Fallo llamada Gemini en visita, usando motor heurístico de contingencia:', geminiErr.message);
+      lastError = geminiErr;
+      console.warn('Fallo llamada Gemini en visita:', geminiErr.message);
     }
   }
 
-  // Fallback heuristic if no Gemini chapters
+  // Sin IA no se inventan partidas: es mejor avisar que entregar un presupuesto falso.
   if (rawChapters.length === 0) {
-    resumenGeneral = resumenGeneral || `Propuesta técnica para la reforma proyectada en ${expediente.direccion || 'vivienda del cliente'}, basada en la visita de inspección in situ y las mediciones de campo.`;
-    observacionesTecnicas = observacionesTecnicas.length > 0 ? observacionesTecnicas : [
-      'Se requiere comprobación de cotas de bajante general antes de cerrar falso techo.',
-      'En pisos altos sin ascensor se aplicará protocolo de protección de zonas comunes y acopio manual.',
-      'Verificar estado de la instalación eléctrica existente conforme a normativa REBT.'
-    ];
-
-    rawChapters = [
-      {
-        id: 'cap-01',
-        codigo: '01',
-        nombre: 'Actuaciones Previas y Demoliciones',
-        partidas: [
-          { codigo: 'DEM-01', concepto: 'Demolición de tabiquería divisoria y desescombro', cantidad: 14.5, unidad: 'm²', costeUnitario: 12.50, margenPct: margen },
-          { codigo: 'DEM-02', concepto: 'Picado de alicatados y solados antiguos', cantidad: 62.0, unidad: 'm²', costeUnitario: 9.80, margenPct: margen },
-          { codigo: 'DEM-04', concepto: 'Contenedor de obra 5m³ homologado con canon de vertedero', cantidad: 2, unidad: 'ud', costeUnitario: 180.00, margenPct: 20 }
-        ]
-      },
-      {
-        id: 'cap-02',
-        codigo: '02',
-        nombre: 'Albañilería, Pladur y Revestimientos',
-        partidas: [
-          { codigo: 'ALB-01', concepto: 'Tabiquería seca Pladur con aislamiento acústico', cantidad: 28.0, unidad: 'm²', costeUnitario: 28.50, margenPct: margen },
-          { codigo: 'ALB-02', concepto: 'Falso techo continuo de pladur 13mm hidrófugo', cantidad: 45.0, unidad: 'm²', costeUnitario: 24.00, margenPct: margen },
-          { codigo: 'ALI-01', concepto: 'Alicatado porcelánico rectificado con mortero C2TE', cantidad: 48.0, unidad: 'm²', costeUnitario: 26.00, margenPct: margen },
-          { codigo: 'PIN-01', concepto: 'Alisado integral de gotelé con masilla plástica a dos manos y lijado', cantidad: 140.0, unidad: 'm²', costeUnitario: 12.00, margenPct: margen }
-        ]
-      },
-      {
-        id: 'cap-03',
-        codigo: '03',
-        nombre: 'Instalaciones de Fontanería y Electricidad',
-        partidas: [
-          { codigo: 'FON-01', concepto: 'Instalación de fontanería multicapa empotrada para cocina y baños', cantidad: 10, unidad: 'puntos', costeUnitario: 65.00, margenPct: 25 },
-          { codigo: 'FON-03', concepto: 'Plato de ducha resina pizarra antideslizante con mampara', cantidad: 1, unidad: 'ud', costeUnitario: 160.00, margenPct: 30 },
-          { codigo: 'ELE-03', concepto: 'Cuadro general de mando REBT con diferencial superinmunizado y boletín CIE', cantidad: 1, unidad: 'ud', costeUnitario: 380.00, margenPct: 25 }
-        ]
-      }
-    ];
+    throw new Error(
+      lastError?.message
+        ? `La IA no ha podido generar el presupuesto. ${lastError.message}`
+        : 'La IA no ha devuelto ningún capítulo. Revisa el dictado o la configuración del motor de IA.'
+    );
   }
+
+  if (onProgress) onProgress({ step: 4, label: 'Calculando precios, márgenes e IVA...' });
 
   // Calculate pricing
   const capitulosCalculados = rawChapters.map(cap => {
@@ -313,9 +316,9 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
     estado: 'borrador_ia',
     obraTitulo: expediente.titulo || `Reforma ${expediente.cliente}`,
     cliente: expediente.cliente || 'Particular',
-    telefono: expediente.telefono || '+34 600 000 000',
-    email: expediente.email || 'cliente@ejemplo.es',
-    direccion: expediente.direccion || 'Dirección de obra',
+    telefono: expediente.telefono || '',
+    email: expediente.email || '',
+    direccion: expediente.direccion || '',
     calidades: expediente.calidades || 'Media-Alta',
     tipoIvaPct: tipoIva,
     margenGlobalPct: margenGlobalCalculado,
@@ -328,9 +331,7 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
     conceptos: conceptosSugeridos,
     capitulos: capitulosCalculados,
     partidas: allPartidas,
-    aiGenerationSummary: generatedByGemini
-      ? `Generado por Google Gemini con respuesta JSON estructurada (conceptos, resumen, observaciones técnicas y capítulos).`
-      : `Generado mediante motor de contingencia a partir de visita técnica in situ.`,
+    aiGenerationSummary: `Generado por ${generatedBy}.`,
     historialRefinados: [
       {
         fecha: new Date().toLocaleTimeString().substring(0, 5),

@@ -318,34 +318,18 @@ export default function AudioVoiceRecorder({
     }
   };
 
-  // Start Simulated Voice Dictation (fallback for HTTP or when no mic)
-  const handleStartSimulatedRecording = () => {
-    setMicError(null);
-    setIsRecording(false);
-    setIsSimulatedRecording(true);
-    setRecordSeconds(0);
-
-    timerRef.current = setInterval(() => {
-      setRecordSeconds(prev => prev + 1);
-    }, 1000);
-
-    showNotification('▶️ Grabando simulación de voz de obra... Pulsa "Finalizar" para transcribir con IA.');
-  };
-
-  // Stop Recording (Physical or Simulated)
+  // Stop Recording
   const handleStopRecording = () => {
     if (timerRef.current) clearInterval(timerRef.current);
 
-    if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecording(false);
-    } else if (isSimulatedRecording) {
-      setIsSimulatedRecording(false);
-      const fakeBlob = new Blob(['simulated-audio-data'], { type: 'audio/webm' });
-      processAudioTranscription(fakeBlob, 'simulated', liveSpeechText);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
     }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    setIsSimulatedRecording(false);
   };
 
   // Connect Audio Player to Visualizer Analyser Node
@@ -441,7 +425,7 @@ export default function AudioVoiceRecorder({
       }
     } catch (err) {
       console.error('[Audio Processing Exception]', err);
-      showNotification('Error al procesar la transcripción del audio.', 'error');
+      showNotification(`No se pudo transcribir el audio: ${err.message || 'revisa el motor de IA en Ajustes'}`, 'error');
     } finally {
       setIsTranscribing(false);
     }
@@ -476,23 +460,10 @@ export default function AudioVoiceRecorder({
 
         {/* Engine Status Badge & Setup Helper */}
         <div className="flex items-center gap-2">
-          {hasRealOpenAiKey ? (
-            <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              Whisper Cloud Activo (OpenAI)
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowKeyGuideModal(true)}
-              className="inline-flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-full transition"
-              title="Aprende cómo conectar tu API Key de OpenAI para Whisper nativo"
-            >
-              <Key className="w-3 h-3 text-amber-400" />
-              <span>Conectar API Key Whisper</span>
-              <Info className="w-3 h-3 text-amber-400/80" />
-            </button>
-          )}
+          <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            Transcripción con IA (Whisper / Gemini)
+          </span>
         </div>
       </div>
 
@@ -561,19 +532,6 @@ export default function AudioVoiceRecorder({
               >
                 <Mic className="w-4 h-4 stroke-[2.5]" />
                 <span>Grabar con Micrófono</span>
-              </button>
-            )}
-
-            {/* Simulation Button (Always Available fallback) */}
-            {!isRecording && !isSimulatedRecording && (
-              <button
-                type="button"
-                onClick={handleStartSimulatedRecording}
-                className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-                title="Genera una simulación realista de voz si no tienes micrófono físico conectado"
-              >
-                <Play className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                <span>Simular Voz</span>
               </button>
             )}
 
@@ -660,7 +618,7 @@ export default function AudioVoiceRecorder({
               {micError === 'insecure_context' && (
                 <>
                   Los navegadores modernos (Chrome, Edge, Safari) bloquean la API de micrófono al navegar por IP local en HTTP (ej: <code>http://192.168.1.135:5173</code>). 
-                  Para usar tu micrófono real, abre la app desde <strong>http://localhost:5173</strong> en tu PC, o pulsa el botón <strong>"Simular Voz"</strong> para probar la transcripción y el generador de partidas de inmediato.
+                  Para usar tu micrófono real, abre la app desde <strong>https://</strong> o desde <strong>http://localhost</strong> en tu PC. También puedes grabar con el móvil y pulsar <strong>"Añadir Audio"</strong>.
                 </>
               )}
               {micError === 'permission_denied' && (
@@ -676,14 +634,6 @@ export default function AudioVoiceRecorder({
             </p>
 
             <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleStartSimulatedRecording}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition"
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Usar Simulación de Voz de Obra</span>
-              </button>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -710,7 +660,7 @@ export default function AudioVoiceRecorder({
             {transcript && (
               <button
                 type="button"
-                onClick={() => setTranscript('')}
+                onClick={() => { setTranscript(''); notifyTranscript('', null); }}
                 className="text-slate-500 hover:text-slate-300 text-[10px] transition"
               >
                 Borrar
