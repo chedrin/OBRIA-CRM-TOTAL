@@ -162,6 +162,7 @@ export function useCollectionSync({
   const timerRef = useRef(null);
   const retryRef = useRef({ attempts: 0, timer: null });
   const lastErrorNoticeRef = useRef(0);
+  const oversizedNoticeRef = useRef(new Set()); // ids ya avisados por superar el tamaño máximo
   const sentRef = useRef(new Map()); // id -> [{ json, at }] lo que acabamos de enviar (para ignorar su eco)
   const pushRef = useRef(() => {});
 
@@ -180,12 +181,14 @@ export function useCollectionSync({
     const current = toRecordMap(collection, valueRef.current, single);
 
     const toWrite = [];
+    const oversized = [];
     current.forEach((record, id) => {
       const known = baseline.get(id);
       if (known === record.json) return;
       if (known !== undefined && !canUpdate) return; // un obrero no modifica registros de solo-lectura
       if (record.json.length > MAX_RECORD_BYTES) {
         console.warn(`[Sync] "${collection}/${id}" es demasiado grande (${record.json.length} bytes) y no se sube.`);
+        oversized.push(id);
         return;
       }
       toWrite.push(record);
@@ -208,15 +211,34 @@ export function useCollectionSync({
         sentRef.current.set(record.id, recent);
       });
 
-      for (const group of chunk(toWrite, WRITE_CHUNK)) {
+      const writeRows = (group) => {
         const rows = group.map((record) => ({ collection, id: record.id, data: toDbSafe(record.data) }));
-        const request = canUpdate
+        return canUpdate
           ? supabase.from(TABLE).upsert(rows, { onConflict: 'collection,id' })
           : supabase.from(TABLE).insert(rows);
-        const { error } = await request;
-        if (error) throw error;
-        group.forEach((record) => baseline.set(record.id, record.json));
+      };
+
+      let firstError = null;
+      for (const group of chunk(toWrite, WRITE_CHUNK)) {
+        const { error } = await writeRows(group);
+        if (!error) {
+          group.forEach((record) => baseline.set(record.id, record.json));
+          continue;
+        }
+        // Un registro defectuoso no debe impedir guardar el resto: se reintenta uno a uno.
+        for (const record of group) {
+          const single = await writeRows([record]);
+          if (single.error) firstError = firstError || new Error(`${record.id}: ${single.error.message}`);
+          else baseline.set(record.id, record.json);
+        }
       }
+
+      const newOversized = oversized.filter((id) => !oversizedNoticeRef.current.has(id));
+      newOversized.forEach((id) => oversizedNoticeRef.current.add(id));
+      if (newOversized.length && notify) {
+        notify(`"${collection}": ${oversized.length} registro(s) superan 4 MB (fotos o documentos incrustados) y no se guardan en la nube.`, 'error');
+      }
+      if (firstError) throw firstError;
 
       for (const ids of chunk(toDelete, WRITE_CHUNK)) {
         const { error } = await supabase.from(TABLE).delete().eq('collection', collection).in('id', ids);
