@@ -16,7 +16,7 @@
  * escribir facturas, presupuestos, empleados, etc. aunque lo intente.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from './supabaseClient';
 
 const TABLE = 'app_records';
@@ -73,6 +73,31 @@ function toDbSafe(data) {
     .replace(/\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f][0-9a-f]{2})/gi, '')
     .replace(/(?<!\\ud[89ab][0-9a-f]{2})\\ud[c-f][0-9a-f]{2}/gi, '');
   return JSON.parse(json);
+}
+
+// ---------------------------------------------------------------------------
+// Copia local de cambios pendientes: lo que aún no se ha confirmado en Supabase se guarda en el
+// navegador, para que una recarga (p. ej. tras un despliegue) o un fallo de red no lo pierda.
+// ---------------------------------------------------------------------------
+const pendingKey = (userId, collection) => `obramaster_pending_${userId}_${collection}`;
+
+function readPending(userId, collection) {
+  try {
+    const raw = localStorage.getItem(pendingKey(userId, collection));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePending(userId, collection, pending) {
+  try {
+    if (Object.keys(pending).length === 0) localStorage.removeItem(pendingKey(userId, collection));
+    else localStorage.setItem(pendingKey(userId, collection), JSON.stringify(pending));
+  } catch (err) {
+    console.warn(`[Sync] No se pudo guardar la copia local de "${collection}":`, err?.message || err);
+  }
 }
 
 function chunk(list, size) {
@@ -165,6 +190,19 @@ export function useCollectionSync({
   const oversizedNoticeRef = useRef(new Set()); // ids ya avisados por superar el tamaño máximo
   const sentRef = useRef(new Map()); // id -> [{ json, at }] lo que acabamos de enviar (para ignorar su eco)
   const pushRef = useRef(() => {});
+  const keepPending = !single; // solo colecciones de registros (obras, presupuestos...)
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const failedSnapshotRef = useRef(null); // registros en pantalla cuando falló la carga
+
+  // Guarda en el navegador los registros que todavía no coinciden con lo que hay en Supabase.
+  const savePendingCopy = () => {
+    if (!keepPending || !userId || !loadedRef.current || role !== 'admin') return;
+    const pending = {};
+    toRecordMap(collection, valueRef.current, single).forEach((record, id) => {
+      if (baselineRef.current.get(id) !== record.json) pending[id] = record.data;
+    });
+    writePending(userId, collection, pending);
+  };
 
   valueRef.current = value;
 
@@ -247,7 +285,9 @@ export function useCollectionSync({
       }
 
       retryRef.current.attempts = 0;
+      savePendingCopy();
     } catch (err) {
+      savePendingCopy();
       console.error(`[Sync] No se pudo guardar "${collection}" en Supabase:`, err?.message || err);
       if (notify && Date.now() - lastErrorNoticeRef.current > 60000) {
         lastErrorNoticeRef.current = Date.now();
@@ -284,10 +324,38 @@ export function useCollectionSync({
         const rows = await fetchAllRows(collection);
         if (cancelled) return;
 
-        if (rows.length > 0) {
+        // Registros que este navegador no llegó a guardar en la nube (se vuelven a subir).
+        const pending = keepPending && role === 'admin' ? readPending(userId, collection) : {};
+        // Si la carga falló antes, lo creado o cambiado en pantalla desde entonces también se conserva.
+        if (keepPending && role === 'admin' && failedSnapshotRef.current) {
+          toRecordMap(collection, valueRef.current, single).forEach((record, id) => {
+            if (failedSnapshotRef.current.get(id) !== record.json) pending[id] = record.data;
+          });
+        }
+        failedSnapshotRef.current = null;
+        const remoteMap = toRecordMap(collection, rows.map((row) => row.data), single);
+        const recovered = Object.entries(pending).filter(([id, data]) => {
+          const remote = remoteMap.get(id);
+          return data && (!remote || remote.json !== stableStringify(data));
+        });
+
+        if (rows.length > 0 || recovered.length > 0) {
           const records = rows.map((row) => row.data);
           baselineRef.current = toRecordMap(collection, single ? records[0] : records, single);
-          setValue(single ? records[0] : records);
+          if (single) {
+            setValue(records[0]);
+          } else {
+            const recoveredIds = new Set(recovered.map(([id]) => id));
+            const merged = [
+              ...recovered.filter(([id]) => !remoteMap.has(id)).map(([, data]) => data),
+              ...records.map((rec) => (recoveredIds.has(String(rec?.id)) ? pending[String(rec.id)] : rec))
+            ];
+            valueRef.current = merged;
+            setValue(merged);
+            if (recovered.length && notify) {
+              notify(`Recuperados ${recovered.length} cambio(s) de "${collection}" que no se habían guardado en la nube. Guardando...`);
+            }
+          }
         } else if (role === 'admin' && hadLocalData) {
           // Supabase vacío + datos locales de la versión antigua: se suben una sola vez.
           const local = toRecordMap(collection, valueRef.current, single);
@@ -310,9 +378,17 @@ export function useCollectionSync({
         pushRef.current();
       } catch (err) {
         console.error(`[Sync] No se pudo cargar "${collection}" desde Supabase:`, err?.message || err);
-        if (!cancelled && notify) {
-          notify(`No se pudieron cargar los datos de "${collection}" desde la nube.`, 'error');
+        if (cancelled) return;
+        // Sin carga no se guarda nada: se recuerda lo que había en pantalla y se reintenta.
+        if (!failedSnapshotRef.current) {
+          const snapshot = new Map();
+          toRecordMap(collection, valueRef.current, single).forEach((record, id) => snapshot.set(id, record.json));
+          failedSnapshotRef.current = snapshot;
         }
+        if (notify && loadAttempt === 0) {
+          notify(`No se pudieron cargar los datos de "${collection}" desde la nube (${err?.message || 'error desconocido'}). Se reintentará; no recargues la página hasta que se recupere.`, 'error');
+        }
+        retryRef.current.timer = setTimeout(() => setLoadAttempt((n) => n + 1), Math.min(60000, 3000 * 2 ** Math.min(loadAttempt, 5)));
       }
     })();
 
@@ -320,7 +396,7 @@ export function useCollectionSync({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, role]);
+  }, [userId, role, loadAttempt]);
 
   // Al cerrar sesión se vacía lo que había en pantalla (equipo compartido).
   useEffect(() => {
@@ -332,6 +408,7 @@ export function useCollectionSync({
   useEffect(() => {
     if (!loadedRef.current || !userId) return undefined;
     clearTimeout(timerRef.current);
+    savePendingCopy();
     timerRef.current = setTimeout(() => pushRef.current(), PUSH_DELAY_MS);
     return () => clearTimeout(timerRef.current);
   }, [value, userId]);
