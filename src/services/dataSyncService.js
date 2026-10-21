@@ -16,7 +16,7 @@
  * escribir facturas, presupuestos, empleados, etc. aunque lo intente.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from './supabaseClient';
 
 const TABLE = 'app_records';
@@ -191,6 +191,8 @@ export function useCollectionSync({
   const sentRef = useRef(new Map()); // id -> [{ json, at }] lo que acabamos de enviar (para ignorar su eco)
   const pushRef = useRef(() => {});
   const keepPending = !single; // solo colecciones de registros (obras, presupuestos...)
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const failedSnapshotRef = useRef(null); // registros en pantalla cuando falló la carga
 
   // Guarda en el navegador los registros que todavía no coinciden con lo que hay en Supabase.
   const savePendingCopy = () => {
@@ -324,6 +326,13 @@ export function useCollectionSync({
 
         // Registros que este navegador no llegó a guardar en la nube (se vuelven a subir).
         const pending = keepPending && role === 'admin' ? readPending(userId, collection) : {};
+        // Si la carga falló antes, lo creado o cambiado en pantalla desde entonces también se conserva.
+        if (keepPending && role === 'admin' && failedSnapshotRef.current) {
+          toRecordMap(collection, valueRef.current, single).forEach((record, id) => {
+            if (failedSnapshotRef.current.get(id) !== record.json) pending[id] = record.data;
+          });
+        }
+        failedSnapshotRef.current = null;
         const remoteMap = toRecordMap(collection, rows.map((row) => row.data), single);
         const recovered = Object.entries(pending).filter(([id, data]) => {
           const remote = remoteMap.get(id);
@@ -369,9 +378,17 @@ export function useCollectionSync({
         pushRef.current();
       } catch (err) {
         console.error(`[Sync] No se pudo cargar "${collection}" desde Supabase:`, err?.message || err);
-        if (!cancelled && notify) {
-          notify(`No se pudieron cargar los datos de "${collection}" desde la nube.`, 'error');
+        if (cancelled) return;
+        // Sin carga no se guarda nada: se recuerda lo que había en pantalla y se reintenta.
+        if (!failedSnapshotRef.current) {
+          const snapshot = new Map();
+          toRecordMap(collection, valueRef.current, single).forEach((record, id) => snapshot.set(id, record.json));
+          failedSnapshotRef.current = snapshot;
         }
+        if (notify && loadAttempt === 0) {
+          notify(`No se pudieron cargar los datos de "${collection}" desde la nube (${err?.message || 'error desconocido'}). Se reintentará; no recargues la página hasta que se recupere.`, 'error');
+        }
+        retryRef.current.timer = setTimeout(() => setLoadAttempt((n) => n + 1), Math.min(60000, 3000 * 2 ** Math.min(loadAttempt, 5)));
       }
     })();
 
@@ -379,7 +396,7 @@ export function useCollectionSync({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, role]);
+  }, [userId, role, loadAttempt]);
 
   // Al cerrar sesión se vacía lo que había en pantalla (equipo compartido).
   useEffect(() => {
