@@ -23,6 +23,13 @@ const USER_FRIENDLY_AI_ERROR = "No ha sido posible conectar con la IA. Revise la
 const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
 const GEMINI_FALLBACK_CASCADE = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-pro"];
 
+// Error de IA con mensaje amable y el motivo técnico aparte (sin claves) para mostrarlo y diagnosticar.
+function aiError(detail) {
+  const err = new Error(USER_FRIENDLY_AI_ERROR);
+  err.detail = String(detail || "").replace(/key=[^&\s"]+/gi, "key=***").slice(0, 300);
+  return err;
+}
+
 function loadEnv() {
   const envPaths = [
     path.join(__dirname, ".env"),
@@ -264,7 +271,7 @@ function fileToPart(file) {
 async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json" }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!effectiveKey) {
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    throw aiError("Falta la clave GEMINI_API_KEY.");
   }
 
   let preferredModel = model || GEMINI_DEFAULT_MODEL;
@@ -298,8 +305,15 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
 
       if (response.ok) {
         const data = await response.json();
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const candidate = data.candidates?.[0];
+        const rawText = (candidate?.content?.parts || [])
+          .filter(p => p.text && !p.thought)
+          .map(p => p.text)
+          .join("");
         if (rawText) return rawText;
+        lastTechnicalError = `[${targetModel}] respuesta vacía (${candidate?.finishReason || data.promptFeedback?.blockReason || "sin motivo"})`;
+        console.error(`[Backend Gemini Error] ${lastTechnicalError}`);
+        continue;
       }
 
       let errText = await response.text();
@@ -307,7 +321,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
       console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
       lastTechnicalError = `[${targetModel}] HTTP ${response.status}: ${errText}`;
 
-      if (response.status === 404 || errText.includes("not found") || errText.includes("is not supported")) {
+      if ([404, 429, 500, 503].includes(response.status) || errText.includes("not found") || errText.includes("is not supported")) {
         console.warn(`[Backend Gemini Cascade] Reintentando con siguiente modelo por error 404 en ${targetModel}...`);
         continue;
       }
@@ -321,7 +335,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
   }
 
   console.error("[Backend Gemini Fallback Failed] Detalle técnico interno:", lastTechnicalError);
-  throw new Error(USER_FRIENDLY_AI_ERROR);
+  throw aiError(lastTechnicalError);
 }
 
 async function fetchAvailableGeminiModelsFromGoogle(apiKey) {
@@ -337,7 +351,7 @@ async function fetchAvailableGeminiModelsFromGoogle(apiKey) {
 
 async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15, maxTokens = 4096 }) {
   const effectiveKey = (apiKey || process.env.OPENAI_API_KEY || "").trim();
-  if (!effectiveKey) throw new Error(USER_FRIENDLY_AI_ERROR);
+  if (!effectiveKey) throw aiError("Falta la clave OPENAI_API_KEY.");
 
   const url = "https://api.openai.com/v1/chat/completions";
   try {
@@ -360,22 +374,22 @@ async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15,
       let errText = await response.text();
       try { errText = JSON.parse(errText).error?.message || errText; } catch {}
       console.error(`[OpenAI Error] HTTP ${response.status}: ${errText}`);
-      throw new Error(USER_FRIENDLY_AI_ERROR);
+      throw aiError(`OpenAI HTTP ${response.status}: ${errText}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error(USER_FRIENDLY_AI_ERROR);
+    if (!content) throw aiError("OpenAI devolvió una respuesta vacía.");
     return content;
   } catch (err) {
     console.error("[OpenAI Provider Exception]", err);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    throw aiError(err.detail || err.message);
   }
 }
 
 async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, temperature = 0.15, maxTokens = 4096 }) {
   const effectiveKey = (apiKey || process.env.ANTHROPIC_API_KEY || "").trim();
-  if (!effectiveKey) throw new Error(USER_FRIENDLY_AI_ERROR);
+  if (!effectiveKey) throw aiError("Falta la clave ANTHROPIC_API_KEY.");
 
   const url = "https://api.anthropic.com/v1/messages";
   try {
@@ -399,22 +413,22 @@ async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, 
       let errText = await response.text();
       try { errText = JSON.parse(errText).error?.message || errText; } catch {}
       console.error(`[Anthropic Error] HTTP ${response.status}: ${errText}`);
-      throw new Error(USER_FRIENDLY_AI_ERROR);
+      throw aiError(`Anthropic HTTP ${response.status}: ${errText}`);
     }
 
     const data = await response.json();
     const textBlock = data.content?.find(b => b.type === "text")?.text || "";
-    if (!textBlock) throw new Error(USER_FRIENDLY_AI_ERROR);
+    if (!textBlock) throw aiError("Anthropic devolvió una respuesta vacía.");
     return textBlock;
   } catch (err) {
     console.error("[Anthropic Provider Exception]", err);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    throw aiError(err.detail || err.message);
   }
 }
 
 async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0.15, maxTokens = 4096 }) {
   const effectiveKey = (apiKey || process.env.OPENROUTER_API_KEY || "").trim();
-  if (!effectiveKey) throw new Error(USER_FRIENDLY_AI_ERROR);
+  if (!effectiveKey) throw aiError("Falta la clave OPENROUTER_API_KEY.");
 
   const url = "https://openrouter.ai/api/v1/chat/completions";
   try {
@@ -438,16 +452,16 @@ async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0
       let errText = await response.text();
       try { errText = JSON.parse(errText).error?.message || errText; } catch {}
       console.error(`[OpenRouter Error] HTTP ${response.status}: ${errText}`);
-      throw new Error(USER_FRIENDLY_AI_ERROR);
+      throw aiError(`OpenRouter HTTP ${response.status}: ${errText}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error(USER_FRIENDLY_AI_ERROR);
+    if (!content) throw aiError("OpenRouter devolvió una respuesta vacía.");
     return content;
   } catch (err) {
     console.error("[OpenRouter Provider Exception]", err);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    throw aiError(err.detail || err.message);
   }
 }
 
@@ -473,38 +487,64 @@ function modelForProvider(config, provider) {
   return model || config.openRouterModel || "google/gemini-3.8-flash";
 }
 
+const PROVIDER_ORDER = ["google", "anthropic", "openai", "openrouter"];
+
+// Manda la configuración guardada en el servidor (Ajustes > Motor IA). Una clave enviada por el
+// navegador (configuraciones antiguas) solo se usa si el servidor no tiene clave para ese proveedor.
+function configWithRequestKey(config, fields = {}) {
+  const provider = config.provider || "google";
+  const requestKey = String(fields.apiKey || "").trim();
+  if (!requestKey || resolveProviderKey(config, provider)) return config;
+  return { ...config, apiKeys: { ...(config.apiKeys || {}), [provider]: requestKey } };
+}
+
 /**
- * Llama al proveedor activo con un prompt de texto y devuelve el texto bruto.
- * `geminiParts` (fotos, PDF...) solo se envían cuando el proveedor es Gemini.
+ * Llama a la IA con un prompt de texto y devuelve el texto bruto.
+ * Empieza por el proveedor elegido en Ajustes > Motor IA; si falla o no tiene clave,
+ * prueba el resto de proveedores con clave configurada en el servidor.
+ * `geminiParts` (fotos, PDF, audio) solo se envían cuando responde Gemini.
  */
 async function callActiveProvider({ config, systemInstruction, userPrompt, temperature = 0.15, maxTokens = 4096, geminiParts = [] }) {
-  const provider = (config.provider || "google").toLowerCase();
-  const apiKey = resolveProviderKey(config, provider);
-  const model = modelForProvider(config, provider);
+  const preferred = (config.provider || "google").toLowerCase();
+  const candidates = [preferred, ...PROVIDER_ORDER].filter((p, i, arr) => arr.indexOf(p) === i && resolveProviderKey(config, p));
+  if (!candidates.length) {
+    throw aiError("No hay ninguna clave de IA en el servidor (GEMINI_API_KEY, ANTHROPIC_API_KEY u OPENAI_API_KEY).");
+  }
 
-  if (provider === "openai") {
-    return callOpenAiProvider({
-      apiKey, model, temperature, maxTokens,
-      messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
-    });
+  const failures = [];
+  for (const provider of candidates) {
+    const apiKey = resolveProviderKey(config, provider);
+    const model = modelForProvider(config, provider);
+    try {
+      if (provider === "openai") {
+        return await callOpenAiProvider({
+          apiKey, model, temperature, maxTokens,
+          messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
+        });
+      }
+      if (provider === "anthropic") {
+        return await callAnthropicProvider({ apiKey, model, systemPrompt: systemInstruction, userPrompt, temperature, maxTokens });
+      }
+      if (provider === "openrouter") {
+        return await callOpenRouterProvider({
+          apiKey, model, temperature, maxTokens,
+          messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
+        });
+      }
+      return await callGeminiProvider({
+        apiKey,
+        model,
+        contents: [{ role: "user", parts: [{ text: userPrompt }, ...geminiParts] }],
+        systemInstruction,
+        temperature,
+        maxTokens
+      });
+    } catch (err) {
+      failures.push(`${provider}: ${err.detail || err.message}`);
+      console.warn(`[IA] Falló ${provider}, probando el siguiente proveedor.`, err.detail || err.message);
+    }
   }
-  if (provider === "anthropic") {
-    return callAnthropicProvider({ apiKey, model, systemPrompt: systemInstruction, userPrompt, temperature, maxTokens });
-  }
-  if (provider === "openrouter") {
-    return callOpenRouterProvider({
-      apiKey, model, temperature, maxTokens,
-      messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
-    });
-  }
-  return callGeminiProvider({
-    apiKey,
-    model,
-    contents: [{ role: "user", parts: [{ text: userPrompt }, ...geminiParts] }],
-    systemInstruction,
-    temperature,
-    maxTokens
-  });
+  throw aiError(failures.join(" | "));
 }
 
 // Texto de los presupuestos de referencia activos que se envía como modelo de estilo.
@@ -897,17 +937,6 @@ async function handleRequest(req, res) {
 
         const refBudgetsText = buildReferenceBudgetsText(refBudgets, { max: 5, chars: 2500 });
 
-        const targetProvider = fields.provider || currentConfig.provider || "google";
-        const targetKeys = currentConfig.apiKeys || {};
-        let targetApiKey = fields.apiKey || targetKeys[targetProvider] || currentConfig.apiKey;
-        if (!targetApiKey) {
-          if (targetProvider === "google") targetApiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
-          else if (targetProvider === "openai") targetApiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY || "";
-          else if (targetProvider === "anthropic") targetApiKey = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || "";
-          else if (targetProvider === "openrouter") targetApiKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY || "";
-        }
-        const targetModel = fields.model || currentConfig.model;
-
         const memoryContext = await buildMemoryContext("texto");
 
         const systemInstruction = `
@@ -931,52 +960,14 @@ ${textToImprove.trim()}
 """
 `;
 
-        let rawOutput = "";
-        if (targetProvider === "google") {
-          rawOutput = await callGeminiProvider({
-            apiKey: targetApiKey,
-            model: targetModel,
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-            systemInstruction,
-            temperature: 0.2
-          });
-        } else if (targetProvider === "openai") {
-          rawOutput = await callOpenAiProvider({
-            apiKey: targetApiKey,
-            model: targetModel || "chat-latest",
-            messages: [
-              { role: "system", content: systemInstruction },
-              { role: "user", content: userPrompt }
-            ],
-            temperature: 0.2
-          });
-        } else if (targetProvider === "anthropic") {
-          rawOutput = await callAnthropicProvider({
-            apiKey: targetApiKey,
-            model: targetModel || "claude-sonnet-5-5",
-            systemPrompt: systemInstruction,
-            userPrompt,
-            temperature: 0.2
-          });
-        } else if (targetProvider === "openrouter") {
-          rawOutput = await callOpenRouterProvider({
-            apiKey: targetApiKey,
-            model: targetModel || "google/gemini-3.8-flash",
-            messages: [
-              { role: "system", content: systemInstruction },
-              { role: "user", content: userPrompt }
-            ],
-            temperature: 0.2
-          });
-        } else {
-          rawOutput = await callGeminiProvider({
-            apiKey: targetApiKey,
-            model: targetModel,
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-            systemInstruction,
-            temperature: 0.2
-          });
-        }
+        const aiConfig = configWithRequestKey(currentConfig, fields);
+        const rawOutput = await callActiveProvider({
+          config: aiConfig,
+          systemInstruction,
+          userPrompt,
+          temperature: 0.2,
+          maxTokens: 8192
+        });
 
         const elapsedMs = Math.round(performance.now() - startTime);
         let parsed = {};
@@ -990,8 +981,8 @@ ${textToImprove.trim()}
         const explicacionCambios = parsed.explicacionCambios || parsed.explicacion || "Vocabulario técnico y precisión de obra aplicados.";
 
         logAiCall({
-          provider: targetProvider,
-          model: targetModel,
+          provider: aiConfig.provider,
+          model: aiConfig.model,
           action: "improve-text",
           latencyMs: elapsedMs,
           success: true,
@@ -1004,8 +995,8 @@ ${textToImprove.trim()}
           originalText: textToImprove.trim(),
           improvedText: improvedText,
           explicacionCambios: explicacionCambios,
-          provider: targetProvider,
-          model: targetModel,
+          provider: aiConfig.provider,
+          model: aiConfig.model,
           latencyMs: elapsedMs
         }));
         return;
@@ -1265,13 +1256,10 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
 `;
 
         const effectiveConfig = {
-          ...currentConfig,
-          provider: fields.provider || currentConfig.provider,
-          model: fields.model || currentConfig.model,
+          ...configWithRequestKey(currentConfig, fields),
           temperature: currentConfig.temperature || 0.15,
           maxTokens: Math.max(Number(currentConfig.maxTokens) || 0, 16384)
         };
-        if (fields.apiKey) effectiveConfig.apiKeys = { ...(currentConfig.apiKeys || {}), [effectiveConfig.provider]: fields.apiKey };
 
         const rawOutput = await callActiveProvider({
           config: effectiveConfig,
@@ -1385,7 +1373,9 @@ ${providedText.trim() ? `TEXTO DISPONIBLE:\n"""\n${providedText.slice(0, 20000)}
       });
 
       res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: USER_FRIENDLY_AI_ERROR }));
+      res.end(JSON.stringify({
+        error: err.detail ? `${USER_FRIENDLY_AI_ERROR} Detalle: ${err.detail}` : USER_FRIENDLY_AI_ERROR
+      }));
     }
   });
 }
