@@ -30,7 +30,7 @@ import { getAdminClient, isSupabaseReady } from "./authRoutes.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_FILE = path.join(__dirname, "ai_memory.json");
 
-const MAX_INSTRUCTIONS_CHARS = 4000;
+const MAX_INSTRUCTIONS_CHARS = 12000;
 const MAX_CORRECTIONS = 8;
 const MAX_CORRECTION_CHARS = 700;
 const VALID_SCOPES = new Set(["all", "texto", "presupuesto"]);
@@ -139,6 +139,20 @@ async function insertCorrection(row) {
   return full;
 }
 
+/**
+ * Guarda (o actualiza) lo aprendido de un presupuesto de referencia como instrucción
+ * permanente, visible y editable en Ajustes > Memoria de la IA.
+ * Busca primero por id y después por título, para no duplicar si se analiza dos veces.
+ */
+export async function saveReferenceLearning({ memoryId = "", title, content }) {
+  const row = { title: clip(title, 120), content: clip(content, 2000), scope: "all" };
+  const existing = (await listInstructions()).find(
+    (i) => (memoryId && i.id === memoryId) || i.title === row.title
+  );
+  if (existing) return updateInstruction(existing.id, { content: row.content });
+  return insertInstruction({ ...row, is_active: true });
+}
+
 // ---------------------------------------------------------------------------
 // Contexto que se añade a cada llamada de IA
 // ---------------------------------------------------------------------------
@@ -155,7 +169,7 @@ export async function buildMemoryContext(kind) {
     let used = 0;
     const instructionLines = [];
     for (const item of instructions) {
-      const line = `- ${item.title ? `${item.title}: ` : ""}${clip(item.content, 800)}`;
+      const line = `- ${item.title ? `${item.title}: ` : ""}${clip(item.content, 2000)}`;
       if (used + line.length > MAX_INSTRUCTIONS_CHARS) break;
       used += line.length;
       instructionLines.push(line);

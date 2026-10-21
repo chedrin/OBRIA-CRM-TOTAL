@@ -30,9 +30,8 @@ import {
   FileAudio,
   Check
 } from 'lucide-react';
-import { VISITA_TEMPLATES } from '../../services/siteVisitAIService';
 import confetti from 'canvas-confetti';
-import { processScopeWithAI, transcribeAudio } from '../../services/aiAudioTextService';
+import { transcribeAudio } from '../../services/aiAudioTextService';
 import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
 import AiImprovementControl from '../Common/AiImprovementControl';
 
@@ -66,31 +65,27 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
   const activeRefBudgets = (referenceBudgets || []).filter(b => b.is_active);
 
-  // Selected sample template or manual mode
-  const [selectedTemplate, setSelectedTemplate] = useState(VISITA_TEMPLATES[0]);
-  const [isManualMode, setIsManualMode] = useState(false);
-
-  // Form Fields
-  const [clienteNombre, setClienteNombre] = useState(VISITA_TEMPLATES[0].cliente);
-  const [clienteTelefono, setClienteTelefono] = useState(VISITA_TEMPLATES[0].telefono);
-  const [clienteEmail, setClienteEmail] = useState(VISITA_TEMPLATES[0].email);
-  const [obraTitulo, setObraTitulo] = useState(VISITA_TEMPLATES[0].titulo);
-  const [direccion, setDireccion] = useState(VISITA_TEMPLATES[0].direccion);
-  const [calidades, setCalidades] = useState(VISITA_TEMPLATES[0].calidades);
-  const [plazoDeseado, setPlazoDeseado] = useState(VISITA_TEMPLATES[0].plazoMeses);
+  // Form Fields (expediente vacío: sin datos de muestra)
+  const [clienteNombre, setClienteNombre] = useState('');
+  const [clienteTelefono, setClienteTelefono] = useState('');
+  const [clienteEmail, setClienteEmail] = useState('');
+  const [obraTitulo, setObraTitulo] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [calidades, setCalidades] = useState('Media-Alta (Confort Plus)');
+  const [plazoDeseado, setPlazoDeseado] = useState('');
   const [margenObjetivo, setMargenObjetivo] = useState(30);
   const [tipoIva, setTipoIva] = useState(10);
 
   // Audio Recording & Text Input State
   const [audioFile, setAudioFile] = useState(null);
-  const [audioTranscript, setAudioTranscript] = useState(VISITA_TEMPLATES[0].audioMuestra);
+  const [audioTranscript, setAudioTranscript] = useState('');
   const [audioRefinedText, setAudioRefinedText] = useState('');
-  const [isRefiningAudio, setIsRefiningAudio] = useState(false);
+  // Cambia cada vez que termina una transcripción: la IA mejora el texto sola.
+  const [autoImproveToken, setAutoImproveToken] = useState(null);
 
   // Anotaciones & WhatsApp / Email text
   const [complementaryText, setComplementaryText] = useState('');
   const [notesRefinedText, setNotesRefinedText] = useState('');
-  const [isRefiningNotes, setIsRefiningNotes] = useState(false);
 
   // Documents State (PDF, Word, Excel)
   const [documentos, setDocumentos] = useState([]);
@@ -111,65 +106,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const [generatedQuoteResult, setGeneratedQuoteResult] = useState(null);
 
   if (!isOpen) return null;
-
-  // Refine text via AI using historical reference budgets
-  const handleRefineAudioWithAI = async () => {
-    if (!audioTranscript?.trim()) {
-      showNotification('No hay audio transcrito para mejorar.', 'error');
-      return;
-    }
-    setIsRefiningAudio(true);
-    try {
-      const result = await processScopeWithAI(
-        audioTranscript,
-        'nota_voz',
-        obraTitulo,
-        empresaConfig?.aiConfig || {},
-        basePrecios,
-        referenceBudgets
-      );
-      if (result?.redaccion_tecnica_estilo) {
-        setAudioRefinedText(result.redaccion_tecnica_estilo);
-        showNotification('✨ Transcripción convertida a redacción técnica profesional.');
-      } else {
-        setAudioRefinedText(result?.resumen_alcance || audioTranscript);
-      }
-    } catch (err) {
-      console.error('Error al mejorar audio con IA:', err);
-      showNotification('No se pudo redactar la versión técnica: ' + (err.message || 'Error de IA'), 'error');
-    } finally {
-      setIsRefiningAudio(false);
-    }
-  };
-
-  const handleRefineNotesWithAI = async () => {
-    if (!complementaryText?.trim()) {
-      showNotification('No hay anotaciones ni medidas para mejorar.', 'error');
-      return;
-    }
-    setIsRefiningNotes(true);
-    try {
-      const result = await processScopeWithAI(
-        complementaryText,
-        'email_cliente',
-        obraTitulo,
-        empresaConfig?.aiConfig || {},
-        basePrecios,
-        referenceBudgets
-      );
-      if (result?.redaccion_tecnica_estilo) {
-        setNotesRefinedText(result.redaccion_tecnica_estilo);
-        showNotification('✨ Anotaciones convertidas a lenguaje técnico presupuestario.');
-      } else {
-        setNotesRefinedText(result?.resumen_alcance || complementaryText);
-      }
-    } catch (err) {
-      console.error('Error al mejorar notas con IA:', err);
-      showNotification('No se pudo redactar la versión técnica: ' + (err.message || 'Error de IA'), 'error');
-    } finally {
-      setIsRefiningNotes(false);
-    }
-  };
 
   const handleDocumentUpload = (e) => {
     const files = Array.from(e.target.files || []);
@@ -195,22 +131,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     showNotification('Documento eliminado del expediente.');
   };
 
-  const handleSelectTemplate = (template) => {
-    setSelectedTemplate(template);
-    setIsManualMode(false);
-    setClienteNombre(template.cliente);
-    setClienteTelefono(template.telefono);
-    setClienteEmail(template.email);
-    setObraTitulo(template.titulo);
-    setDireccion(template.direccion);
-    setCalidades(template.calidades);
-    setPlazoDeseado(template.plazoMeses);
-    setAudioTranscript(template.audioMuestra);
-    setAudioRefinedText('');
-    setNotesRefinedText('');
-    setGeneratedQuoteResult(null);
-  };
-
   const handleDevicePhotoUpload = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -222,6 +142,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
         tipo: 'foto_estado',
         titulo: file.name.replace(/\.[^/.]+$/, ''),
         url: objectUrl,
+        file,
         isLocalBlob: true,
         notas: `Evidencia fotográfica tomada en obra (${(file.size / 1024).toFixed(0)} KB)`
       };
@@ -394,10 +315,10 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
             <div className="grid grid-cols-4 gap-2 w-full max-w-lg pt-4">
               {[
-                { s: 1, label: 'Transcripción Speech-to-Text' },
-                { s: 2, label: 'Visión Artificial & OCR' },
-                { s: 3, label: 'Cruce con Base Oficial' },
-                { s: 4, label: 'Composición Capítulos' }
+                { s: 1, label: 'Dictado y notas' },
+                { s: 2, label: 'Memoria IA y referencias' },
+                { s: 3, label: 'Redacción por capítulos' },
+                { s: 4, label: 'Precios e IVA' }
               ].map(st => (
                 <div
                   key={st.s}
@@ -414,7 +335,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
             </div>
 
             <p className="text-[11px] text-slate-500 flex items-center justify-center gap-2 flex-wrap">
-              <span>Usando motor activo: <strong className="text-slate-300">{empresaConfig.aiConfig?.provider?.toUpperCase() || 'GOOGLE'} ({empresaConfig.aiConfig?.modelName || 'gemini-1.5-flash'})</strong></span>
+              <span>Usando motor activo: <strong className="text-slate-300">{empresaConfig.aiConfig?.provider?.toUpperCase() || 'GOOGLE'}{empresaConfig.aiConfig?.modelName ? ` (${empresaConfig.aiConfig.modelName})` : ''}</strong></span>
             </p>
           </div>
         )}
@@ -426,8 +347,8 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               <div className="flex items-center gap-2.5">
                 <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
                 <div>
-                  <h3 className="text-sm font-bold text-white">Respuesta Estructurada de Gemini Lista</h3>
-                  <p className="text-xs text-emerald-300/80">Revisa la propuesta técnica, observaciones e ítems antes de volcarlos al presupuesto.</p>
+                  <h3 className="text-sm font-bold text-white">Presupuesto por capítulos generado por la IA</h3>
+                  <p className="text-xs text-emerald-300/80">Revisa capítulos, redacción y observaciones antes de aplicarlo. Lo que cambies después, la IA lo aprende.</p>
                 </div>
               </div>
 
@@ -463,43 +384,40 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
               </div>
             )}
 
-            {/* Tabla de Conceptos e Ítems */}
+            {/* Presupuesto por capítulos */}
             <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                  Conceptos Sugeridos ({generatedQuoteResult.conceptos?.length || generatedQuoteResult.partidas?.length || 0} ítems)
+                  {generatedQuoteResult.capitulos?.length || 0} capítulos · {generatedQuoteResult.partidas?.length || 0} partidas
                 </span>
                 <span className="text-xs font-mono font-bold text-amber-400">
-                  Total Estimado: {generatedQuoteResult.totalConIva?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                  Total con IVA: {generatedQuoteResult.totalConIva?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
                 </span>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-300 border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
-                      <th className="py-2 px-2">Cód</th>
-                      <th className="py-2 px-2">Descripción del Concepto</th>
-                      <th className="py-2 px-2 text-center">Unidad</th>
-                      <th className="py-2 px-2 text-right">Cantidad</th>
-                      <th className="py-2 px-2 text-right">Precio Sugerido</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {(generatedQuoteResult.conceptos || generatedQuoteResult.partidas || []).map((c, i) => (
-                      <tr key={i} className="hover:bg-slate-800/40">
-                        <td className="py-2 px-2 font-mono text-[11px] text-amber-400 font-bold">{c.codigo || `PAR-${i+1}`}</td>
-                        <td className="py-2 px-2 text-slate-200">{c.descripcion || c.concepto}</td>
-                        <td className="py-2 px-2 text-center font-mono">{c.unidad}</td>
-                        <td className="py-2 px-2 text-right font-mono">{c.cantidad}</td>
-                        <td className="py-2 px-2 text-right font-mono font-bold text-emerald-400">
-                          {(c.precio_unitario_sugerido || c.precioVenta || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
-                        </td>
-                      </tr>
+              {(generatedQuoteResult.capitulos || []).map((cap) => (
+                <div key={cap.id} className="border border-slate-800 rounded-xl overflow-hidden">
+                  <div className="bg-slate-950 px-3 py-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-amber-300">{cap.codigo}. {cap.nombre}</span>
+                    <span className="text-[11px] font-mono font-bold text-slate-300">{Number(cap.subtotal || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
+                  </div>
+                  <div className="divide-y divide-slate-800/60">
+                    {(cap.partidas || []).map((p) => (
+                      <div key={p.id} className="px-3 py-2.5 grid grid-cols-12 gap-2 text-xs">
+                        <span className="col-span-2 sm:col-span-1 font-mono text-[11px] text-amber-400 font-bold">{p.codigo}</span>
+                        <div className="col-span-10 sm:col-span-8 space-y-0.5">
+                          {p.titulo && <p className="font-bold text-white">{p.titulo}</p>}
+                          <p className="text-slate-300 leading-relaxed">{p.descripcion || p.concepto}</p>
+                        </div>
+                        <span className="col-span-6 sm:col-span-1 text-slate-400 font-mono sm:text-right">{p.cantidad} {p.unidad}</span>
+                        <span className="col-span-6 sm:col-span-2 font-mono font-bold text-emerald-400 text-right">
+                          {Number(p.total || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                        </span>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
             {/* Apply Button Positioned Bottom Right as per AGENTS.md */}
@@ -519,61 +437,21 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
         {!isProcessing && !generatedQuoteResult && (
           <div className="p-5 sm:p-6 space-y-6 flex-1">
             
-            {/* Quick Preset Selector */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Expedientes de Muestra para Demostración Rápida</span>
-                </span>
-                <span className="text-[11px] text-slate-400">Selecciona o introduce uno nuevo</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {VISITA_TEMPLATES.map(t => {
-                  const isSel = selectedTemplate?.id === t.id && !isManualMode;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => handleSelectTemplate(t)}
-                      className={`p-3 rounded-2xl border text-left transition flex items-start gap-3 ${
-                        isSel
-                          ? 'bg-amber-500/15 border-amber-500/60 ring-1 ring-amber-500/30'
-                          : 'bg-slate-950 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 font-black text-xs ${
-                        isSel ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'
-                      }`}>
-                        {isSel ? '✓' : 'EXP'}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-white truncate">{t.titulo}</h4>
-                        <p className="text-[11px] text-slate-400 mt-0.5 truncate">{t.cliente} · {t.direccion}</p>
-                        <div className="flex items-center gap-2 mt-1.5 text-[10px]">
-                          <span className="text-amber-400 font-semibold">{t.calidades}</span>
-                          <span className="text-slate-500">·</span>
-                          <span className="text-slate-400 font-medium">Solo dictado de muestra</span>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* In Situ Multimodal Capture Section */}
             <div className="space-y-4">
               <div className="space-y-2">
                 <AudioVoiceRecorder
                   title="🎤 Grabación o Subida de Audio"
                   initialTranscript={audioTranscript}
-                  placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio' para transcribir la explicación de la obra..."
+                  placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio': la explicación de la obra se transcribe aquí y la IA la mejora con su memoria y los presupuestos de referencia..."
                   onTranscriptChange={(text, blob) => {
                     setAudioTranscript(text);
-                    if (blob) setAudioFile(blob);
-                    setIsManualMode(true);
+                    setAudioRefinedText('');
+                    if (blob) {
+                      setAudioFile(blob);
+                      // Transcripción terminada: la IA la mejora automáticamente
+                      if (text?.trim()) setAutoImproveToken(Date.now());
+                    }
                   }}
                 />
 
@@ -584,8 +462,9 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                       setAudioTranscript(improved);
                       setAudioRefinedText(improved);
                     }}
-                    context="Transcripción y notas de voz de visita de obra"
+                    context="Dictado de visita de obra para presupuesto: redáctalo como alcance técnico de los trabajos, ordenado por capítulos de obra, conservando todas las medidas, cantidades y calidades dictadas"
                     buttonLabel="Mejorar Transcripción con IA"
+                    autoRunToken={autoImproveToken}
                   />
                 </div>
               </div>
@@ -613,7 +492,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   value={complementaryText}
                   onChange={(e) => {
                     setComplementaryText(e.target.value);
-                    setIsManualMode(true);
                   }}
                   placeholder="Pega mensajes de WhatsApp, correos del cliente o notas in situ..."
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition"
@@ -844,11 +722,45 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div>
+                  <label className="text-slate-400 block mb-1">Título de la Obra:</label>
+                  <input
+                    type="text"
+                    value={obraTitulo}
+                    placeholder="ej: Reforma integral de vivienda"
+                    onChange={(e) => setObraTitulo(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1">Email del Cliente:</label>
+                  <input
+                    type="email"
+                    value={clienteEmail}
+                    onChange={(e) => setClienteEmail(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1">Plazo Deseado:</label>
+                  <input
+                    type="text"
+                    value={plazoDeseado}
+                    placeholder="ej: 6 semanas"
+                    onChange={(e) => setPlazoDeseado(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
                   <label className="text-slate-400 block mb-1">Nombre del Cliente:</label>
                   <input
                     type="text"
                     value={clienteNombre}
-                    onChange={(e) => { setClienteNombre(e.target.value); setIsManualMode(true); }}
+                    onChange={(e) => { setClienteNombre(e.target.value); }}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
                   />
                 </div>
@@ -858,7 +770,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   <input
                     type="text"
                     value={clienteTelefono}
-                    onChange={(e) => { setClienteTelefono(e.target.value); setIsManualMode(true); }}
+                    onChange={(e) => { setClienteTelefono(e.target.value); }}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
                   />
                 </div>
@@ -868,7 +780,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   <input
                     type="text"
                     value={direccion}
-                    onChange={(e) => { setDireccion(e.target.value); setIsManualMode(true); }}
+                    onChange={(e) => { setDireccion(e.target.value); }}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
                   />
                 </div>
@@ -879,7 +791,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                   <label className="text-slate-400 block mb-1">Nivel de Calidades Deseado:</label>
                   <select
                     value={calidades}
-                    onChange={(e) => { setCalidades(e.target.value); setIsManualMode(true); }}
+                    onChange={(e) => { setCalidades(e.target.value); }}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-bold focus:outline-none focus:border-amber-400"
                   >
                     <option value="Económica / Funcional">Económica / Funcional</option>

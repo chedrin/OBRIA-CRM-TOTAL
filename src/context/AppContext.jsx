@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   INITIAL_EMPRESA_CONFIG,
   INITIAL_OBRAS,
@@ -42,9 +42,11 @@ import {
 } from '../services/obraBudgetSyncService';
 import {
   INITIAL_REFERENCE_BUDGETS,
+  SAMPLE_REFERENCE_BUDGET_IDS,
   validatePdfFile,
   extractTextFromPdfBlob
 } from '../services/referenceBudgetService';
+import { analyzeReferenceBudgetViaBackend, deleteAiInstruction } from '../services/backendAiService';
 
 const AppContext = createContext();
 
@@ -104,8 +106,10 @@ export function AppProvider({ children }) {
   ]));
 
   const [siteVisits, setSiteVisits] = useState(() => {
-    const raw = loadStored(STORAGE_KEYS.SITE_VISITS, VISITA_TEMPLATES);
-    return (raw || []).map(v => ({
+    // Los expedientes de muestra de versiones anteriores se descartan.
+    const sampleIds = new Set(VISITA_TEMPLATES.map(t => t.id));
+    const raw = loadStored(STORAGE_KEYS.SITE_VISITS, []);
+    return (raw || []).filter(v => !sampleIds.has(v.id)).map(v => ({
       ...v,
       capturas: (v.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')))
     }));
@@ -142,6 +146,8 @@ export function AppProvider({ children }) {
   const [avisosTecnicos, setAvisosTecnicos] = useState(() => loadStored(STORAGE_KEYS.AVISOS_TECNICOS, INITIAL_AVISOS_TECNICOS));
 
   const [referenceBudgets, setReferenceBudgets] = useState(() => loadStored(STORAGE_KEYS.REFERENCE_BUDGETS, INITIAL_REFERENCE_BUDGETS));
+  const referencePdfFilesRef = useRef(new Map());
+  const analysisAttemptedRef = useRef(new Set());
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedObraId, setSelectedObraId] = useState(null);
@@ -400,12 +406,15 @@ export function AppProvider({ children }) {
         is_active: true,
         tipo_obra: tipoObra,
         extracted_text: text,
+        ai_reviewed_at: null,
         created_at: new Date().toISOString().replace('T', ' ').substring(0, 16)
       };
+      // El PDF original se guarda en memoria hasta que la IA lo analice (lee el documento entero).
+      referencePdfFilesRef.current.set(newBudget.id, file);
 
       setReferenceBudgets(prev => [newBudget, ...prev]);
       addAuditLog('PRESUPUESTO_REFERENCIA_ANADIDO', `Documento: ${newBudget.name} (${(file.size / 1024).toFixed(0)} KB)`);
-      showNotification(`✨ Presupuesto modelo "${newBudget.name}" cargado y activado para entrenamiento RAG.`);
+      showNotification(`✨ Presupuesto modelo "${newBudget.name}" cargado. La IA lo está analizando para su memoria...`);
       return { success: true, budget: newBudget };
     } catch (err) {
       console.error('Error procesando PDF de referencia:', err);
@@ -426,20 +435,30 @@ export function AppProvider({ children }) {
   };
 
   const deleteReferenceBudget = (id) => {
-    setReferenceBudgets(prev => {
-      const target = prev.find(b => b.id === id);
-      if (target?.file_url && target.file_url.startsWith('blob:')) {
-        try { URL.revokeObjectURL(target.file_url); } catch (e) {}
-      }
-      return prev.filter(b => b.id !== id);
-    });
+    const target = referenceBudgets.find(b => b.id === id);
+    if (target?.file_url && target.file_url.startsWith('blob:')) {
+      try { URL.revokeObjectURL(target.file_url); } catch (e) {}
+    }
+    // Lo aprendido de este presupuesto también sale de la memoria de la IA.
+    if (target?.ai_memory_id) {
+      deleteAiInstruction(target.ai_memory_id).catch(err => console.warn('[AI memory] No se pudo borrar el aprendizaje:', err.message));
+    }
+    referencePdfFilesRef.current.delete(id);
+    setReferenceBudgets(prev => prev.filter(b => b.id !== id));
     addAuditLog('PRESUPUESTO_REFERENCIA_ELIMINADO', `ID: ${id}`);
     showNotification('Presupuesto modelo eliminado.');
   };
 
   const updateReferenceBudgetText = (id, newText) => {
-    setReferenceBudgets(prev => prev.map(b => b.id === id ? { ...b, extracted_text: newText } : b));
-    showNotification('Texto técnico de referencia actualizado.');
+    // Texto cambiado: la IA lo vuelve a analizar y actualiza lo aprendido.
+    analysisAttemptedRef.current.delete(id);
+    setReferenceBudgets(prev => prev.map(b => b.id === id ? { ...b, extracted_text: newText, ai_reviewed_at: null, ai_review_error: null } : b));
+    showNotification('Texto técnico de referencia actualizado. La IA lo volverá a analizar.');
+  };
+
+  const reanalyzeReferenceBudget = (id) => {
+    analysisAttemptedRef.current.delete(id);
+    setReferenceBudgets(prev => prev.map(b => b.id === id ? { ...b, ai_reviewed_at: null, ai_review_error: null } : b));
   };
 
   const addAuditLog = (accion, recurso, valorAnterior = null, valorNuevo = null) => {
@@ -485,6 +504,54 @@ export function AppProvider({ children }) {
   useCollectionSync({ ...syncBase, collection: 'subcontractors', value: subcontractors, setValue: setSubcontractors, hadLocalData: hadLegacyData.SUBCONTRACTORS, emptyValue: [] });
   useCollectionSync({ ...syncBase, collection: 'avisos_tecnicos', value: avisosTecnicos, setValue: setAvisosTecnicos, hadLocalData: hadLegacyData.AVISOS_TECNICOS, emptyValue: [] });
   useCollectionSync({ ...syncBase, collection: 'reference_budgets', value: referenceBudgets, setValue: setReferenceBudgets, hadLocalData: hadLegacyData.REFERENCE_BUDGETS, emptyValue: [] });
+
+  // Cada presupuesto de referencia nuevo se analiza UNA vez y lo aprendido se guarda en la memoria de la IA.
+  // Los ya revisados (ai_reviewed_at) se saltan; los de muestra no se analizan.
+  const [analyzingReferenceId, setAnalyzingReferenceId] = useState(null);
+  useEffect(() => {
+    if (currentUser?.role !== 'admin' || analyzingReferenceId) return;
+    const pending = (referenceBudgets || []).find(b =>
+      !b.ai_reviewed_at &&
+      !SAMPLE_REFERENCE_BUDGET_IDS.includes(b.id) &&
+      !analysisAttemptedRef.current.has(b.id)
+    );
+    if (!pending) return;
+
+    analysisAttemptedRef.current.add(pending.id);
+    setAnalyzingReferenceId(pending.id);
+    const file = referencePdfFilesRef.current.get(pending.id) || null;
+
+    analyzeReferenceBudgetViaBackend({
+      name: pending.name,
+      tipoObra: pending.tipo_obra,
+      text: pending.extracted_text || '',
+      file,
+      memoryId: pending.ai_memory_id || ''
+    })
+      .then(result => {
+        referencePdfFilesRef.current.delete(pending.id);
+        setReferenceBudgets(prev => prev.map(b => {
+          if (b.id !== pending.id) return b;
+          // El texto leído por la IA del PDF completo es mejor modelo que la extracción básica del navegador.
+          const betterText = file && result.extractedText && result.extractedText.length > (b.extracted_text || '').length / 2;
+          return {
+            ...b,
+            ai_reviewed_at: new Date().toISOString(),
+            ai_memory_id: result.memoryId || b.ai_memory_id || null,
+            ai_learnings: result.learnings || '',
+            ai_review_error: null,
+            extracted_text: betterText ? result.extractedText : b.extracted_text
+          };
+        }));
+        addAuditLog('PRESUPUESTO_REFERENCIA_ANALIZADO', `Documento: ${pending.name}`);
+        showNotification(`🧠 La IA ha analizado "${pending.name}" y lo ha guardado en su memoria.`);
+      })
+      .catch(err => {
+        console.warn('[Referencias IA] Análisis fallido:', err.message);
+        setReferenceBudgets(prev => prev.map(b => b.id === pending.id ? { ...b, ai_review_error: err.message } : b));
+      })
+      .finally(() => setAnalyzingReferenceId(null));
+  }, [referenceBudgets, currentUser?.role, analyzingReferenceId]);
 
   const MIN_PASSWORD_LENGTH = 8;
 
@@ -1014,8 +1081,9 @@ export function AppProvider({ children }) {
 
   const generateQuoteFromSiteVisit = async (visitOrId, onProgress) => {
     const visit = typeof visitOrId === 'string'
-      ? siteVisits.find(v => v.id === visitOrId) || VISITA_TEMPLATES[0]
+      ? siteVisits.find(v => v.id === visitOrId)
       : visitOrId;
+    if (!visit) throw new Error('No se encontró el expediente de visita.');
 
     const generatedQuote = await processSiteVisitExpediente(
       visit,
@@ -2063,6 +2131,8 @@ export function AppProvider({ children }) {
       addSubcontractorReview,
       referenceBudgets,
       addReferenceBudget,
+      reanalyzeReferenceBudget,
+      analyzingReferenceId,
       toggleReferenceBudget,
       deleteReferenceBudget,
       updateReferenceBudgetText

@@ -208,6 +208,9 @@ export async function generateBudgetViaBackend({
   basePrecios = [],
   referenceBudgets = [],
   margenGlobal = 28,
+  tipoIva = 10,
+  titulo = '',
+  plazo = '',
   customApiKey = ''
 }) {
   const form = new FormData();
@@ -231,6 +234,9 @@ export async function generateBudgetViaBackend({
   if (direccion) form.append('direccion', direccion);
   if (calidades) form.append('calidades', calidades);
   if (margenGlobal) form.append('margenGlobal', String(margenGlobal));
+  if (tipoIva) form.append('tipoIva', String(tipoIva));
+  if (titulo) form.append('titulo', titulo);
+  if (plazo) form.append('plazo', plazo);
   if (customApiKey) form.append('apiKey', customApiKey);
 
   if (basePrecios && basePrecios.length > 0) {
@@ -260,6 +266,29 @@ export async function generateBudgetViaBackend({
     throw new Error(`Error al generar presupuesto IA (${res.status}): ${data.error || res.statusText}`);
   }
 
+  return data;
+}
+
+/**
+ * Analiza una vez un presupuesto de referencia y guarda lo aprendido en la memoria de la IA.
+ * Si hay PDF, el servidor lo lee entero con Gemini; si no, analiza el texto extraído.
+ */
+export async function analyzeReferenceBudgetViaBackend({ name = '', tipoObra = '', text = '', file = null, memoryId = '' }) {
+  const form = new FormData();
+  form.append('name', name);
+  if (tipoObra) form.append('tipoObra', tipoObra);
+  if (text) form.append('text', text);
+  if (memoryId) form.append('memoryId', memoryId);
+  if (file) form.append('pdf', file, file.name || 'presupuesto.pdf');
+
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/reference-budgets/analyze`, { method: 'POST', body: form });
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+  if (!res.ok) throw new Error(data.error || `Error ${res.status} al analizar el presupuesto`);
   return data;
 }
 

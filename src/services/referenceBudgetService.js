@@ -9,6 +9,9 @@
  * 4. Integration with Gemini Files API / Inline PDF payload.
  */
 
+// Presupuestos de ejemplo que trae la app: sirven de guía de estilo, pero no se analizan para la memoria de la IA.
+export const SAMPLE_REFERENCE_BUDGET_IDS = ['ref-pdf-1', 'ref-pdf-2', 'ref-pdf-3'];
+
 export const INITIAL_REFERENCE_BUDGETS = [
   {
     id: 'ref-pdf-1',
