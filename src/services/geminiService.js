@@ -4,7 +4,7 @@
  * Centralized Gemini API integration featuring:
  * 1. Official @google/genai SDK support
  * 2. Credential provider: Fetches API Key from Supabase (`ai_integration_settings` / `company_settings`)
- *    with fallback to environment variable `VITE_GEMINI_API_KEY`.
+ *    (the key is no longer read from VITE_* variables: it lives on the server as GEMINI_API_KEY).
  * 3. 100% Dynamic Model Auto-Discovery via `GET /v1beta/models`:
  *    - Calls ListModels from Google Gemini API
  *    - Filters models supporting "generateContent"
@@ -23,7 +23,7 @@ import { buildGeminiSystemPromptWithReferences } from './referenceBudgetService'
 
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
 export const USER_FRIENDLY_AI_ERROR = 'No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.';
 
@@ -31,7 +31,7 @@ export const USER_FRIENDLY_AI_ERROR = 'No ha sido posible conectar con la IA. Re
  * Resolves Gemini API key with priority:
  * 1. Custom provided key
  * 2. Supabase DB (`ai_integration_settings` or `company_settings`)
- * 3. Environment variable `VITE_GEMINI_API_KEY`
+ * 3. (removed) VITE_* variables are public in the browser bundle
  */
 export async function getGeminiApiKey(customKey = '') {
   const cleanCustom = (customKey || '').trim();
@@ -55,16 +55,8 @@ export async function getGeminiApiKey(customKey = '') {
     console.warn('[Gemini Service] Exception fetching key from Supabase:', err.message);
   }
 
-  const envKey = (
-    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
-    (typeof process !== 'undefined' && process.env && process.env.VITE_GEMINI_API_KEY) ||
-    ''
-  ).trim();
-
-  if (envKey && !envKey.includes('tu_clave_gemini_aqui')) {
-    return envKey;
-  }
-
+  // Las claves de IA ya no se leen de variables VITE_* (acabarían visibles en el navegador).
+  // Viven en el servidor: GEMINI_API_KEY, OPENAI_API_KEY y ANTHROPIC_API_KEY.
   return '';
 }
 
@@ -74,7 +66,7 @@ export async function getGeminiApiKey(customKey = '') {
 export async function createGeminiClient(customKey = '') {
   const apiKey = await getGeminiApiKey(customKey);
   if (!apiKey) {
-    throw new Error('API Key de Google Gemini no configurada. Configure la clave en Ajustes o en VITE_GEMINI_API_KEY.');
+    throw new Error('API Key de Google Gemini no configurada. Configure la clave en Ajustes o defina GEMINI_API_KEY en el servidor.');
   }
   return new GoogleGenAI({ apiKey });
 }

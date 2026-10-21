@@ -4,7 +4,7 @@
  * Arquitectura de Producción SaaS:
  * - Centralización 100% de proveedores de IA (Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Azure OpenAI).
  * - Persistencia de datos en disco (db_presupuestos.json, db_obras.json, db_clientes.json, ai_settings.json, ai_audit_log.json).
- * - Centralized Gemini models with fallback cascade: gemini-1.5-flash -> gemini-3.8-flash -> gemini-1.5-pro
+ * - Centralized Gemini models with fallback cascade: gemini-3.8-flash -> gemini-3.6-flash -> gemini-2.5-pro
  * - Dynamic model discovery via `/api/ai/check-gemini-api`
  * - User-friendly error messages (sanitizing raw Google API error output)
  */
@@ -14,13 +14,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAuthRoutes, enforceApiAuth } from "./authRoutes.js";
+import { handleMemoryRoutes, buildMemoryContext } from "./aiMemory.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const USER_FRIENDLY_AI_ERROR = "No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.";
-const GEMINI_DEFAULT_MODEL = "gemini-1.5-flash";
-const GEMINI_FALLBACK_CASCADE = ["gemini-1.5-flash", "gemini-3.8-flash", "gemini-1.5-pro"];
+const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
+const GEMINI_FALLBACK_CASCADE = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-pro"];
 
 function loadEnv() {
   const envPaths = [
@@ -114,7 +115,7 @@ function getDefaultAiConfig() {
     model: process.env.GEMINI_MODEL || process.env.AI_MODEL || GEMINI_DEFAULT_MODEL,
     temperature: Number(process.env.AI_TEMPERATURE) || 0.15,
     maxTokens: Number(process.env.AI_MAX_TOKENS) || 4096,
-    openRouterModel: process.env.OPENROUTER_MODEL || "google/gemini-1.5-flash",
+    openRouterModel: process.env.OPENROUTER_MODEL || "google/gemini-3.8-flash",
     azureEndpoint: process.env.AZURE_OPENAI_ENDPOINT || "",
     azureDeployment: process.env.AZURE_OPENAI_DEPLOYMENT || ""
   };
@@ -346,7 +347,7 @@ async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15,
         "Authorization": `Bearer ${effectiveKey}`
       },
       body: JSON.stringify({
-        model: model || "gpt-4o",
+        model: model || "chat-latest",
         messages,
         response_format: { type: "json_object" },
         temperature,
@@ -385,7 +386,7 @@ async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, 
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: model || "claude-3-5-sonnet-20241022",
+        model: model || "claude-sonnet-5-5",
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
         max_tokens: maxTokens,
@@ -425,7 +426,7 @@ async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0
         "X-Title": "ObraMaster CRM"
       },
       body: JSON.stringify({
-        model: model || "google/gemini-1.5-flash",
+        model: model || "google/gemini-3.8-flash",
         messages,
         temperature,
         max_tokens: maxTokens
@@ -679,6 +680,9 @@ async function handleRequest(req, res) {
   // Resto de la API: exige sesión válida (administradores; obreros solo en rutas permitidas)
   if (!(await enforceApiAuth(req, res, pathname))) return;
 
+  // Memoria de la IA (instrucciones permanentes y correcciones)
+  if (await handleMemoryRoutes(req, res, pathname)) return;
+
   // Endpoints GET
   if (req.method === "GET") {
     if (pathname === "/api/health") {
@@ -824,11 +828,14 @@ async function handleRequest(req, res) {
         }
         const targetModel = fields.model || currentConfig.model;
 
+        const memoryContext = await buildMemoryContext("texto");
+
         const systemInstruction = `
 Eres un Ingeniero Técnico de Edificación y Jefe de Obra experto de "ObraMaster".
 Tu objetivo es reescribir y mejorar borradores o descripciones de trabajos/partidas de presupuesto escritas por el usuario, convirtiéndolas al lenguaje profesional de un constructor o reformista, con la terminología técnica precisa del sector de la edificación (pliegos de condiciones, normativa CTE, saneado de soportes, medios auxiliares, imprimaciones, unidades normalizadas m2/ml/ud/pa, etc.).
 
 ${refBudgetsText ? `PRESUPUESTOS Y EJEMPLOS DE REFERENCIA DE LA EMPRESA:\nUtiliza los siguientes ejemplos como referencia obligatoria de estilo, tono, formato y vocabulario técnico. Imita su forma de redactar:\n\n${refBudgetsText}\n` : ""}
+${memoryContext}
 
 Devuelve STRICTLY un JSON válido con esta estructura exacta:
 {
@@ -856,7 +863,7 @@ ${textToImprove.trim()}
         } else if (targetProvider === "openai") {
           rawOutput = await callOpenAiProvider({
             apiKey: targetApiKey,
-            model: targetModel || "gpt-4o",
+            model: targetModel || "chat-latest",
             messages: [
               { role: "system", content: systemInstruction },
               { role: "user", content: userPrompt }
@@ -866,7 +873,7 @@ ${textToImprove.trim()}
         } else if (targetProvider === "anthropic") {
           rawOutput = await callAnthropicProvider({
             apiKey: targetApiKey,
-            model: targetModel || "claude-3-5-sonnet-20241022",
+            model: targetModel || "claude-sonnet-5-5",
             systemPrompt: systemInstruction,
             userPrompt,
             temperature: 0.2
@@ -874,7 +881,7 @@ ${textToImprove.trim()}
         } else if (targetProvider === "openrouter") {
           rawOutput = await callOpenRouterProvider({
             apiKey: targetApiKey,
-            model: targetModel || "google/gemini-1.5-flash",
+            model: targetModel || "google/gemini-3.8-flash",
             messages: [
               { role: "system", content: systemInstruction },
               { role: "user", content: userPrompt }
@@ -1024,14 +1031,14 @@ ${textToImprove.trim()}
         } else if (provider === "anthropic") {
           rawResponse = await callAnthropicProvider({
             apiKey,
-            model: model || "claude-3-5-haiku-20241022",
+            model: model || "claude-haiku-5-5",
             systemPrompt: "Responde sólo en JSON validado.",
             userPrompt: "Responde: {\"status\": \"PONG\", \"message\": \"Conexión exitosa\"}"
           });
         } else if (provider === "openrouter") {
           rawResponse = await callOpenRouterProvider({
             apiKey,
-            model: model || "google/gemini-1.5-flash",
+            model: model || "google/gemini-3.8-flash",
             messages: [{ role: "user", content: "Responde en JSON: {\"status\": \"PONG\", \"message\": \"Conexión exitosa\"}" }]
           });
         } else {
@@ -1126,8 +1133,11 @@ ${textToImprove.trim()}
           .map((r, idx) => `=== MODELO EMPRESA ${idx + 1}: ${r.name || "Presupuesto Modelo"} ===\n${(r.text_content || "").substring(0, 2000)}`)
           .join("\n\n");
 
+        const memoryContext = await buildMemoryContext("presupuesto");
+
         const systemInstruction = `
 Eres el Ingeniero Técnico de Edificación y Jefe de Presupuestos de la constructora "ObraMaster".
+${memoryContext}
 Genera un presupuesto técnico detallado, profesional y riguroso en formato JSON estricto:
 {
   "resumen_obra": "Resumen ejecutivo del alcance físico de los trabajos...",
@@ -1189,7 +1199,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
         } else if (effectiveConfig.provider === "openai") {
           rawOutput = await callOpenAiProvider({
             apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "gpt-4o",
+            model: effectiveConfig.model || "chat-latest",
             messages: [
               { role: "system", content: systemInstruction },
               { role: "user", content: userPrompt }
@@ -1200,7 +1210,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
         } else if (effectiveConfig.provider === "anthropic") {
           rawOutput = await callAnthropicProvider({
             apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "claude-3-5-sonnet-20241022",
+            model: effectiveConfig.model || "claude-sonnet-5-5",
             systemPrompt: systemInstruction,
             userPrompt,
             temperature: effectiveConfig.temperature,
@@ -1209,7 +1219,7 @@ ${refBudgetsText ? `MODELOS DE REFERENCIA:\n${refBudgetsText}\n` : ""}
         } else if (effectiveConfig.provider === "openrouter") {
           rawOutput = await callOpenRouterProvider({
             apiKey: effectiveConfig.apiKey,
-            model: effectiveConfig.model || "google/gemini-1.5-flash",
+            model: effectiveConfig.model || "google/gemini-3.8-flash",
             messages: [
               { role: "system", content: systemInstruction },
               { role: "user", content: userPrompt }

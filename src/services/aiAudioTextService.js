@@ -232,7 +232,7 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
           'Authorization': `Bearer ${aiConfig.apiKey.trim()}`
         },
         body: JSON.stringify({
-          model: aiConfig.model || 'gpt-4o',
+          model: aiConfig.model || 'chat-latest',
           messages: [
             { role: 'system', content: effectiveSystemPrompt },
             { role: 'user', content: promptUser }
@@ -264,7 +264,7 @@ Por favor, procesa esta solicitud conforme a las pautas de redacción técnica c
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: aiConfig.model || 'claude-3-5-sonnet-20241022',
+          model: aiConfig.model || 'claude-sonnet-5-5',
           system: effectiveSystemPrompt,
           messages: [
             { role: 'user', content: promptUser }

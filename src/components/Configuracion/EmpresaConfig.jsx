@@ -17,11 +17,13 @@ import {
   Sparkles,
   Download,
   Info,
-  KeyRound
+  KeyRound,
+  Brain
 } from 'lucide-react';
 import GestionUsuarios from './GestionUsuarios';
 import PerfilDirectorConfig from './PerfilDirectorConfig';
 import MotorIaConfig from './MotorIaConfig';
+import AiMemoryConfig from './AiMemoryConfig';
 import PresupuestosModeloConfig from './PresupuestosModeloConfig';
 
 export default function EmpresaConfig() {
@@ -71,6 +73,7 @@ export default function EmpresaConfig() {
         {[
           { id: 'perfil_director', label: 'Perfil Director & Empresa', icon: Building2, badge: 'Acreditado' },
           { id: 'motor_ia', label: 'Motor Central IA (BYOK)', icon: Sparkles, badge: 'Multimodal' },
+          { id: 'memoria_ia', label: 'Memoria de la IA', icon: Brain, badge: 'Aprende' },
           { id: 'presupuestos_modelo', label: 'Presupuestos Modelo (PDFs IA)', icon: FileText, badge: `${activeRefsCount} Activos` },
           { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
           { id: 'verifactu', label: 'VeriFactu (AEAT Ley 11/2021)', icon: ShieldCheck, badge: 'Obligatorio' },
@@ -112,6 +115,9 @@ export default function EmpresaConfig() {
 
       {/* TAB MOTOR CENTRAL IA (BYOK) */}
       {activeSubTab === 'motor_ia' && <MotorIaConfig />}
+
+      {/* TAB MEMORIA DE LA IA (instrucciones y correcciones) */}
+      {activeSubTab === 'memoria_ia' && <AiMemoryConfig />}
 
       {/* TAB PRESUPUESTOS MODELO (PDFs RAG) */}
       {activeSubTab === 'presupuestos_modelo' && <PresupuestosModeloConfig />}
