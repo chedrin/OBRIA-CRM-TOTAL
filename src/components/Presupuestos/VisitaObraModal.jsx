@@ -35,7 +35,8 @@ import { transcribeAudio } from '../../services/aiAudioTextService';
 import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
 import AiImprovementControl from '../Common/AiImprovementControl';
 
-export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
+// inline = se muestra dentro de la página de Presupuestos en lugar de como ventana emergente.
+export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inline = false }) {
   const {
     basePrecios,
     generateQuoteFromSiteVisit,
@@ -49,13 +50,13 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !inline) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, inline]);
 
   const handleBackdropClick = (e) => {
     if (e.target === backdropRef.current) {
@@ -288,7 +289,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
   const handleApplyStructuredQuote = () => {
     if (!generatedQuoteResult) return;
-    onClose();
+    if (onClose) onClose();
     if (onQuoteCreated) {
       onQuoteCreated(generatedQuoteResult);
     }
@@ -299,12 +300,14 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
     <div
       ref={backdropRef}
       onClick={handleBackdropClick}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto transition-all duration-200 ease-out"
+      className={inline ? '' : 'fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto transition-all duration-200 ease-out'}
     >
-      <div className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col text-slate-100 transform transition-all duration-200 ease-out scale-100">
+      <div className={inline
+        ? 'bg-slate-900 border border-amber-500/40 rounded-3xl w-full shadow-xl flex flex-col text-slate-100'
+        : 'bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col text-slate-100 transform transition-all duration-200 ease-out scale-100'}>
         
         {/* Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 sticky top-0 z-10">
+        <div className={`p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 rounded-t-3xl ${inline ? '' : 'sticky top-0 z-10'}`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
               <Sparkles className="w-5 h-5 animate-pulse" />
@@ -322,13 +325,15 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            disabled={isProcessing}
-            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {!inline && (
+            <button
+              onClick={onClose}
+              disabled={isProcessing}
+              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Processing Loading Overlay */}
@@ -873,7 +878,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
 
         {/* Footer Actions - Positioned Bottom Right as required by AGENTS.md */}
         {!isProcessing && !generatedQuoteResult && (
-          <div className="p-5 border-t border-slate-800 bg-slate-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 sticky bottom-0">
+          <div className={`p-5 border-t border-slate-800 bg-slate-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 rounded-b-3xl ${inline ? 'sticky bottom-0 z-10' : 'sticky bottom-0'}`}>
             <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
               <span>Base Oficial de Precios ({basePrecios.length} partidas)</span>
@@ -885,7 +890,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                 onClick={onClose}
                 className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition"
               >
-                Cancelar
+                {inline ? 'Vaciar formulario' : 'Cancelar'}
               </button>
 
               <button

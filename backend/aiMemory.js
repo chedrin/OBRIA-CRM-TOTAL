@@ -30,7 +30,8 @@ import { getAdminClient, isSupabaseReady } from "./authRoutes.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_FILE = path.join(__dirname, "ai_memory.json");
 
-const MAX_INSTRUCTIONS_CHARS = 12000;
+const MAX_INSTRUCTIONS_CHARS = 36000;
+const MAX_INSTRUCTION_CHARS = 6000;
 const MAX_CORRECTIONS = 8;
 const MAX_CORRECTION_CHARS = 700;
 const VALID_SCOPES = new Set(["all", "texto", "presupuesto"]);
@@ -145,7 +146,7 @@ async function insertCorrection(row) {
  * Busca primero por id y después por título, para no duplicar si se analiza dos veces.
  */
 export async function saveReferenceLearning({ memoryId = "", title, content }) {
-  const row = { title: clip(title, 120), content: clip(content, 2000), scope: "all" };
+  const row = { title: clip(title, 120), content: clip(content, MAX_INSTRUCTION_CHARS), scope: "all" };
   const existing = (await listInstructions()).find(
     (i) => (memoryId && i.id === memoryId) || i.title === row.title
   );
@@ -169,7 +170,7 @@ export async function buildMemoryContext(kind) {
     let used = 0;
     const instructionLines = [];
     for (const item of instructions) {
-      const line = `- ${item.title ? `${item.title}: ` : ""}${clip(item.content, 2000)}`;
+      const line = `- ${item.title ? `${item.title}: ` : ""}${clip(item.content, MAX_INSTRUCTION_CHARS)}`;
       if (used + line.length > MAX_INSTRUCTIONS_CHARS) break;
       used += line.length;
       instructionLines.push(line);
@@ -300,7 +301,7 @@ export async function handleMemoryRoutes(req, res, pathname) {
 
     if (resource === "instructions" && !id && req.method === "POST") {
       const body = await readJsonBody(req);
-      const content = clip(body.content, 2000);
+      const content = clip(body.content, MAX_INSTRUCTION_CHARS);
       if (!content) return sendJson(res, 400, { error: "Escribe la instrucción." }), true;
       const saved = await insertInstruction({
         title: clip(body.title, 120),
@@ -317,7 +318,7 @@ export async function handleMemoryRoutes(req, res, pathname) {
       const patch = {};
       if (body.title !== undefined) patch.title = clip(body.title, 120);
       if (body.content !== undefined) {
-        patch.content = clip(body.content, 2000);
+        patch.content = clip(body.content, MAX_INSTRUCTION_CHARS);
         if (!patch.content) return sendJson(res, 400, { error: "La instrucción no puede quedar vacía." }), true;
       }
       if (VALID_SCOPES.has(body.scope)) patch.scope = body.scope;

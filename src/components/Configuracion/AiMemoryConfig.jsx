@@ -125,7 +125,7 @@ export default function AiMemoryConfig() {
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          maxLength={2000}
+          maxLength={6000}
           rows={4}
           required
           placeholder="Ej.: Redacta siempre en tercera persona. Los baños llevan siempre demolición, fontanería y alicatado en partidas separadas. Margen mínimo del 25%."
