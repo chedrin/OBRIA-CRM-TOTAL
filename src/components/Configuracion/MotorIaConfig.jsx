@@ -124,7 +124,8 @@ export default function MotorIaConfig() {
         // Render borra los ajustes del servidor en cada despliegue: se recuperan las claves
         // guardadas en Supabase (empresa_config) y se le vuelven a enviar al servidor.
         const storedKeys = storedAiKeys();
-        const recovered = Object.keys(storedKeys).filter(p => !loadedKeys[p] && storedKeys[p]);
+        // Las claves guardadas en Ajustes (Supabase) mandan sobre las del servidor (Render puede tener otras antiguas).
+        const recovered = Object.keys(storedKeys).filter(p => storedKeys[p] && loadedKeys[p] !== storedKeys[p]);
         recovered.forEach(p => { loadedKeys[p] = storedKeys[p]; });
         if (recovered.length) {
           updateBackendAiSettings({ apiKeys: loadedKeys }).catch(err =>
