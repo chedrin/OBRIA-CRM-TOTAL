@@ -69,7 +69,7 @@ export default function EmpresaConfig() {
       </div>
 
       {/* Subtabs Navigation */}
-      <div className="flex gap-2 border-b border-slate-800 overflow-x-auto pb-1 scrollbar-none">
+      <div className="flex flex-wrap gap-1.5 border-b border-slate-800 pb-2 min-w-0">
         {[
           { id: 'perfil_director', label: 'Perfil Director & Empresa', icon: Building2, badge: 'Acreditado' },
           { id: 'motor_ia', label: 'Motor Central IA (BYOK)', icon: Sparkles, badge: 'Multimodal' },
@@ -87,7 +87,7 @@ export default function EmpresaConfig() {
             <button
               key={t.id}
               onClick={() => setActiveSubTab(t.id)}
-              className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 border-b-2 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
                 isActive
                   ? 'border-amber-400 text-amber-400 bg-slate-900/80 font-bold'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
