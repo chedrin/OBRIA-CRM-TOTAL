@@ -4,7 +4,7 @@
  * Arquitectura de Producción SaaS:
  * - Centralización 100% de proveedores de IA (Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Azure OpenAI).
  * - Persistencia de datos en disco (db_presupuestos.json, db_obras.json, db_clientes.json, ai_settings.json, ai_audit_log.json).
- * - Centralized Gemini models with fallback cascade: gemini-3.8-flash -> gemini-3.6-flash -> gemini-2.5-pro
+ * - Gemini models: preferred model, then the models the key actually lists (flash first), then a static fallback
  * - Dynamic model discovery via `/api/ai/check-gemini-api`
  * - User-friendly error messages (sanitizing raw Google API error output)
  */
@@ -21,7 +21,9 @@ const __dirname = path.dirname(__filename);
 
 const USER_FRIENDLY_AI_ERROR = "No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.";
 const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
-const GEMINI_FALLBACK_CASCADE = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-pro"];
+const GEMINI_FALLBACK_CASCADE = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-3.1-pro-preview"];
+const GEMINI_MODELS_CACHE_MS = 60 * 60 * 1000;
+const geminiModelsCache = new Map();
 
 // Error de IA con mensaje amable y el motivo técnico aparte (sin claves) para mostrarlo y diagnosticar.
 function aiError(detail) {
@@ -274,12 +276,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
     throw aiError("Falta la clave GEMINI_API_KEY.");
   }
 
-  let preferredModel = model || GEMINI_DEFAULT_MODEL;
-
-  const modelsToTry = [preferredModel];
-  for (const m of GEMINI_FALLBACK_CASCADE) {
-    if (!modelsToTry.includes(m)) modelsToTry.push(m);
-  }
+  const modelsToTry = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL);
 
   const baseUrl = `https://generativelanguage.googleapis.com/v1beta`;
   const bodyPayload = {
@@ -292,7 +289,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
     }
   };
 
-  let lastTechnicalError = "";
+  const failures = [];
 
   for (const targetModel of modelsToTry) {
     const url = `${baseUrl}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
@@ -311,31 +308,67 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
           .map(p => p.text)
           .join("");
         if (rawText) return rawText;
-        lastTechnicalError = `[${targetModel}] respuesta vacía (${candidate?.finishReason || data.promptFeedback?.blockReason || "sin motivo"})`;
-        console.error(`[Backend Gemini Error] ${lastTechnicalError}`);
+        failures.push(`[${targetModel}] respuesta vacía (${candidate?.finishReason || data.promptFeedback?.blockReason || "sin motivo"})`);
+        console.error(`[Backend Gemini Error] ${failures[failures.length - 1]}`);
         continue;
       }
 
       let errText = await response.text();
       try { errText = JSON.parse(errText).error?.message || errText; } catch {}
       console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
-      lastTechnicalError = `[${targetModel}] HTTP ${response.status}: ${errText}`;
+      failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 300)}`);
 
-      if ([404, 429, 500, 503].includes(response.status) || errText.includes("not found") || errText.includes("is not supported")) {
-        console.warn(`[Backend Gemini Cascade] Reintentando con siguiente modelo por error 404 en ${targetModel}...`);
+      if ([404, 429, 500, 503].includes(response.status) || /not found|is not supported|no longer available/i.test(errText)) {
+        if (response.status === 404) markGeminiModelUnavailable(effectiveKey, targetModel);
+        console.warn(`[Backend Gemini Cascade] Reintentando con el siguiente modelo tras fallo en ${targetModel}...`);
         continue;
       }
 
       break;
     } catch (netErr) {
       console.error(`[Backend Gemini Exception] Modelo "${targetModel}":`, netErr.message);
-      lastTechnicalError = netErr.message;
+      failures.push(`[${targetModel}] ${netErr.message}`);
       continue;
     }
   }
 
-  console.error("[Backend Gemini Fallback Failed] Detalle técnico interno:", lastTechnicalError);
-  throw aiError(lastTechnicalError);
+  const detail = failures.join(" | ") || "sin modelos Gemini disponibles";
+  console.error("[Backend Gemini Fallback Failed] Detalle técnico interno:", detail);
+  throw aiError(detail);
+}
+
+// Ranks the models a key can use: stable flash first, then pro, newest version first.
+function rankGeminiModels(ids) {
+  const usable = ids.filter(id => /^gemini-/.test(id) && !/lite|image|tts|live|embedding|audio|thinking-exp|robotics|computer-use/i.test(id));
+  const version = id => parseFloat((id.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || "0");
+  const score = id => (id.includes("flash") ? 0 : 2) + (/preview|exp/.test(id) ? 1 : 0);
+  return usable.sort((a, b) => score(a) - score(b) || version(b) - version(a) || a.length - b.length);
+}
+
+async function listGeminiModelsCached(apiKey) {
+  const cached = geminiModelsCache.get(apiKey);
+  if (cached && Date.now() - cached.at < GEMINI_MODELS_CACHE_MS) return cached;
+  try {
+    const entry = { at: Date.now(), models: rankGeminiModels(await fetchAvailableGeminiModelsFromGoogle(apiKey)), unavailable: new Set() };
+    geminiModelsCache.set(apiKey, entry);
+    return entry;
+  } catch (err) {
+    console.warn("[Backend Gemini] No se pudo listar modelos:", err.message);
+    return { at: 0, models: [], unavailable: cached?.unavailable || new Set() };
+  }
+}
+
+function markGeminiModelUnavailable(apiKey, modelId) {
+  geminiModelsCache.get(apiKey)?.unavailable.add(modelId);
+}
+
+async function geminiModelsToTry(apiKey, preferredModel) {
+  const { models, unavailable } = await listGeminiModelsCached(apiKey);
+  const candidates = models.length
+    ? [...(models.includes(preferredModel) ? [preferredModel] : []), ...models.slice(0, 4)]
+    : [preferredModel, ...GEMINI_FALLBACK_CASCADE];
+  const unique = [...new Set(candidates)].filter(m => !unavailable.has(m));
+  return unique.length ? unique : [...new Set(candidates)];
 }
 
 async function fetchAvailableGeminiModelsFromGoogle(apiKey) {
@@ -1012,10 +1045,9 @@ ${textToImprove.trim()}
         }
 
         const availableModels = await fetchAvailableGeminiModelsFromGoogle(apiKey);
-        let selectedModel = availableModels.includes(requestedModel) ? requestedModel : GEMINI_FALLBACK_CASCADE.find(m => availableModels.includes(m));
-        if (!selectedModel) {
-          selectedModel = availableModels.find(id => id.includes("flash")) || availableModels[0] || requestedModel;
-        }
+        const rankedModels = rankGeminiModels([...availableModels]);
+        geminiModelsCache.set(apiKey, { at: Date.now(), models: rankedModels, unavailable: new Set() });
+        const selectedModel = availableModels.includes(requestedModel) ? requestedModel : (rankedModels[0] || availableModels[0] || requestedModel);
 
         const updated = saveAiConfig({ provider: "google", apiKey, model: selectedModel });
 
