@@ -91,6 +91,13 @@ export default function MotorIaConfig() {
 
   const [backendInfo, setBackendInfo] = useState({ checking: true, isAvailable: false, details: null });
 
+  const storedAiKeys = () => {
+    const appAi = empresaConfig?.aiConfig || {};
+    const keys = { ...(appAi.apiKeys || {}) };
+    if (appAi.provider && appAi.apiKey && !keys[appAi.provider]) keys[appAi.provider] = appAi.apiKey;
+    return Object.fromEntries(Object.entries(keys).filter(([, v]) => typeof v === 'string' && v.trim()));
+  };
+
   const loadSettingsFromBackend = async () => {
     setBackendInfo(prev => ({ ...prev, checking: true }));
     const res = await checkBackendStatus();
@@ -114,6 +121,17 @@ export default function MotorIaConfig() {
           loadedKeys[currentActive] = saved.apiKey;
         }
 
+        // Render borra los ajustes del servidor en cada despliegue: se recuperan las claves
+        // guardadas en Supabase (empresa_config) y se le vuelven a enviar al servidor.
+        const storedKeys = storedAiKeys();
+        const recovered = Object.keys(storedKeys).filter(p => !loadedKeys[p] && storedKeys[p]);
+        recovered.forEach(p => { loadedKeys[p] = storedKeys[p]; });
+        if (recovered.length) {
+          updateBackendAiSettings({ apiKeys: loadedKeys }).catch(err =>
+            console.warn('[MotorIaConfig] No se pudieron restaurar las claves en el servidor:', err.message)
+          );
+        }
+
         setApiKeys(loadedKeys);
         if (saved.model) setModelName(saved.model);
         if (saved.temperature !== undefined) setTemperature(saved.temperature);
@@ -124,16 +142,15 @@ export default function MotorIaConfig() {
       const currentActive = appAi.provider || 'google';
       setActiveProvider(currentActive);
       setSelectedProvider(currentActive);
-      if (appAi.apiKey) {
-        setApiKeys(prev => ({ ...prev, [currentActive]: appAi.apiKey }));
-      }
+      setApiKeys(prev => ({ ...prev, ...storedAiKeys() }));
       if (appAi.modelName || appAi.model) setModelName(appAi.modelName || appAi.model);
     }
   };
 
+  // Se repite cuando llega la configuración de Supabase (puede cargar después que esta pantalla).
   useEffect(() => {
     loadSettingsFromBackend();
-  }, []);
+  }, [empresaConfig?.aiConfig?.apiKeys]);
 
   const selectedProviderObj = PROVIDERS.find(p => p.id === selectedProvider) || PROVIDERS[0];
   const activeProviderObj = PROVIDERS.find(p => p.id === activeProvider) || PROVIDERS[0];
