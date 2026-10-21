@@ -262,3 +262,60 @@ export async function generateBudgetViaBackend({
 
   return data;
 }
+
+// ---------------------------------------------------------------------------
+// Memoria de la IA: instrucciones permanentes y correcciones
+// El servidor añade todo esto automáticamente a cada llamada de IA.
+// ---------------------------------------------------------------------------
+async function memoryRequest(path, { method = 'GET', body } = {}) {
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/memory${path}`, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+  if (!res.ok) throw new Error(data.error || `Error ${res.status} en la memoria de la IA`);
+  return data;
+}
+
+export const getAiMemory = () => memoryRequest('');
+export const addAiInstruction = (payload) => memoryRequest('/instructions', { method: 'POST', body: payload });
+export const updateAiInstruction = (id, payload) => memoryRequest(`/instructions/${id}`, { method: 'PATCH', body: payload });
+export const deleteAiInstruction = (id) => memoryRequest(`/instructions/${id}`, { method: 'DELETE' });
+export const deleteAiCorrection = (id) => memoryRequest(`/corrections/${id}`, { method: 'DELETE' });
+
+/**
+ * Registra una corrección para que la IA aprenda. Nunca interrumpe al usuario:
+ * si falla, se ignora en silencio.
+ * kind: 'texto' | 'presupuesto'
+ */
+export async function recordAiCorrection({ kind = 'texto', context = '', original = '', aiOutput = '', finalText = '', accepted = null, note = '' }) {
+  try {
+    await memoryRequest('/corrections', {
+      method: 'POST',
+      body: { kind, context, original, aiOutput, finalText, accepted, note }
+    });
+  } catch (err) {
+    console.warn('[AI memory] No se pudo guardar la corrección:', err.message);
+  }
+}
+
+const pendingBudgetEdits = new Map();
+
+/** Registra un cambio manual de presupuesto agrupando las pulsaciones seguidas (2,5 s). */
+export function recordBudgetEditDebounced(key, payload) {
+  const previous = pendingBudgetEdits.get(key);
+  const first = previous ? previous.first : payload;
+  if (previous) clearTimeout(previous.timer);
+  const timer = setTimeout(() => {
+    pendingBudgetEdits.delete(key);
+    if (first.original === payload.finalText) return;
+    recordAiCorrection({ kind: 'presupuesto', ...payload, original: first.original });
+  }, 2500);
+  pendingBudgetEdits.set(key, { first, timer });
+}

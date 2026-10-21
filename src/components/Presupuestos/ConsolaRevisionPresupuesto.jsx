@@ -30,6 +30,7 @@ import {
 import EnvioClienteModal from './EnvioClienteModal';
 import confetti from 'canvas-confetti';
 import AiImprovementControl from '../Common/AiImprovementControl';
+import { recordAiCorrection, recordBudgetEditDebounced } from '../../services/backendAiService';
 
 export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
   const {
@@ -76,6 +77,18 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
   // Inline manual edits
   const handleItemChange = (capId, itemId, field, value) => {
     const numVal = Math.max(0, Number(value) || 0);
+
+    // La IA aprende de los cambios manuales: guarda "antes → después" de cada partida.
+    const editedChapter = (quote.capitulos || []).find(c => c.id === capId);
+    const editedItem = editedChapter?.partidas?.find(p => p.id === itemId);
+    if (editedItem && editedItem[field] !== numVal) {
+      recordBudgetEditDebounced(`${quote.id}:${itemId}:${field}`, {
+        context: `${editedChapter.nombre || 'Capítulo'} · ${editedItem.concepto || editedItem.codigo || 'Partida'}`,
+        original: `${field}: ${editedItem[field]}`,
+        finalText: `${field}: ${numVal}`,
+        note: `El usuario cambió ${field} de la partida "${editedItem.concepto || editedItem.codigo}" (${editedItem.unidad || 'ud'})`
+      });
+    }
 
     const updatedCapitulos = (quote.capitulos || []).map(c => {
       if (c.id === capId) {
@@ -130,6 +143,9 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
   const handleExecuteVoiceCommand = async (cmdToRun) => {
     const text = (cmdToRun || voiceCommand).trim();
     if (!text) return;
+
+    // Las órdenes que das a la IA también se recuerdan.
+    recordAiCorrection({ kind: 'presupuesto', context: 'Orden al refinar presupuesto', note: text });
 
     setIsApplyingVoice(true);
     try {

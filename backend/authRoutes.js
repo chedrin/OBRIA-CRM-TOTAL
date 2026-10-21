@@ -27,7 +27,8 @@ const WORKER_ALLOWED_PATHS = new Set([
   "/api/ai/improve-text",
   "/api/ai/refine-text",
   "/api/ai/transcribe",
-  "/api/transcribir"
+  "/api/transcribir",
+  "/api/ai/memory/corrections"
 ]);
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,15 @@ function adminClient() {
     cachedAdminKey = signature;
   }
   return cachedAdminClient;
+}
+
+/** Cliente con clave de servicio, para otros módulos del servidor (p. ej. la memoria de la IA). */
+export function getAdminClient() {
+  return adminClient();
+}
+
+export function isSupabaseReady() {
+  return getConfig().ok;
 }
 
 function freshAnonClient() {

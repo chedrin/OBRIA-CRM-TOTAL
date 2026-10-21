@@ -37,7 +37,7 @@ const PROVIDERS = [
     name: 'OpenAI (ChatGPT)',
     logo: '⚡',
     badge: 'Líder Multimodal',
-    defaultModel: 'gpt-4o',
+    defaultModel: 'chat-latest',
     keyPrefix: 'sk-',
     helpUrl: 'https://platform.openai.com/api-keys'
   },
@@ -46,7 +46,7 @@ const PROVIDERS = [
     name: 'Anthropic Claude',
     logo: '🧠',
     badge: 'Máxima Precisión',
-    defaultModel: 'claude-3-5-sonnet-20241022',
+    defaultModel: 'claude-sonnet-5-5',
     keyPrefix: 'sk-ant-',
     helpUrl: 'https://console.anthropic.com/settings/keys'
   },
@@ -55,7 +55,7 @@ const PROVIDERS = [
     name: 'OpenRouter',
     logo: '🌐',
     badge: 'Multi-Modelo Universal',
-    defaultModel: 'google/gemini-1.5-flash',
+    defaultModel: 'google/gemini-3.8-flash',
     keyPrefix: 'sk-or-',
     helpUrl: 'https://openrouter.ai/keys'
   }

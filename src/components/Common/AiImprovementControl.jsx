@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { improveTextViaBackend } from '../../services/backendAiService';
+import { improveTextViaBackend, recordAiCorrection } from '../../services/backendAiService';
 import { processScopeWithAI } from '../../services/aiAudioTextService';
 import { Sparkles, Check, X, RefreshCw, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -93,12 +93,31 @@ export default function AiImprovementControl({
     if (improvedResult?.improvedText && onAccept) {
       onAccept(improvedResult.improvedText);
     }
+    if (improvedResult?.improvedText) {
+      recordAiCorrection({
+        kind: 'texto',
+        context,
+        original: improvedResult.originalText || value,
+        aiOutput: improvedResult.improvedText,
+        finalText: improvedResult.improvedText,
+        accepted: true
+      });
+    }
     setShowComparison(false);
     setImprovedResult(null);
     showNotification('Texto mejorado aplicado con éxito.');
   };
 
   const handleDiscard = () => {
+    if (improvedResult?.improvedText) {
+      recordAiCorrection({
+        kind: 'texto',
+        context,
+        original: improvedResult.originalText || value,
+        aiOutput: improvedResult.improvedText,
+        accepted: false
+      });
+    }
     setShowComparison(false);
     setImprovedResult(null);
     showNotification('Mejora descartada. Se conserva el texto original.');
