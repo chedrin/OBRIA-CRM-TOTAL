@@ -86,6 +86,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   // Anotaciones & WhatsApp / Email text
   const [complementaryText, setComplementaryText] = useState('');
   const [notesRefinedText, setNotesRefinedText] = useState('');
+  const [medicion, setMedicion] = useState({ largo: '', ancho: '', alto: '', zona: '' });
 
   // Documents State (PDF, Word, Excel)
   const [documentos, setDocumentos] = useState([]);
@@ -106,6 +107,36 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
   const [generatedQuoteResult, setGeneratedQuoteResult] = useState(null);
 
   if (!isOpen) return null;
+
+  // Una medición = una línea en las anotaciones (ej: "- Salón: 5 x 4 x 2,30 m (superficie 20 m², perímetro 18 m)").
+  const handleAddMedicion = () => {
+    const toNum = (v) => {
+      const n = parseFloat(String(v).replace(',', '.'));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const fmt = (n) => n.toLocaleString('es-ES', { maximumFractionDigits: 2 });
+    const largo = toNum(medicion.largo);
+    const ancho = toNum(medicion.ancho);
+    const alto = toNum(medicion.alto);
+    const zona = medicion.zona.trim();
+    const dims = [largo, ancho, alto].filter(Boolean);
+    if (!zona && dims.length === 0) {
+      showNotification('Introduce alguna medida o la estancia antes de añadirla.', 'error');
+      return;
+    }
+
+    const extras = [];
+    if (largo && ancho) {
+      extras.push(`superficie ${fmt(largo * ancho)} m²`);
+      extras.push(`perímetro ${fmt(2 * (largo + ancho))} m`);
+      if (alto) extras.push(`paredes ${fmt(2 * (largo + ancho) * alto)} m²`);
+    }
+    const line = `- ${zona || 'Medición'}${dims.length ? `: ${dims.map(fmt).join(' x ')} m` : ''}${extras.length ? ` (${extras.join(', ')})` : ''}`;
+
+    setComplementaryText(prev => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n${line}` : line));
+    setNotesRefinedText('');
+    setMedicion({ largo: '', ancho: '', alto: '', zona: '' });
+  };
 
   const handleDocumentUpload = (e) => {
     const files = Array.from(e.target.files || []);
@@ -509,49 +540,56 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                 />
               </div>
 
-              {/* Mediciones Manuales */}
+              {/* Mediciones Manuales: se añaden a las anotaciones como una sola línea al pulsar "Añadir" */}
               <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-2">
-                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-blue-400" />
-                  <span>📏 Mediciones y Unidades de Obra In Situ</span>
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-blue-400" />
+                    <span>📏 Mediciones y Unidades de Obra In Situ</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddMedicion}
+                    className="px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/40 text-blue-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Añadir a anotaciones</span>
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                   <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <label className="text-[10px] text-slate-400 block font-semibold">Largo (m)</label>
                     <input
-                      type="number"
-                      step="0.1"
-                      placeholder="ej: 4.8"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val) setComplementaryText(prev => `${prev}\n- Largo medido: ${val}m`);
-                      }}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="ej: 4,80"
+                      value={medicion.largo}
+                      onChange={(e) => setMedicion(prev => ({ ...prev, largo: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMedicion(); } }}
                       className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
                     />
                   </div>
                   <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <label className="text-[10px] text-slate-400 block font-semibold">Ancho (m)</label>
                     <input
-                      type="number"
-                      step="0.1"
-                      placeholder="ej: 3.2"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val) setComplementaryText(prev => `${prev}\n- Ancho medido: ${val}m`);
-                      }}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="ej: 3,20"
+                      value={medicion.ancho}
+                      onChange={(e) => setMedicion(prev => ({ ...prev, ancho: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMedicion(); } }}
                       className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
                     />
                   </div>
                   <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <label className="text-[10px] text-slate-400 block font-semibold">Alto (m)</label>
                     <input
-                      type="number"
-                      step="0.1"
-                      placeholder="ej: 2.5"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val) setComplementaryText(prev => `${prev}\n- Alto medido: ${val}m`);
-                      }}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="ej: 2,50"
+                      value={medicion.alto}
+                      onChange={(e) => setMedicion(prev => ({ ...prev, alto: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMedicion(); } }}
                       className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
                     />
                   </div>
@@ -559,11 +597,11 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated }) {
                     <label className="text-[10px] text-slate-400 block font-semibold">Estancia / Zona</label>
                     <input
                       type="text"
+                      inputMode="text"
                       placeholder="ej: Salón / Baño 1"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val) setComplementaryText(prev => `${prev}\n- Zona: ${val}`);
-                      }}
+                      value={medicion.zona}
+                      onChange={(e) => setMedicion(prev => ({ ...prev, zona: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddMedicion(); } }}
                       className="w-full bg-transparent text-xs font-bold text-white focus:outline-none"
                     />
                   </div>
