@@ -658,9 +658,9 @@ export default function MotorIaConfig() {
                     ) : (
                       <AlertCircle className={`w-4 h-4 shrink-0 ${r.hasKey ? 'text-rose-400' : 'text-slate-500'}`} />
                     )}
-                    <div className="truncate">
+                    <div className="min-w-0">
                       <span className="font-bold block truncate">{r.name}</span>
-                      <span className="text-[10px] opacity-80 block truncate font-mono">
+                      <span className={`text-[10px] opacity-80 block font-mono ${r.success ? 'truncate' : 'break-words'}`}>
                         {r.success ? r.message : r.error}
                       </span>
                     </div>

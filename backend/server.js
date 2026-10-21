@@ -454,25 +454,39 @@ async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15,
   if (!effectiveKey) throw aiError("Falta la clave OPENAI_API_KEY.");
 
   const url = "https://api.openai.com/v1/chat/completions";
+  // Los modelos actuales usan max_completion_tokens y algunos solo admiten la temperatura por defecto.
+  const send = (withTemperature) => fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${effectiveKey}`
+    },
+    body: JSON.stringify({
+      model: model || "chat-latest",
+      messages,
+      response_format: { type: "json_object" },
+      ...(withTemperature ? { temperature } : {}),
+      max_completion_tokens: maxTokens
+    })
+  });
+
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${effectiveKey}`
-      },
-      body: JSON.stringify({
-        model: model || "chat-latest",
-        messages,
-        response_format: { type: "json_object" },
-        temperature,
-        max_tokens: maxTokens
-      })
-    });
+    let response = await send(true);
+    let errText = "";
+    if (!response.ok) {
+      errText = await response.text();
+      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+      if (response.status === 400 && /temperature/i.test(errText)) {
+        response = await send(false);
+        errText = "";
+        if (!response.ok) {
+          errText = await response.text();
+          try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+        }
+      }
+    }
 
     if (!response.ok) {
-      let errText = await response.text();
-      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
       console.error(`[OpenAI Error] HTTP ${response.status}: ${errText}`);
       throw aiError(`OpenAI HTTP ${response.status}: ${errText}`);
     }
