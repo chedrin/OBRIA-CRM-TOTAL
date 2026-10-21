@@ -85,7 +85,9 @@ export function generateExecutionPlanFromBudget(presupuesto, existingFases = [])
         quote_line_id: partida.id, // Vínculo estricto con la partida firmada
         partidaId: partida.id,
         codigo: partida.codigo || `PAR-${tIdx + 1}`,
-        titulo: partida.concepto || 'Partida de obra',
+        // Un título editado a mano en la obra se conserva al resincronizar con el presupuesto.
+        titulo: existingTask?.tituloEditado ? existingTask.titulo : (partida.concepto || 'Partida de obra'),
+        tituloEditado: Boolean(existingTask?.tituloEditado),
         unidad: partida.unidad || 'ud',
         cantidad: Number(partida.cantidad) || 1,
         precioVenta: Number(partida.precioVenta) || 0,
@@ -105,7 +107,9 @@ export function generateExecutionPlanFromBudget(presupuesto, existingFases = [])
       id: faseId,
       quote_id: presupuesto.id,
       capitulo: capituloName,
-      nombre: `Fase ${faseIndex}: ${capituloName}`,
+      nombre: existingFase?.nombreEditado ? existingFase.nombre : `Fase ${faseIndex}: ${capituloName}`,
+      nombreEditado: Boolean(existingFase?.nombreEditado),
+      descripcion: existingFase?.descripcion || '',
       orden: faseIndex,
       importeTotal: faseTotal,
       weight_percentage: weightPct,
