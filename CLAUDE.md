@@ -19,10 +19,16 @@ App para constructor: React + Vite (`src/`), servidor Node sin framework (`backe
 - Reparación: `node scripts/crearAdmin.js --usuario admin --email chedrin13@gmail.com --password admin123` con `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` en el entorno. Crea/actualiza el usuario en Auth (confirmado) y su fila en `profiles` con rol admin.
 
 ## Estado (rama `feat/admin-ia-memoria`, sin fusionar en `main`)
-Hecho: script `crearAdmin.js`; memoria de IA (`backend/aiMemory.js`, `supabase_schema_ai_memory.sql`, pestaña Ajustes > Memoria de la IA `AiMemoryConfig.jsx`); correcciones capturadas desde `AiImprovementControl.jsx` y `ConsolaRevisionPresupuesto.jsx`; claves de IA sin prefijo `VITE_`; modelos por defecto `gemini-3.8-flash`, `claude-sonnet-5-5`, `chat-latest`.
-Nunca verificado: `npm install && npm run build` (el entorno cloud no tenía acceso a npm). Probar primero y corregir errores.
-Pendiente: seguir depurando el acceso (Pedro SIGUE sin poder entrar tras todo lo anterior: pedirle el error exacto de pantalla y revisar `/api/auth/login` en consola de red y logs de Render); ejecutar `supabase_schema_ai_memory.sql`; poner `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` en Render; probar IA de extremo a extremo.
-Seguridad pendiente: `VITE_RESEND_API_KEY` y `VITE_WHATSAPP_ACCESS_TOKEN` siguen expuestos al navegador (moverlos al servidor).
+Hecho: script `crearAdmin.js` (admin creado y login FUNCIONANDO en local, `npm run build` y `npm start` OK); memoria de IA (`backend/aiMemory.js`, `supabase_schema_ai_memory.sql`, pestaña Ajustes > Memoria de la IA `AiMemoryConfig.jsx`); correcciones capturadas desde `AiImprovementControl.jsx` y `ConsolaRevisionPresupuesto.jsx`; claves de IA sin prefijo `VITE_`; modelos por defecto `gemini-3.8-flash`, `claude-sonnet-5-5`, `chat-latest`.
+Causa real del fallo de acceso: `VITE_SUPABASE_ANON_KEY` del `.env` local era un texto de 7 caracteres (no la clave real) y las líneas del `.env` tenían espacios delante. La web falló al abrir sesión (401 de Supabase). Solución: `.env` limpio, mismas claves en `VITE_SUPABASE_ANON_KEY` y `SUPABASE_ANON_KEY`, y recompilar.
+Pendiente:
+- Pedro debe rotar la clave `service_role` de Supabase (la pegó en un chat) y actualizarla en `.env` y Render.
+- Cambiar la contraseña `admin123` por una fuerte.
+- Ejecutar `supabase_schema_ai_memory.sql` en Supabase; verificar que `supabase_migration_seguridad.sql` está ejecutado.
+- Poner `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` en `.env` y en Render; probar IA de extremo a extremo (mejorar texto, generar presupuesto, Memoria de la IA).
+- Revisar la rama y fusionarla en `main` (PR); desplegar en Render con las variables `VITE_*` y de servidor.
+- Seguridad: `VITE_RESEND_API_KEY` y `VITE_WHATSAPP_ACCESS_TOKEN` siguen expuestos al navegador (moverlos al servidor).
+Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.
 
 ## Diagnóstico sugerido del login, en orden
 1. Supabase > Table Editor > `profiles`: ¿existe la fila con `username='admin'`, `role='admin'`, `is_active=true` y `auth_email` igual al email de Auth?
