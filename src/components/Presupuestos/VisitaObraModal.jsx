@@ -103,9 +103,20 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [stepLabel, setStepLabel] = useState('');
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [pipelineError, setPipelineError] = useState('');
 
   // Structured Review State
   const [generatedQuoteResult, setGeneratedQuoteResult] = useState(null);
+
+  // Cronómetro de la barra de progreso mientras la IA procesa el expediente.
+  useEffect(() => {
+    if (!isProcessing) return undefined;
+    setElapsedSec(0);
+    const startedAt = Date.now();
+    const timer = setInterval(() => setElapsedSec(Math.floor((Date.now() - startedAt) / 1000)), 500);
+    return () => clearInterval(timer);
+  }, [isProcessing]);
 
   if (!isOpen) return null;
 
@@ -233,6 +244,8 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
       return;
     }
 
+    setPipelineError('');
+    setCurrentStep(0);
     setIsProcessing(true);
     let effectiveTranscript = audioTranscript;
 
@@ -283,7 +296,9 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
     } catch (err) {
       console.error('Error generating quote from site visit', err);
       setIsProcessing(false);
-      showNotification(`Error al procesar el expediente: ${err.message || 'Revisa la configuración del motor de IA'}`, 'error');
+      // El aviso se queda fijo encima del formulario para que no se pierda el motivo.
+      setPipelineError(err.message || 'Revisa la configuración del motor de IA.');
+      showNotification('No se pudo generar el presupuesto. Mira el detalle encima del formulario.', 'error');
     }
   };
 
@@ -348,6 +363,25 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
               <h3 className="text-xl font-black text-white">Procesando Expediente de Visita...</h3>
               <p className="text-xs text-amber-400 font-mono font-semibold">{stepLabel}</p>
             </div>
+
+            {(() => {
+              const stepFloor = [0, 10, 25, 40, 92][currentStep] || 0;
+              const pct = Math.min(97, Math.max(stepFloor, Math.round(95 * (1 - Math.exp(-elapsedSec / 50)))));
+              return (
+                <div className="w-full max-w-lg space-y-1.5">
+                  <div className="h-3 w-full rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-500 to-orange-400 transition-all duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                    <span>{pct}%</span>
+                    <span>{elapsedSec}s · puede tardar 1-2 minutos</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="grid grid-cols-4 gap-2 w-full max-w-lg pt-4">
               {[
@@ -472,6 +506,18 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
 
         {!isProcessing && !generatedQuoteResult && (
           <div className="p-5 sm:p-6 space-y-6 flex-1">
+            {pipelineError && (
+              <div className="p-4 rounded-2xl border border-rose-500/50 bg-rose-500/10 text-rose-200 text-xs flex gap-3">
+                <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
+                <div className="space-y-1 flex-1">
+                  <p className="font-bold text-rose-300">No se pudo generar el presupuesto. Tus datos siguen en el formulario.</p>
+                  <p className="break-words">{pipelineError}</p>
+                </div>
+                <button type="button" onClick={() => setPipelineError('')} className="text-rose-300 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             
             {/* In Situ Multimodal Capture Section */}
             <div className="space-y-4">

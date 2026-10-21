@@ -247,6 +247,40 @@ function cleanJsonOutput(raw) {
   return str.replace(/,\s*([}\]])/g, "$1");
 }
 
+// Parsea el JSON de la IA. Si llega cortado (límite de tokens), lo cierra en el último objeto completo.
+function parseAiJson(raw) {
+  const cleaned = cleanJsonOutput(raw);
+  try {
+    return JSON.parse(cleaned);
+  } catch (firstErr) {
+    const str = String(raw || "").slice(Math.max(0, String(raw || "").indexOf("{")));
+    const stack = [];
+    let inString = false, escaped = false, lastCut = -1, lastStack = null;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === "{" || ch === "[") stack.push(ch);
+      else if (ch === "}" || ch === "]") {
+        stack.pop();
+        if (stack.length) { lastCut = i + 1; lastStack = [...stack]; }
+      }
+    }
+    if (lastCut > 0) {
+      const closers = lastStack.reverse().map(c => (c === "{" ? "}" : "]")).join("");
+      try {
+        return JSON.parse((str.slice(0, lastCut) + closers).replace(/,\s*([}\]])/g, "$1"));
+      } catch {}
+    }
+    throw aiError(`La IA devolvió una respuesta incompleta o no válida (${firstErr.message}).`);
+  }
+}
+
 function fileToPart(file) {
   let mimeType = (file.mimetype || "application/octet-stream").split(";")[0].trim();
   if (file.originalname) {
@@ -1323,7 +1357,7 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
         const effectiveConfig = {
           ...configWithRequestKey(currentConfig, fields),
           temperature: currentConfig.temperature || 0.15,
-          maxTokens: Math.max(Number(currentConfig.maxTokens) || 0, 16384)
+          maxTokens: Math.max(Number(currentConfig.maxTokens) || 0, 32768)
         };
 
         const rawOutput = await callActiveProvider({
@@ -1336,7 +1370,7 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
         });
 
         const elapsedMs = Math.round(performance.now() - startTime);
-        const parsed = JSON.parse(cleanJsonOutput(rawOutput));
+        const parsed = parseAiJson(rawOutput);
 
         logAiCall({
           provider: effectiveConfig.provider,
