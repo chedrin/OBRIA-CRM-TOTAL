@@ -290,45 +290,65 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
   };
 
   const failures = [];
+  const preferredModel = modelsToTry[0];
+  let preferredGone = false;
+  let busyModels = [];
 
-  for (const targetModel of modelsToTry) {
-    const url = `${baseUrl}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bodyPayload)
-      });
+  // Segunda vuelta solo para los modelos saturados (429/500/503), tras una pausa breve.
+  for (let round = 0; round < 2; round++) {
+    const roundModels = round === 0 ? modelsToTry : busyModels;
+    if (!roundModels.length) break;
+    if (round > 0) await new Promise(r => setTimeout(r, 2500));
+    busyModels = [];
 
-      if (response.ok) {
-        const data = await response.json();
-        const candidate = data.candidates?.[0];
-        const rawText = (candidate?.content?.parts || [])
-          .filter(p => p.text && !p.thought)
-          .map(p => p.text)
-          .join("");
-        if (rawText) return rawText;
-        failures.push(`[${targetModel}] respuesta vacía (${candidate?.finishReason || data.promptFeedback?.blockReason || "sin motivo"})`);
-        console.error(`[Backend Gemini Error] ${failures[failures.length - 1]}`);
+    for (const targetModel of roundModels) {
+      const url = `${baseUrl}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyPayload)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const candidate = data.candidates?.[0];
+          const rawText = (candidate?.content?.parts || [])
+            .filter(p => p.text && !p.thought)
+            .map(p => p.text)
+            .join("");
+          if (rawText) {
+            if (preferredGone) replaceSavedGeminiModel(preferredModel, targetModel);
+            return rawText;
+          }
+          failures.push(`[${targetModel}] respuesta vacía (${candidate?.finishReason || data.promptFeedback?.blockReason || "sin motivo"})`);
+          console.error(`[Backend Gemini Error] ${failures[failures.length - 1]}`);
+          continue;
+        }
+
+        let errText = await response.text();
+        try { errText = JSON.parse(errText).error?.message || errText; } catch {}
+        console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
+        failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 300)}`);
+
+        const gone = response.status === 404 || /not found|is not supported|no longer available/i.test(errText);
+        if (gone) {
+          markGeminiModelUnavailable(effectiveKey, targetModel);
+          if (targetModel === preferredModel) preferredGone = true;
+          continue;
+        }
+        if ([429, 500, 503].includes(response.status)) {
+          busyModels.push(targetModel);
+          continue;
+        }
+
+        round = 2;
+        break;
+      } catch (netErr) {
+        console.error(`[Backend Gemini Exception] Modelo "${targetModel}":`, netErr.message);
+        failures.push(`[${targetModel}] ${netErr.message}`);
         continue;
       }
-
-      let errText = await response.text();
-      try { errText = JSON.parse(errText).error?.message || errText; } catch {}
-      console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
-      failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 300)}`);
-
-      if ([404, 429, 500, 503].includes(response.status) || /not found|is not supported|no longer available/i.test(errText)) {
-        if (response.status === 404) markGeminiModelUnavailable(effectiveKey, targetModel);
-        console.warn(`[Backend Gemini Cascade] Reintentando con el siguiente modelo tras fallo en ${targetModel}...`);
-        continue;
-      }
-
-      break;
-    } catch (netErr) {
-      console.error(`[Backend Gemini Exception] Modelo "${targetModel}":`, netErr.message);
-      failures.push(`[${targetModel}] ${netErr.message}`);
-      continue;
     }
   }
 
@@ -360,6 +380,19 @@ async function listGeminiModelsCached(apiKey) {
 
 function markGeminiModelUnavailable(apiKey, modelId) {
   geminiModelsCache.get(apiKey)?.unavailable.add(modelId);
+}
+
+// Si el modelo guardado en Ajustes ya no existe, se sustituye por el que acaba de responder.
+function replaceSavedGeminiModel(oldModel, newModel) {
+  try {
+    const current = getSavedAiConfig();
+    if ((current.provider || "google") === "google" && current.model === oldModel) {
+      saveAiConfig({ model: newModel });
+      console.warn(`[Backend Gemini] Modelo guardado "${oldModel}" retirado; se usa "${newModel}".`);
+    }
+  } catch (err) {
+    console.warn("[Backend Gemini] No se pudo actualizar el modelo guardado:", err.message);
+  }
 }
 
 async function geminiModelsToTry(apiKey, preferredModel) {
