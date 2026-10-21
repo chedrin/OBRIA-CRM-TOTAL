@@ -621,12 +621,29 @@ function withBrowserKeys(config, fields = {}) {
     try { browserKeys = JSON.parse(browserKeys); } catch { browserKeys = null; }
   }
   if (!browserKeys || typeof browserKeys !== "object") return config;
+  // La clave de Ajustes manda (es la última que puso el usuario); la del servidor queda de reserva.
   const apiKeys = { ...(config.apiKeys || {}) };
+  const fallbackKeys = { ...(config.fallbackKeys || {}) };
   for (const provider of PROVIDER_ORDER) {
     const key = String(browserKeys[provider] || "").trim();
-    if (key && !resolveProviderKey(config, provider)) apiKeys[provider] = key;
+    if (!key) continue;
+    const serverKey = resolveProviderKey(config, provider);
+    if (serverKey && serverKey !== key) fallbackKeys[provider] = serverKey;
+    apiKeys[provider] = key;
   }
-  return { ...config, apiKeys };
+  return { ...config, apiKeys, fallbackKeys };
+}
+
+const keyTail = key => `clave …${String(key).slice(-4)}`;
+
+// Traduce los errores de saldo o cuota a algo accionable.
+function explainAiFailure(provider, detail) {
+  const text = String(detail || "");
+  if (provider === "anthropic" && /credit balance/i.test(text)) return "sin saldo en la cuenta de Claude: añade crédito en platform.claude.com > Billing";
+  if (provider === "openai" && /insufficient_quota|exceeded your current quota|credits/i.test(text)) return "sin crédito en la cuenta de OpenAI: añade saldo en platform.openai.com > Billing";
+  if (provider === "google" && /cuota agotada|quota/i.test(text)) return `${text.slice(0, 250)} (la cuota es del proyecto de Google, no de la clave: otra clave del mismo proyecto no la renueva; activa la facturación en aistudio.google.com)`;
+  if (/HTTP 401|invalid.*key|API key not valid|authentication/i.test(text)) return `clave no válida: ${text.slice(0, 200)}`;
+  return text.slice(0, 350);
 }
 
 /**
@@ -642,9 +659,13 @@ async function callActiveProvider({ config, systemInstruction, userPrompt, tempe
     throw aiError("No hay ninguna clave de IA en el servidor (GEMINI_API_KEY, ANTHROPIC_API_KEY u OPENAI_API_KEY).");
   }
 
+  const attempts = candidates.flatMap(provider => {
+    const keys = [resolveProviderKey(config, provider), String((config.fallbackKeys || {})[provider] || "").trim()];
+    return keys.filter((k, i) => k && keys.indexOf(k) === i).map(apiKey => ({ provider, apiKey }));
+  });
+
   const failures = [];
-  for (const provider of candidates) {
-    const apiKey = resolveProviderKey(config, provider);
+  for (const { provider, apiKey } of attempts) {
     const model = modelForProvider(config, provider);
     try {
       if (provider === "openai") {
@@ -671,7 +692,7 @@ async function callActiveProvider({ config, systemInstruction, userPrompt, tempe
         maxTokens
       });
     } catch (err) {
-      failures.push(`${provider}: ${String(err.detail || err.message).slice(0, 350)}`);
+      failures.push(`${provider} (${keyTail(apiKey)}): ${explainAiFailure(provider, err.detail || err.message)}`);
       console.warn(`[IA] Falló ${provider}, probando el siguiente proveedor.`, err.detail || err.message);
     }
   }
@@ -1220,6 +1241,7 @@ ${textToImprove.trim()}
         const startTime = performance.now();
 
         let rawResponse = "";
+        try {
         if (provider === "google") {
           rawResponse = await callGeminiProvider({
             apiKey,
@@ -1247,6 +1269,9 @@ ${textToImprove.trim()}
           });
         } else {
           rawResponse = await callGeminiProvider({ apiKey, model, contents: [{ role: "user", parts: [{ text: "{\"status\": \"PONG\"}" }] }] });
+        }
+        } catch (err) {
+          throw aiError(`${provider} (${keyTail(apiKey || "")}): ${explainAiFailure(provider, err.detail || err.message)}`);
         }
 
         const elapsedMs = Math.round(performance.now() - startTime);
