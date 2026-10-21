@@ -14,32 +14,24 @@ import {
 import PwaInstallPrompt from '../PortalObrero/PwaInstallPrompt';
 
 export default function LoginObreroView({ onSwitchToAdmin }) {
-  const { login, users } = useApp();
+  const { login } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const obreroUsers = users.filter(u => u.role === 'obrero' && u.isActive);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const res = login(username, password);
+    const res = await login(username, password);
     setLoading(false);
 
     if (!res.success) {
       setError(res.error);
     }
-  };
-
-  const handleQuickLogin = (u) => {
-    setUsername(u.username);
-    setPassword(u.password);
-    login(u.username, u.password);
   };
 
   return (
@@ -140,38 +132,6 @@ export default function LoginObreroView({ onSwitchToAdmin }) {
               <ArrowRight className="w-4 h-4 stroke-[2.5]" />
             </button>
           </form>
-
-          {/* Quick Access Helper for Testing / Demo */}
-          <div className="pt-2 border-t border-slate-800/80 space-y-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block text-center">
-              Acceso Rápido de Prueba (1 toque):
-            </span>
-            <div className="grid grid-cols-1 gap-1.5">
-              {obreroUsers.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => handleQuickLogin(u)}
-                  className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left flex items-center justify-between transition group"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-xs font-bold">
-                      {u.fullName.charAt(0)}
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-white block group-hover:text-amber-400 transition">
-                        {u.fullName}
-                      </span>
-                      <span className="text-[10px] text-slate-400 block">
-                        {u.trade} · Clave: <code className="text-amber-300">{u.password}</code>
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-bold text-amber-400">Entrar →</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
         </div>
 

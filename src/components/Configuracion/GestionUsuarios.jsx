@@ -66,7 +66,7 @@ export default function GestionUsuarios() {
     especialidad: 'Albañilería & Alicatados',
     telefono: '',
     username: '',
-    password: 'obra2026',
+    password: '',
     email: '',
     isCustomUsername: false
   });
@@ -109,7 +109,7 @@ export default function GestionUsuarios() {
   );
 
   // Submit Nuevo Obrero
-  const handleCreateObrero = (e) => {
+  const handleCreateObrero = async (e) => {
     e.preventDefault();
     const fullName = `${obreroForm.nombre.trim()} ${obreroForm.apellidos.trim()}`.trim();
     const cleanUser = (obreroForm.username || computeUsername(obreroForm.nombre, obreroForm.apellidos) || 'operario')
@@ -120,9 +120,10 @@ export default function GestionUsuarios() {
       .replace(/\.+/g, '.')
       .replace(/^\.|\.$/g, '');
 
-    const pass = (obreroForm.password || 'obra2026').trim();
+    const typedPass = (obreroForm.password || '').trim();
+    const pass = typedPass.length >= 8 ? typedPass : generateRandomPassword();
 
-    const res = addUser({
+    const res = await addUser({
       username: cleanUser,
       password: pass,
       role: 'obrero',
@@ -173,7 +174,7 @@ export default function GestionUsuarios() {
         especialidad: 'Albañilería & Alicatados',
         telefono: '',
         username: '',
-        password: 'obra2026',
+        password: '',
         email: '',
         isCustomUsername: false
       });
@@ -183,11 +184,11 @@ export default function GestionUsuarios() {
   };
 
   // Submit Nuevo Admin
-  const handleCreateAdmin = (e) => {
+  const handleCreateAdmin = async (e) => {
     e.preventDefault();
-    const res = addUser({
+    const res = await addUser({
       username: adminForm.username,
-      password: adminForm.password || 'admin123',
+      password: adminForm.password,
       role: 'admin',
       fullName: adminForm.fullName,
       email: adminForm.email,
@@ -204,11 +205,11 @@ export default function GestionUsuarios() {
   };
 
   // Submit Reset Password
-  const handleConfirmResetPassword = (e) => {
+  const handleConfirmResetPassword = async (e) => {
     e.preventDefault();
     if (!selectedUserForReset) return;
 
-    const res = resetUserPassword(selectedUserForReset.id, newResetPassword);
+    const res = await resetUserPassword(selectedUserForReset.id, newResetPassword);
     if (res.success) {
       setShowResetModal(false);
       setSelectedUserForReset(null);
@@ -217,7 +218,7 @@ export default function GestionUsuarios() {
   };
 
   // Submit Mi Contraseña (Admin actual)
-  const handleChangeMyPassword = (e) => {
+  const handleChangeMyPassword = async (e) => {
     e.preventDefault();
     setAdminPassMsg(null);
 
@@ -227,7 +228,7 @@ export default function GestionUsuarios() {
     }
 
     const currentId = currentUser?.id || adminsList[0]?.id;
-    const res = changeAdminPassword(currentId, currentAdminPassword, newAdminPassword);
+    const res = await changeAdminPassword(currentId, currentAdminPassword, newAdminPassword);
 
     if (res.success) {
       setAdminPassMsg({ type: 'success', text: '¡Contraseña actualizada con éxito!' });
@@ -249,7 +250,7 @@ export default function GestionUsuarios() {
 
 🔗 Enlace de acceso: ${loginUrl}
 👤 Usuario: ${user.username}
-🔑 Contraseña: ${user.password}
+🔑 Contraseña: ${user.password || '(pídesela a la oficina o restablécela desde Gestión de Usuarios)'}
 
 Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para tener la app siempre disponible.`;
 
@@ -373,10 +374,10 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                 </div>
               </div>
               <button
-                onClick={() => {
-                  unlinkedEmployees.forEach(emp => {
-                    createMobileAccountForEmployee(emp.id, 'obra2026');
-                  });
+                onClick={async () => {
+                  for (const emp of unlinkedEmployees) {
+                    await createMobileAccountForEmployee(emp.id);
+                  }
                 }}
                 className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl transition text-xs shrink-0 shadow-md shadow-amber-500/20"
               >
@@ -428,7 +429,7 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Contraseña:</span>
                       <code className="text-amber-400 font-mono font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                        {user.password}
+                        {user.password || '••••••••'}
                       </code>
                     </div>
                     {user.phone && (
@@ -533,7 +534,7 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                     <div className="flex justify-between">
                       <span className="text-slate-400">Contraseña:</span>
                       <code className="text-amber-400 font-mono font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                        {admin.password}
+                        {admin.password || '••••••••'}
                       </code>
                     </div>
                   </div>
@@ -765,13 +766,6 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setObreroForm({ ...obreroForm, password: 'obra2026' })}
-                          className="text-slate-400 hover:text-white text-[10px] bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700"
-                        >
-                          obra2026
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => setObreroForm({ ...obreroForm, password: generateRandomPassword() })}
                           className="text-amber-400 hover:text-amber-300 text-[10px] font-bold"
                         >
@@ -781,10 +775,9 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                     </div>
                     <input
                       type="text"
-                      required
                       value={obreroForm.password}
                       onChange={(e) => setObreroForm({ ...obreroForm, password: e.target.value })}
-                      placeholder="obra2026"
+                      placeholder="Vacío = clave segura automática"
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-amber-400 font-mono font-bold"
                     />
                   </div>

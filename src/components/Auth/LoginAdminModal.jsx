@@ -13,41 +13,34 @@ import {
 } from 'lucide-react';
 
 export default function LoginAdminModal({ isOpen, onClose, onSwitchToWorker }) {
-  const { login, users } = useApp();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const { login, logout } = useApp();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
-  const adminUsers = users.filter(u => u.role === 'admin' && u.isActive);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const res = login(username, password);
+    const res = await login(username, password);
     setLoading(false);
 
     if (!res.success) {
       setError(res.error);
     } else {
       if (res.user.role !== 'admin') {
+        // Entró con una cuenta de operario: se cierra la sesión y se avisa.
+        logout();
         setError('Esta cuenta no tiene permisos de administrador.');
       } else {
         if (onClose) onClose();
       }
     }
-  };
-
-  const handleQuickLogin = (u) => {
-    setUsername(u.username);
-    setPassword(u.password);
-    const res = login(u.username, u.password);
-    if (res.success && onClose) onClose();
   };
 
   return (
@@ -90,7 +83,7 @@ export default function LoginAdminModal({ isOpen, onClose, onSwitchToWorker }) {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="tu usuario"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"
               />
             </div>
@@ -127,27 +120,6 @@ export default function LoginAdminModal({ isOpen, onClose, onSwitchToWorker }) {
             <ArrowRight className="w-4 h-4 stroke-[2.5]" />
           </button>
         </form>
-
-        {/* Quick Admin Access */}
-        <div className="pt-2 border-t border-slate-800 space-y-2">
-          <span className="text-[11px] font-bold text-slate-400 block text-center uppercase tracking-wider">
-            Credenciales por defecto:
-          </span>
-          {adminUsers.map(u => (
-            <button
-              key={u.id}
-              type="button"
-              onClick={() => handleQuickLogin(u)}
-              className="w-full p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-left flex items-center justify-between text-xs transition"
-            >
-              <div>
-                <span className="font-bold text-white block">{u.fullName}</span>
-                <span className="text-slate-400 text-[10px]">Usuario: <code className="text-amber-300">{u.username}</code> · Clave: <code className="text-amber-300">{u.password}</code></span>
-              </div>
-              <span className="text-amber-400 font-bold">Entrar →</span>
-            </button>
-          ))}
-        </div>
 
         {onSwitchToWorker && (
           <div className="text-center pt-1">

@@ -163,7 +163,7 @@ export default function ObrerosList() {
     foto: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=200&q=80',
     createMobileAccount: true,
     mobileUsername: '',
-    mobilePassword: 'obra2026',
+    mobilePassword: '',
     isCustomUsername: false
   };
 
@@ -239,7 +239,7 @@ export default function ObrerosList() {
   };
 
   // Submit New Employee
-  const handleCreateEmployeeSubmit = (e) => {
+  const handleCreateEmployeeSubmit = async (e) => {
     e.preventDefault();
     if (!newEmpForm.nombre || !newEmpForm.dni) {
       showNotification('Nombre y DNI/NIE son obligatorios.', 'error');
@@ -254,7 +254,8 @@ export default function ObrerosList() {
       .replace(/\.+/g, '.')
       .replace(/^\.|\.$/g, '');
 
-    const finalPassword = (newEmpForm.mobilePassword || 'obra2026').trim();
+    const typedPassword = (newEmpForm.mobilePassword || '').trim();
+    const finalPassword = typedPassword.length >= 8 ? typedPassword : generateRandomPassword();
 
     const userCreds = newEmpForm.createMobileAccount ? {
       createAccount: true,
@@ -262,16 +263,16 @@ export default function ObrerosList() {
       password: finalPassword
     } : null;
 
-    const res = addEmployee(newEmpForm, userCreds);
+    const res = await addEmployee(newEmpForm, userCreds);
 
     confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
     setShowAddModal(false);
 
-    if (userCreds) {
+    if (userCreds && res?.credentials) {
       setCreatedCredentialsModal({
         fullName: `${newEmpForm.nombre} ${newEmpForm.apellidos}`.trim(),
-        username: cleanUsername,
-        password: finalPassword,
+        username: res.credentials.username,
+        password: res.credentials.password,
         phone: newEmpForm.telefono || '',
         dni: newEmpForm.dni || ''
       });
@@ -328,10 +329,10 @@ export default function ObrerosList() {
   };
 
   // Handle Reset Password from detail
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!selectedEmployee) return;
     const newPass = generateRandomPassword();
-    const res = resetEmployeePassword(selectedEmployee.id, newPass);
+    const res = await resetEmployeePassword(selectedEmployee.id, newPass);
     if (res.success) {
       handleCopy(newPass, 'password');
     }
@@ -765,8 +766,8 @@ export default function ObrerosList() {
                             </div>
                           ) : (
                             <button
-                              onClick={() => {
-                                const res = createMobileAccountForEmployee(emp.id, 'obra2026');
+                              onClick={async () => {
+                                const res = await createMobileAccountForEmployee(emp.id);
                                 if (res.success) {
                                   setCreatedCredentialsModal({
                                     fullName: `${emp.nombre} ${emp.apellidos}`.trim(),
@@ -1555,14 +1556,6 @@ export default function ObrerosList() {
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => setNewEmpForm({ ...newEmpForm, mobilePassword: 'obra2026' })}
-                              className="text-slate-400 hover:text-white text-[10px] bg-slate-850 px-1.5 py-0.5 rounded border border-slate-700"
-                              title="Poner clave por defecto"
-                            >
-                              obra2026
-                            </button>
-                            <button
-                              type="button"
                               onClick={() => setNewEmpForm({ ...newEmpForm, mobilePassword: generateRandomPassword() })}
                               className="text-amber-400 hover:text-amber-300 text-[10px] font-bold"
                             >
@@ -1573,8 +1566,7 @@ export default function ObrerosList() {
                         <div className="relative">
                           <input
                             type={showPasswordInModal ? 'text' : 'password'}
-                            required
-                            placeholder="obra2026"
+                            placeholder="Vacío = clave segura automática"
                             value={newEmpForm.mobilePassword}
                             onChange={(e) => setNewEmpForm({ ...newEmpForm, mobilePassword: e.target.value })}
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 pr-8 text-amber-300 font-mono text-xs font-bold focus:outline-none focus:border-amber-400"
@@ -1883,9 +1875,10 @@ export default function ObrerosList() {
                           <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex items-center justify-between">
                             <div>
                               <span className="text-[10px] text-slate-500 font-bold block">Contraseña Actual</span>
-                              <span className="text-sm font-mono font-bold text-amber-400">{linkedUser.password}</span>
+                              <span className="text-sm font-mono font-bold text-amber-400">{linkedUser.password || '••••••••'}</span>
                             </div>
                             <button
+                              disabled={!linkedUser.password}
                               onClick={() => handleCopy(linkedUser.password, 'pass')}
                               className="p-1.5 text-slate-400 hover:text-white"
                               title="Copiar contraseña"
@@ -1919,7 +1912,7 @@ export default function ObrerosList() {
 
                           <button
                             onClick={() => {
-                              const msg = `Hola ${selectedEmployee.nombre}, aquí tienes tus datos de acceso a la App de ObraMaster:\n\n🔗 Web: ${window.location.origin}/#empleados\n👤 Usuario: ${linkedUser.username}\n🔑 Contraseña: ${linkedUser.password}\n\nRecuerda añadirla a la pantalla de inicio desde tu navegador.`;
+                              const msg = `Hola ${selectedEmployee.nombre}, aquí tienes tus datos de acceso a la App de ObraMaster:\n\n🔗 Web: ${window.location.origin}/#empleados\n👤 Usuario: ${linkedUser.username}\n🔑 Contraseña: ${linkedUser.password || '(pídesela a la oficina)'}\n\nRecuerda añadirla a la pantalla de inicio desde tu navegador.`;
                               handleCopy(msg, 'whatsapp');
                               showNotification('Mensaje copiado para enviar por WhatsApp o SMS.');
                             }}
@@ -1936,8 +1929,8 @@ export default function ObrerosList() {
                           Este operario no tiene cuenta de acceso vinculada al portal móvil (<code>/#empleados</code>).
                         </p>
                         <button
-                          onClick={() => {
-                            const res = createMobileAccountForEmployee(selectedEmployee.id, 'obra2026');
+                          onClick={async () => {
+                            const res = await createMobileAccountForEmployee(selectedEmployee.id);
                             if (res.success) {
                               const updatedEmp = employees.find(e => e.id === selectedEmployee.id);
                               if (updatedEmp) setSelectedEmployee(updatedEmp);
@@ -1953,7 +1946,7 @@ export default function ObrerosList() {
                           className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition"
                         >
                           <KeyRound className="w-4 h-4" />
-                          <span>Generar Acceso Móvil Ahora (Clave: obra2026)</span>
+                          <span>Generar Acceso Móvil Ahora (clave segura automática)</span>
                         </button>
                       </div>
                     )}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   INITIAL_EMPRESA_CONFIG,
   INITIAL_OBRAS,
@@ -9,12 +9,25 @@ import {
   INITIAL_FACTURAS_PROVEEDORES,
   INITIAL_MENSAJES_INBOX,
   INITIAL_SUBCONTRATAS_PRESUPUESTOS,
-  INITIAL_USERS,
   INITIAL_EMPLOYEES,
   INITIAL_SUBCONTRACTORS,
   INITIAL_AVISOS_TECNICOS
 } from '../data/initialData';
 import realtimeSync from '../services/realtimeSyncService';
+import {
+  installApiAuthHeader,
+  signInWithIdentifier,
+  restoreSession,
+  signOutUser,
+  onSignedOut,
+  fetchProfiles,
+  createUserAccount,
+  updateUserAccount,
+  resetUserAccountPassword,
+  deleteUserAccount,
+  changeOwnPassword
+} from '../services/authService';
+import { useCollectionSync } from '../services/dataSyncService';
 import {
   VISITA_TEMPLATES,
   processSiteVisitExpediente,
@@ -102,8 +115,26 @@ export function AppProvider({ children }) {
   const [offlineQueueLength, setOfflineQueueLength] = useState(() => realtimeSync.offlineQueue.length);
   const [activeRealtimeAlert, setActiveRealtimeAlert] = useState(null);
 
-  const [users, setUsers] = useState(() => loadStored(STORAGE_KEYS.USERS, INITIAL_USERS));
-  const [currentUser, setCurrentUser] = useState(() => loadStored(STORAGE_KEYS.AUTH_USER, null));
+  // Usuarios: vienen de Supabase Auth (tabla `profiles`). Nunca se guardan en el navegador.
+  const [profiles, setProfiles] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  // Contraseñas que se conocen solo durante esta sesión (justo tras crearlas o restablecerlas).
+  const [knownPasswords, setKnownPasswords] = useState({});
+  const users = useMemo(
+    () => profiles.map(u => ({ ...u, password: knownPasswords[u.id] ?? null })),
+    [profiles, knownPasswords]
+  );
+  const setUsers = setProfiles;
+
+  // Qué datos tenía este navegador de la versión antigua (se subirán a Supabase la primera vez que entre el admin).
+  const [hadLegacyData] = useState(() => {
+    const had = {};
+    Object.entries(STORAGE_KEYS).forEach(([name, key]) => {
+      try { had[name] = localStorage.getItem(key) !== null; } catch (e) { had[name] = false; }
+    });
+    return had;
+  });
 
   const [employees, setEmployees] = useState(() => loadStored(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
   const [subcontractors, setSubcontractors] = useState(() => loadStored(STORAGE_KEYS.SUBCONTRACTORS, INITIAL_SUBCONTRACTORS));
@@ -118,49 +149,44 @@ export function AppProvider({ children }) {
   const [pdfModalData, setPdfModalData] = useState(null);
   const [notification, setNotification] = useState(null);
 
-  // Sync with Backend Database API
+  // Sesión: se restaura al recargar la página y se cierra si caduca.
   useEffect(() => {
-    fetch('/api/presupuestos')
-      .then(res => res.ok ? res.json() : null)
-      .then(data => { if (Array.isArray(data) && data.length > 0) setPresupuestos(data); })
-      .catch(() => {});
+    let cancelled = false;
+    installApiAuthHeader();
 
-    fetch('/api/obras')
-      .then(res => res.ok ? res.json() : null)
-      .then(data => { if (Array.isArray(data) && data.length > 0) setObras(data); })
-      .catch(() => {});
+    // Limpieza de la versión antigua: usuarios y contraseñas en texto plano guardados en el navegador.
+    try {
+      localStorage.removeItem(STORAGE_KEYS.USERS);
+      localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+    } catch (e) {}
+
+    (async () => {
+      const user = await restoreSession();
+      if (!cancelled) {
+        setCurrentUser(user);
+        setAuthReady(true);
+      }
+    })();
+
+    const stopListening = onSignedOut(() => {
+      setCurrentUser(null);
+      setProfiles([]);
+      setKnownPasswords({});
+    });
+
+    return () => {
+      cancelled = true;
+      stopListening();
+    };
   }, []);
 
-  // Sync to LocalStorage & Backend
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.EMPRESA, JSON.stringify(empresaConfig)); }, [empresaConfig]);
+  // El administrador carga la lista de usuarios (la base de datos solo se la entrega a administradores).
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.OBRAS, JSON.stringify(obras));
-    fetch('/api/obras', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obras) }).catch(() => {});
-  }, [obras]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.OBREROS, JSON.stringify(obreros)); }, [obreros]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.BASE_PRECIOS, JSON.stringify(basePrecios)); }, [basePrecios]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PRESUPUESTOS, JSON.stringify(presupuestos));
-    fetch('/api/presupuestos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(presupuestos) }).catch(() => {});
-  }, [presupuestos]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.FACTURAS, JSON.stringify(facturas)); }, [facturas]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.FACTURAS_PROV, JSON.stringify(facturasProveedores)); }, [facturasProveedores]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.MENSAJES, JSON.stringify(mensajesInbox)); }, [mensajesInbox]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRATAS_PRES, JSON.stringify(subcontratasPresupuestos)); }, [subcontratasPresupuestos]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs)); }, [auditLogs]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SITE_VISITS, JSON.stringify(siteVisits)); }, [siteVisits]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees)); }, [employees]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SUBCONTRACTORS, JSON.stringify(subcontractors)); }, [subcontractors]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.AVISOS_TECNICOS, JSON.stringify(avisosTecnicos)); }, [avisosTecnicos]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.REFERENCE_BUDGETS, JSON.stringify(referenceBudgets)); }, [referenceBudgets]);
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
-    }
-  }, [currentUser]);
+    if (currentUser?.role !== 'admin') return;
+    let cancelled = false;
+    fetchProfiles().then(list => { if (!cancelled) setProfiles(list); });
+    return () => { cancelled = true; };
+  }, [currentUser?.id, currentUser?.role]);
 
   // Realtime Subscriptions
   useEffect(() => {
@@ -436,7 +462,44 @@ export function AppProvider({ children }) {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const login = (usernameOrEmailOrPhone, password) => {
+  // ---------------------------------------------------------------------------
+  // Datos en Supabase (tabla `app_records`). Los permisos reales los aplica la base de datos (RLS).
+  // ---------------------------------------------------------------------------
+  const syncUserId = currentUser?.id || null;
+  const syncRole = currentUser?.role || null;
+  const syncNotify = (msg, type) => showNotification(msg, type);
+  const syncBase = { userId: syncUserId, role: syncRole, notify: syncNotify };
+
+  useCollectionSync({ ...syncBase, collection: 'empresa_config', value: empresaConfig, setValue: setEmpresaConfig, single: true, hadLocalData: hadLegacyData.EMPRESA, emptyValue: INITIAL_EMPRESA_CONFIG });
+  useCollectionSync({ ...syncBase, collection: 'obras', value: obras, setValue: setObras, hadLocalData: hadLegacyData.OBRAS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'obreros', value: obreros, setValue: setObreros, hadLocalData: hadLegacyData.OBREROS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'base_precios', value: basePrecios, setValue: setBasePrecios, hadLocalData: hadLegacyData.BASE_PRECIOS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'presupuestos', value: presupuestos, setValue: setPresupuestos, hadLocalData: hadLegacyData.PRESUPUESTOS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'facturas', value: facturas, setValue: setFacturas, hadLocalData: hadLegacyData.FACTURAS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'facturas_proveedores', value: facturasProveedores, setValue: setFacturasProveedores, hadLocalData: hadLegacyData.FACTURAS_PROV, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'mensajes_inbox', value: mensajesInbox, setValue: setMensajesInbox, hadLocalData: hadLegacyData.MENSAJES, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'subcontratas_presupuestos', value: subcontratasPresupuestos, setValue: setSubcontratasPresupuestos, hadLocalData: hadLegacyData.SUBCONTRATAS_PRES, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'audit_logs', value: auditLogs, setValue: setAuditLogs, hadLocalData: hadLegacyData.AUDIT_LOGS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'site_visits', value: siteVisits, setValue: setSiteVisits, hadLocalData: hadLegacyData.SITE_VISITS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'employees', value: employees, setValue: setEmployees, hadLocalData: hadLegacyData.EMPLOYEES, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'subcontractors', value: subcontractors, setValue: setSubcontractors, hadLocalData: hadLegacyData.SUBCONTRACTORS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'avisos_tecnicos', value: avisosTecnicos, setValue: setAvisosTecnicos, hadLocalData: hadLegacyData.AVISOS_TECNICOS, emptyValue: [] });
+  useCollectionSync({ ...syncBase, collection: 'reference_budgets', value: referenceBudgets, setValue: setReferenceBudgets, hadLocalData: hadLegacyData.REFERENCE_BUDGETS, emptyValue: [] });
+
+  const MIN_PASSWORD_LENGTH = 8;
+
+  // Nombre de usuario válido para el login: minúsculas, sin tildes, solo letras, números y puntos.
+  const toUsername = (raw) =>
+    String(raw || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9.]/g, '')
+      .replace(/\.+/g, '.')
+      .replace(/^\.|\.$/g, '');
+
+  const login = async (usernameOrEmailOrPhone, password) => {
     const rawInput = (usernameOrEmailOrPhone || '').trim();
     const cleanPass = (password || '').trim();
 
@@ -447,168 +510,55 @@ export function AppProvider({ children }) {
       return { success: false, error: 'Por favor, introduce tu contraseña.' };
     }
 
-    const norm = (str) => (str || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const normInput = norm(rawInput);
-    const digitsInput = rawInput.replace(/\D/g, '');
-    const dniInput = rawInput.toUpperCase().replace(/[\s-]/g, '');
+    // La contraseña se comprueba en el servidor con Supabase Auth: nunca en el navegador.
+    const result = await signInWithIdentifier(rawInput, cleanPass);
+    if (!result.success) return result;
 
-    let matchedUser = users.find(u => {
-      const uNormName = norm(u.username);
-      const uNormEmail = norm(u.email);
-
-      if (uNormName === normInput || (uNormEmail && uNormEmail === normInput)) {
-        return true;
-      }
-
-      if (digitsInput && digitsInput.length >= 7 && u.phone) {
-        const uDigits = u.phone.replace(/\D/g, '');
-        if (uDigits === digitsInput || uDigits.endsWith(digitsInput) || digitsInput.endsWith(uDigits)) {
-          return true;
-        }
-      }
-
-      return false;
-    });
-
-    if (!matchedUser) {
-      const matchedEmployee = employees.find(emp => {
-        const empDni = (emp.dni || '').toUpperCase().replace(/[\s-]/g, '');
-        if (dniInput && empDni && empDni === dniInput) return true;
-
-        if (digitsInput && digitsInput.length >= 7 && emp.telefono) {
-          const empDigits = emp.telefono.replace(/\D/g, '');
-          if (empDigits === digitsInput || empDigits.endsWith(digitsInput) || digitsInput.endsWith(empDigits)) {
-            return true;
-          }
-        }
-
-        const empFullName = norm(`${emp.nombre} ${emp.apellidos}`);
-        if (empFullName === normInput || empFullName.replace(/\s+/g, '.') === normInput) {
-          return true;
-        }
-
-        return false;
-      });
-
-      if (matchedEmployee) {
-        matchedUser = users.find(u =>
-          (matchedEmployee.usuarioId && u.id === matchedEmployee.usuarioId) ||
-          u.employeeId === matchedEmployee.id ||
-          (matchedEmployee.obreroId && u.obreroId === matchedEmployee.obreroId)
-        );
-
-        if (!matchedUser) {
-          const autoUsername = `${norm(matchedEmployee.nombre || 'operario')}.${norm(matchedEmployee.apellidos || 'obra')}`
-            .replace(/[^a-z0-9]/g, '.')
-            .replace(/\.+/g, '.');
-          const autoUserId = `user-obrero-${Date.now()}`;
-          const newAutoUser = {
-            id: autoUserId,
-            obreroId: matchedEmployee.obreroId || `obrero-${Date.now()}`,
-            employeeId: matchedEmployee.id,
-            username: autoUsername,
-            password: matchedEmployee.dni ? matchedEmployee.dni.toUpperCase() : 'obra2026',
-            role: 'obrero',
-            fullName: `${matchedEmployee.nombre} ${matchedEmployee.apellidos}`.trim(),
-            email: matchedEmployee.email || '',
-            trade: matchedEmployee.especialidad || 'Operario',
-            phone: matchedEmployee.telefono || '',
-            isActive: matchedEmployee.estado === 'activo',
-            createdAt: new Date().toISOString(),
-            lastLogin: null
-          };
-
-          setUsers(prev => [newAutoUser, ...prev]);
-          setEmployees(prev => prev.map(e => e.id === matchedEmployee.id ? { ...e, usuarioId: autoUserId } : e));
-          matchedUser = newAutoUser;
-        }
-      }
-    }
-
-    if (!matchedUser) {
-      const matchedObrero = obreros.find(o => {
-        if (digitsInput && digitsInput.length >= 7 && o.telefono) {
-          const oDigits = o.telefono.replace(/\D/g, '');
-          if (oDigits === digitsInput || oDigits.endsWith(digitsInput) || digitsInput.endsWith(oDigits)) {
-            return true;
-          }
-        }
-        const oNorm = norm(o.nombre);
-        return oNorm === normInput || oNorm.replace(/\s+/g, '.') === normInput;
-      });
-
-      if (matchedObrero) {
-        matchedUser = users.find(u => u.obreroId === matchedObrero.id);
-      }
-    }
-
-    if (!matchedUser) {
-      return {
-        success: false,
-        error: `No encontramos ningún usuario, teléfono o DNI registrado con "${rawInput}". Revisa tus datos.`
-      };
-    }
-
-    if (!matchedUser.isActive) {
-      return {
-        success: false,
-        error: 'Esta cuenta ha sido desactivada por el administrador.'
-      };
-    }
-
-    if (matchedUser.password.trim() !== cleanPass) {
-      return {
-        success: false,
-        error: `Contraseña incorrecta para ${matchedUser.fullName}. Comprueba mayúsculas o contacta con la oficina.`
-      };
-    }
-
-    const updatedUser = {
-      ...matchedUser,
-      lastLogin: new Date().toISOString()
-    };
-
-    setUsers(prev => prev.map(u => u.id === matchedUser.id ? updatedUser : u));
-    setCurrentUser(updatedUser);
-    showNotification(`¡Bienvenido, ${matchedUser.fullName}!`);
-    return { success: true, user: updatedUser };
+    setCurrentUser(result.user);
+    showNotification(`¡Bienvenido, ${result.user.fullName}!`);
+    return result;
   };
 
-  const logout = () => {
-    setCurrentUser(null);
-    showNotification('Sesión cerrada correctamente');
+  const logout = async () => {
+    await signOutUser();
+    // Se recarga la página para vaciar de la memoria los datos de la sesión (equipos compartidos).
+    window.location.reload();
   };
 
-  const quickSwitchUser = (userId) => {
-    const found = users.find(u => u.id === userId);
-    if (found) {
-      setCurrentUser(found);
-      showNotification(`Sesión cambiada a ${found.fullName} (${found.role})`);
-    }
-  };
-
-  const addUser = ({ username, password, role = 'obrero', fullName, trade, phone, email }) => {
-    const cleanUsername = (username || '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9.]/g, '')
-      .replace(/\.+/g, '.')
-      .replace(/^\.|\.$/g, '');
+  const addUser = async ({ username, password, role = 'obrero', fullName, trade, phone, email, dni, employeeId, obreroId }) => {
+    const cleanUsername = toUsername(username);
 
     if (!cleanUsername) return { success: false, error: 'El nombre de usuario es obligatorio.' };
     if (!fullName || !fullName.trim()) return { success: false, error: 'El nombre completo es obligatorio.' };
 
-    if (users.some(u => u.username.toLowerCase() === cleanUsername)) {
+    const cleanPassword = (password || '').trim();
+    if (cleanPassword.length < MIN_PASSWORD_LENGTH) {
+      return { success: false, error: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` };
+    }
+
+    if (users.some(u => (u.username || '').toLowerCase() === cleanUsername)) {
       return { success: false, error: `El usuario "${cleanUsername}" ya existe en el sistema.` };
     }
 
-    const newUserId = `user-${role}-${Date.now()}`;
-    let associatedObreroId = null;
+    const createObreroRecord = role === 'obrero' && !obreroId;
+    const associatedObreroId = role === 'obrero' ? (obreroId || `obrero-${Date.now()}`) : null;
 
-    if (role === 'obrero') {
-      associatedObreroId = `obrero-${Date.now()}`;
+    const result = await createUserAccount({
+      username: cleanUsername,
+      password: cleanPassword,
+      role,
+      fullName: fullName.trim(),
+      trade: trade?.trim() || (role === 'admin' ? 'Dirección Técnica' : 'Albañilería'),
+      phone: phone?.trim() || '',
+      email: email?.trim() || '',
+      dni: dni?.trim() || '',
+      obreroId: associatedObreroId,
+      employeeId: employeeId || null
+    });
+
+    if (!result.success) return result;
+
+    if (createObreroRecord) {
       const newObreroRecord = {
         id: associatedObreroId,
         nombre: fullName.trim(),
@@ -629,112 +579,118 @@ export function AppProvider({ children }) {
       setObreros(prev => [...prev, newObreroRecord]);
     }
 
-    const newUser = {
-      id: newUserId,
-      obreroId: associatedObreroId,
-      username: cleanUsername,
-      password: (password || 'obra2026').trim(),
-      role,
-      fullName: fullName.trim(),
-      trade: trade?.trim() || (role === 'admin' ? 'Dirección Técnica' : 'Albañilería'),
-      phone: phone?.trim() || '',
-      email: email?.trim() || '',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      lastLogin: null
-    };
+    setProfiles(prev => [result.user, ...prev.filter(u => u.id !== result.user.id)]);
+    // La contraseña solo se conoce ahora, para poder entregársela al usuario. Después no se puede volver a ver.
+    setKnownPasswords(prev => ({ ...prev, [result.user.id]: cleanPassword }));
 
-    setUsers(prev => [...prev, newUser]);
     addAuditLog('ALTA_USUARIO', `${role.toUpperCase()}: ${cleanUsername} (${fullName})`);
     showNotification(`Usuario "${fullName}" creado exitosamente con rol ${role}.`);
-    return { success: true, user: newUser };
+    return { success: true, user: { ...result.user, password: cleanPassword } };
   };
 
-  const updateUser = (userId, updates) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id === userId) {
-        const updated = { ...u, ...updates };
-        if (currentUser && currentUser.id === userId) {
-          setCurrentUser(updated);
-        }
-        return updated;
-      }
-      return u;
-    }));
+  const updateUser = async (userId, updates) => {
+    const { password: _ignoredPassword, role: _ignoredRole, ...safeUpdates } = updates || {};
+    const result = await updateUserAccount(userId, safeUpdates);
+    if (!result.success) {
+      showNotification(result.error, 'error');
+      return result;
+    }
+
+    setProfiles(prev => prev.map(u => (u.id === userId ? { ...u, ...result.user } : u)));
+    if (currentUser && currentUser.id === userId) {
+      setCurrentUser(prev => ({ ...prev, ...result.user }));
+    }
     addAuditLog('MODIFICACION_USUARIO', `ID: ${userId}`);
     showNotification('Datos de usuario actualizados correctamente.');
+    return result;
   };
 
-  const resetUserPassword = (userId, newPassword) => {
-    if (!newPassword || newPassword.trim().length < 4) {
-      showNotification('La contraseña debe tener al menos 4 caracteres.', 'error');
-      return { success: false, error: 'Mínimo 4 caracteres' };
+  const resetUserPassword = async (userId, newPassword) => {
+    const cleanPass = (newPassword || '').trim();
+    if (cleanPass.length < MIN_PASSWORD_LENGTH) {
+      const error = `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`;
+      showNotification(error, 'error');
+      return { success: false, error };
     }
-    const cleanPass = newPassword.trim();
-    setUsers(prev => prev.map(u => {
-      if (u.id === userId) {
-        const updated = { ...u, password: cleanPass };
-        if (currentUser && currentUser.id === userId) {
-          setCurrentUser(updated);
-        }
-        return updated;
-      }
-      return u;
-    }));
+
+    const result = await resetUserAccountPassword(userId, cleanPass);
+    if (!result.success) {
+      showNotification(result.error, 'error');
+      return result;
+    }
+
+    setKnownPasswords(prev => ({ ...prev, [userId]: cleanPass }));
     addAuditLog('CAMBIO_PASSWORD', `Usuario ID: ${userId}`);
     showNotification('Contraseña restablecida con éxito.');
     return { success: true };
   };
 
-  const changeAdminPassword = (userId, currentPassword, newPassword) => {
-    const user = users.find(u => u.id === userId);
-    if (!user) return { success: false, error: 'Usuario no encontrado' };
-    if (user.password !== currentPassword.trim()) {
-      return { success: false, error: 'La contraseña actual no coincide.' };
+  const changeAdminPassword = async (userId, currentPassword, newPassword) => {
+    if (!currentUser || currentUser.id !== userId) {
+      return { success: false, error: 'Solo puedes cambiar tu propia contraseña.' };
     }
-    if (!newPassword || newPassword.trim().length < 4) {
-      return { success: false, error: 'La nueva contraseña debe tener al menos 4 caracteres.' };
+    const cleanNew = (newPassword || '').trim();
+    if (cleanNew.length < MIN_PASSWORD_LENGTH) {
+      return { success: false, error: `La nueva contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` };
     }
-    const cleanPass = newPassword.trim();
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: cleanPass } : u));
-    if (currentUser && currentUser.id === userId) {
-      setCurrentUser(prev => ({ ...prev, password: cleanPass }));
-    }
+
+    const result = await changeOwnPassword((currentPassword || '').trim(), cleanNew);
+    if (!result.success) return result;
+
+    setKnownPasswords(prev => ({ ...prev, [userId]: cleanNew }));
     addAuditLog('CAMBIO_PASSWORD_ADMIN', `Admin ID: ${userId}`);
     showNotification('Tu contraseña se ha actualizado correctamente.');
     return { success: true };
   };
 
-  const deleteUser = (userId) => {
+  const deleteUser = async (userId) => {
     const userToDelete = users.find(u => u.id === userId);
-    if (!userToDelete) return;
+    if (!userToDelete) return { success: false, error: 'Usuario no encontrado.' };
 
     const adminsCount = users.filter(u => u.role === 'admin' && u.isActive).length;
     if (userToDelete.role === 'admin' && adminsCount <= 1) {
       showNotification('No puedes eliminar el único administrador activo del sistema.', 'error');
-      return;
+      return { success: false };
     }
 
-    setUsers(prev => prev.filter(u => u.id !== userId));
+    const result = await deleteUserAccount(userId);
+    if (!result.success) {
+      showNotification(result.error, 'error');
+      return result;
+    }
+
+    setProfiles(prev => prev.filter(u => u.id !== userId));
+    setKnownPasswords(prev => {
+      const { [userId]: _removed, ...rest } = prev;
+      return rest;
+    });
     addAuditLog('ELIMINACION_USUARIO', `${userToDelete.username} (${userToDelete.fullName})`);
     showNotification(`Usuario "${userToDelete.fullName}" eliminado.`);
+    return { success: true };
   };
 
-  const toggleUserStatus = (userId) => {
+  const toggleUserStatus = async (userId) => {
     const userToToggle = users.find(u => u.id === userId);
-    if (!userToToggle) return;
+    if (!userToToggle) return { success: false };
 
     if (userToToggle.role === 'admin') {
       const activeAdmins = users.filter(u => u.role === 'admin' && u.isActive && u.id !== userId).length;
       if (activeAdmins === 0 && userToToggle.isActive) {
         showNotification('Debe haber al menos un administrador activo en el sistema.', 'error');
-        return;
+        return { success: false };
       }
     }
 
     const nextStatus = !userToToggle.isActive;
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, isActive: nextStatus } : u));
+    const result = await updateUserAccount(userId, { isActive: nextStatus });
+    if (!result.success) {
+      showNotification(result.error, 'error');
+      return result;
+    }
+
+    setProfiles(prev => prev.map(u => (u.id === userId ? { ...u, isActive: nextStatus } : u)));
     showNotification(`Usuario ${nextStatus ? 'activado' : 'desactivado'}.`);
+    return { success: true };
   };
 
   const generateRandomPassword = () => {
@@ -1354,26 +1310,22 @@ export function AppProvider({ children }) {
     showNotification(`Scoring de operario fijado en ${scoreNum.toFixed(1)}⭐`);
   };
 
-  const addEmployee = (empData, userCreds = null) => {
+  const addEmployee = async (empData, userCreds = null) => {
     const empId = `emp-${Date.now()}`;
     const obreroId = `obrero-${Date.now()}`;
     let linkedUserId = null;
     let createdUserRecord = null;
+    let accountError = null;
 
     if (userCreds?.createAccount || userCreds?.username) {
       const norm = (str) => (str || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const rawUser = userCreds.username || `${norm(empData.nombre || 'operario')}.${norm(empData.apellidos || 'obra')}`;
-      const cleanUsername = rawUser
-        .replace(/[^a-z0-9.]/g, '')
-        .replace(/\.+/g, '.')
-        .replace(/^\.|\.$/g, '') || `obrero.${Date.now().toString().slice(-4)}`;
+      const cleanUsername = toUsername(rawUser) || `obrero.${Date.now().toString().slice(-4)}`;
 
-      const finalPassword = (userCreds.password || 'obra2026').trim();
+      const typedPassword = (userCreds.password || '').trim();
+      const finalPassword = typedPassword.length >= MIN_PASSWORD_LENGTH ? typedPassword : generateRandomPassword();
 
-      const newU = {
-        id: `user-obrero-${Date.now()}`,
-        obreroId: obreroId,
-        employeeId: empId,
+      const created = await createUserAccount({
         username: cleanUsername,
         password: finalPassword,
         role: 'obrero',
@@ -1381,13 +1333,20 @@ export function AppProvider({ children }) {
         email: empData.email || '',
         trade: empData.especialidad || 'Operario de Obra',
         phone: empData.telefono || '',
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        lastLogin: null
-      };
-      setUsers(prev => [newU, ...prev]);
-      linkedUserId = newU.id;
-      createdUserRecord = newU;
+        dni: empData.dni || '',
+        obreroId,
+        employeeId: empId
+      });
+
+      if (created.success) {
+        setProfiles(prev => [created.user, ...prev.filter(u => u.id !== created.user.id)]);
+        setKnownPasswords(prev => ({ ...prev, [created.user.id]: finalPassword }));
+        linkedUserId = created.user.id;
+        createdUserRecord = { ...created.user, password: finalPassword };
+      } else {
+        accountError = created.error;
+        showNotification(`El empleado se guardar\u00e1, pero no se pudo crear su acceso: ${created.error}`, 'error');
+      }
     }
 
     const newEmp = {
@@ -1454,65 +1413,65 @@ export function AppProvider({ children }) {
     return {
       ...newEmp,
       user: createdUserRecord,
+      accountError,
       credentials: createdUserRecord ? { username: createdUserRecord.username, password: createdUserRecord.password } : null
     };
   };
 
-  const createMobileAccountForEmployee = (employeeId, customPassword = 'obra2026') => {
+  // Cambios de la ficha del empleado que también afectan a su cuenta de acceso (se guardan en el servidor).
+  const syncLinkedUser = async (userId, patch) => {
+    if (!userId) return;
+    const result = await updateUserAccount(userId, patch);
+    if (result.success) {
+      setProfiles(prev => prev.map(u => (u.id === userId ? { ...u, ...result.user } : u)));
+    } else {
+      showNotification(`No se pudo actualizar el acceso del usuario: ${result.error}`, 'error');
+    }
+  };
+
+  const createMobileAccountForEmployee = async (employeeId, customPassword = '') => {
     const emp = employees.find(e => e.id === employeeId);
     if (!emp) return { success: false, error: 'Empleado no encontrado' };
 
-    const norm = (str) => (str || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const cleanUser = `${norm(emp.nombre || 'operario')}.${norm(emp.apellidos || 'obra')}`
-      .replace(/[^a-z0-9.]/g, '')
-      .replace(/\.+/g, '.')
-      .replace(/^\.|\.$/g, '');
+    let username = toUsername(`${emp.nombre || 'operario'}.${emp.apellidos || 'obra'}`) || `obrero.${Date.now().toString().slice(-4)}`;
+    if (users.some(u => (u.username || '').toLowerCase() === username)) {
+      username = `${username}${Math.floor(10 + Math.random() * 90)}`;
+    }
 
-    const pass = (customPassword || 'obra2026').trim();
-    const newUserId = `user-obrero-${Date.now()}`;
+    // 'obra2026' era la contraseña por defecto de la versión antigua: ya no se admite, se genera una nueva.
+    const typed = (customPassword || '').trim();
+    const pass = typed.length >= MIN_PASSWORD_LENGTH && typed !== 'obra2026' ? typed : generateRandomPassword();
 
-    const newU = {
-      id: newUserId,
-      obreroId: emp.obreroId || `obrero-${Date.now()}`,
-      employeeId: emp.id,
-      username: cleanUser,
+    const created = await createUserAccount({
+      username,
       password: pass,
       role: 'obrero',
       fullName: `${emp.nombre} ${emp.apellidos}`.trim(),
       email: emp.email || '',
       trade: emp.especialidad || 'Operario de Obra',
       phone: emp.telefono || '',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      lastLogin: null
-    };
+      dni: emp.dni || '',
+      obreroId: emp.obreroId || `obrero-${Date.now()}`,
+      employeeId: emp.id
+    });
 
-    setUsers(prev => [newU, ...prev]);
-    setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, usuarioId: newUserId } : e));
-    addAuditLog('CREACION_CUENTA_MOVIL', `Empleado: ${emp.nombre} ${emp.apellidos} - Usuario: ${cleanUser}`);
-    showNotification(`¡Acceso móvil creado para ${emp.nombre}! Usuario: ${cleanUser} | Clave: ${pass}`);
-    return { success: true, user: newU, credentials: { username: cleanUser, password: pass } };
+    if (!created.success) {
+      showNotification(created.error, 'error');
+      return created;
+    }
+
+    setProfiles(prev => [created.user, ...prev.filter(u => u.id !== created.user.id)]);
+    setKnownPasswords(prev => ({ ...prev, [created.user.id]: pass }));
+    setEmployees(prev => prev.map(e => (e.id === employeeId ? { ...e, usuarioId: created.user.id } : e)));
+    addAuditLog('CREACION_CUENTA_MOVIL', `Empleado: ${emp.nombre} ${emp.apellidos} - Usuario: ${username}`);
+    showNotification(`¡Acceso móvil creado para ${emp.nombre}! Usuario: ${username}`);
+    return { success: true, user: { ...created.user, password: pass }, credentials: { username, password: pass } };
   };
 
   const updateEmployee = (id, updates) => {
     setEmployees(prev => prev.map(emp => {
       if (emp.id === id) {
         const updated = { ...emp, ...updates };
-
-        if (emp.usuarioId) {
-          setUsers(prevUsers => prevUsers.map(u => {
-            if (u.id === emp.usuarioId) {
-              return {
-                ...u,
-                fullName: `${updated.nombre} ${updated.apellidos}`.trim(),
-                phone: updated.telefono || u.phone,
-                email: updated.email || u.email,
-                trade: updated.especialidad || u.trade
-              };
-            }
-            return u;
-          }));
-        }
 
         if (emp.obreroId) {
           setObreros(prevObreros => prevObreros.map(o => {
@@ -1534,6 +1493,16 @@ export function AppProvider({ children }) {
       }
       return emp;
     }));
+
+    const currentEmp = employees.find(e => e.id === id);
+    if (currentEmp?.usuarioId) {
+      const merged = { ...currentEmp, ...updates };
+      const patch = { fullName: `${merged.nombre} ${merged.apellidos}`.trim() };
+      if (merged.telefono) patch.phone = merged.telefono;
+      if (merged.email) patch.email = merged.email;
+      if (merged.especialidad) patch.trade = merged.especialidad;
+      syncLinkedUser(currentEmp.usuarioId, patch);
+    }
 
     addAuditLog('MODIFICACION_EMPLEADO', `ID Empleado: ${id}`);
     showNotification('Ficha del empleado actualizada correctamente.');
@@ -1561,14 +1530,7 @@ export function AppProvider({ children }) {
       setObreros(prev => prev.map(o => o.id === targetEmp.obreroId ? { ...o, estado: 'baja' } : o));
     }
 
-    if (targetEmp.usuarioId) {
-      setUsers(prevUsers => prevUsers.map(u => {
-        if (u.id === targetEmp.usuarioId) {
-          return { ...u, isActive: false };
-        }
-        return u;
-      }));
-    }
+    syncLinkedUser(targetEmp.usuarioId, { isActive: false });
 
     addAuditLog('BAJA_EMPLEADO', `${targetEmp.nombre} ${targetEmp.apellidos} - Motivo: ${motivoBaja}`);
     showNotification(`Empleado tramitado en estado "${estado}". Acceso a App Móvil suspendido.`);
@@ -1594,14 +1556,7 @@ export function AppProvider({ children }) {
       setObreros(prev => prev.map(o => o.id === targetEmp.obreroId ? { ...o, estado: 'activo' } : o));
     }
 
-    if (targetEmp.usuarioId) {
-      setUsers(prevUsers => prevUsers.map(u => {
-        if (u.id === targetEmp.usuarioId) {
-          return { ...u, isActive: true };
-        }
-        return u;
-      }));
-    }
+    syncLinkedUser(targetEmp.usuarioId, { isActive: true });
 
     addAuditLog('REACTIVACION_EMPLEADO', `${targetEmp.nombre} ${targetEmp.apellidos}`);
     showNotification(`Empleado reactivado con éxito. Acceso móvil restaurado.`);
@@ -1642,27 +1597,28 @@ export function AppProvider({ children }) {
     showNotification(`Registro de ausencia (${newAbsence.tipo}) guardado con éxito.`);
   };
 
-  const resetEmployeePassword = (employeeId, newPass) => {
+  const resetEmployeePassword = async (employeeId, newPass) => {
     const emp = employees.find(e => e.id === employeeId);
     if (!emp) return { success: false, error: 'Empleado no encontrado' };
 
-    let targetUserId = emp.usuarioId;
-    if (!targetUserId) {
-      const existingUser = users.find(u => u.employeeId === emp.id || u.obreroId === emp.obreroId);
-      if (existingUser) {
-        targetUserId = existingUser.id;
-        setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, usuarioId: existingUser.id } : e));
-      }
-    }
+    const existingUser = users.find(u =>
+      u.id === emp.usuarioId || u.employeeId === emp.id || (emp.obreroId && u.obreroId === emp.obreroId)
+    );
 
-    if (!targetUserId) {
+    if (!existingUser) {
       return createMobileAccountForEmployee(employeeId, newPass);
     }
 
-    const cleanPass = newPass.trim();
-    setUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, password: cleanPass } : u));
+    if (emp.usuarioId !== existingUser.id) {
+      setEmployees(prev => prev.map(e => (e.id === employeeId ? { ...e, usuarioId: existingUser.id } : e)));
+    }
+
+    const typed = (newPass || '').trim();
+    const cleanPass = typed.length >= MIN_PASSWORD_LENGTH ? typed : generateRandomPassword();
+    const result = await resetUserPassword(existingUser.id, cleanPass);
+    if (!result.success) return result;
+
     addAuditLog('RESET_PASSWORD_EMPLEADO', `Empleado: ${emp.nombre} ${emp.apellidos}`);
-    showNotification(`Contraseña de ${emp.nombre} actualizada con éxito: "${cleanPass}"`);
     return { success: true, password: cleanPass };
   };
 
@@ -2001,23 +1957,6 @@ export function AppProvider({ children }) {
     return msg;
   };
 
-  const resetAllData = () => {
-    if (window.confirm('¿Seguro que deseas reiniciar los datos de demostración a su estado inicial?')) {
-      setObras(INITIAL_OBRAS);
-      setObreros(INITIAL_OBREROS);
-      setBasePrecios(INITIAL_BASE_PRECIOS);
-      setPresupuestos(INITIAL_PRESUPUESTOS);
-      setFacturas(INITIAL_FACTURAS);
-      setFacturasProveedores(INITIAL_FACTURAS_PROVEEDORES);
-      setMensajesInbox(INITIAL_MENSAJES_INBOX);
-      setSubcontratasPresupuestos(INITIAL_SUBCONTRATAS_PRESUPUESTOS);
-      setEmployees(INITIAL_EMPLOYEES);
-      setSubcontractors(INITIAL_SUBCONTRACTORS);
-      setAvisosTecnicos(INITIAL_AVISOS_TECNICOS);
-      showNotification('Datos reiniciados a los valores de prueba');
-    }
-  };
-
   return (
     <AppContext.Provider value={{
       empresaConfig,
@@ -2069,14 +2008,13 @@ export function AppProvider({ children }) {
       setPdfModalData,
       notification,
       showNotification,
-      resetAllData,
       users,
       setUsers,
       currentUser,
       setCurrentUser,
       login,
       logout,
-      quickSwitchUser,
+      authReady,
       addUser,
       updateUser,
       deleteUser,

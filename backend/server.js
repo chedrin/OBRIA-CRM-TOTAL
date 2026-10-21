@@ -13,6 +13,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleAuthRoutes, enforceApiAuth } from "./authRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -639,7 +640,7 @@ function parseMultipartBuffer(buffer, boundary) {
 async function handleRequest(req, res) {
   const originHeader = req.headers.origin || (CORS_ORIGIN === "*" ? "*" : CORS_ORIGIN);
   res.setHeader("Access-Control-Allow-Origin", originHeader);
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, x-api-key");
   res.setHeader("Access-Control-Allow-Credentials", "true");
 
@@ -671,6 +672,12 @@ async function handleRequest(req, res) {
     `);
     return;
   }
+
+  // Login y gestión de usuarios (Supabase Auth)
+  if (await handleAuthRoutes(req, res, pathname)) return;
+
+  // Resto de la API: exige sesión válida (administradores; obreros solo en rutas permitidas)
+  if (!(await enforceApiAuth(req, res, pathname))) return;
 
   // Endpoints GET
   if (req.method === "GET") {

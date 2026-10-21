@@ -27,7 +27,7 @@ function getInitialRoute() {
 }
 
 function MainLayout() {
-  const { activeTab = 'dashboard', setActiveTab = () => {}, notification, currentUser, logout = () => {}, activeRealtimeAlert } = useApp() || {};
+  const { activeTab = 'dashboard', setActiveTab = () => {}, notification, currentUser, logout = () => {}, activeRealtimeAlert, authReady = true } = useApp() || {};
   const [route, setRoute] = useState(getInitialRoute);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -72,6 +72,15 @@ function MainLayout() {
     window.location.hash = newRoute === 'empleados' ? '#empleados' : '#admin';
     setRoute(newRoute);
   };
+
+  // Mientras se comprueba si hay una sesión guardada, no se muestra ni el login ni los datos.
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center font-sans">
+        <span className="text-sm font-semibold animate-pulse">Cargando ObraMaster…</span>
+      </div>
+    );
+  }
 
   // ==========================================
   // CASE 1: WORKER ROUTE (/#empleados)

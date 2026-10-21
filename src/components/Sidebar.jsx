@@ -34,7 +34,6 @@ export default function Sidebar({
     obras,
     mensajesInbox,
     subcontratasPresupuestos,
-    resetAllData,
     currentUser,
     logout,
     showNotification
@@ -371,14 +370,7 @@ export default function Sidebar({
             </div>
 
             <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 px-1">
-              <button
-                onClick={resetAllData}
-                className="hover:text-slate-300 flex items-center gap-1 transition"
-                title="Restablecer datos de demostración"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Reiniciar Demo</span>
-              </button>
+              <span />
               <span className="text-emerald-400 text-[10px] font-medium flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                 En Línea
