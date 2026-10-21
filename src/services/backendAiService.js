@@ -15,6 +15,16 @@ const BACKEND_BASE_URL = '/api';
 /**
  * Comprueba si el backend de producción está activo
  */
+// Claves de Ajustes > Motor IA (guardadas en Supabase). Se envían para que el servidor pueda
+// cambiar de proveedor aunque haya perdido su copia tras un despliegue.
+let clientAiKeys = {};
+export function setClientAiKeys(keys) {
+  clientAiKeys = Object.fromEntries(
+    Object.entries(keys || {}).filter(([, v]) => typeof v === 'string' && v.trim())
+  );
+}
+const clientAiKeysJson = () => (Object.keys(clientAiKeys).length ? JSON.stringify(clientAiKeys) : '');
+
 export async function checkBackendStatus() {
   try {
     const controller = new AbortController();
@@ -127,6 +137,7 @@ export async function transcribeAudioViaBackend(audioBlobOrFiles, customApiKey =
   }
 
   if (customApiKey) form.append('apiKey', customApiKey);
+  if (clientAiKeysJson()) form.append('apiKeys', clientAiKeysJson());
 
   const res = await fetch(`${BACKEND_BASE_URL}/ai/transcribe`, {
     method: 'POST',
@@ -174,6 +185,7 @@ export async function improveTextViaBackend({
       referenceBudgets,
       provider,
       apiKey,
+      apiKeys: clientAiKeys,
       model
     })
   });
@@ -245,6 +257,7 @@ export async function generateBudgetViaBackend({
   if (referenceBudgets && referenceBudgets.length > 0) {
     form.append('referenceBudgets', JSON.stringify(referenceBudgets));
   }
+  if (clientAiKeysJson()) form.append('apiKeys', clientAiKeysJson());
 
   const res = await fetch(`${BACKEND_BASE_URL}/ai/generate-budget`, {
     method: 'POST',
@@ -280,6 +293,7 @@ export async function analyzeReferenceBudgetViaBackend({ name = '', tipoObra = '
   if (text) form.append('text', text);
   if (memoryId) form.append('memoryId', memoryId);
   if (file) form.append('pdf', file, file.name || 'presupuesto.pdf');
+  if (clientAiKeysJson()) form.append('apiKeys', clientAiKeysJson());
 
   const res = await fetch(`${BACKEND_BASE_URL}/ai/reference-budgets/analyze`, { method: 'POST', body: form });
   let data = {};

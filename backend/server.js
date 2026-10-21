@@ -28,7 +28,7 @@ const geminiModelsCache = new Map();
 // Error de IA con mensaje amable y el motivo técnico aparte (sin claves) para mostrarlo y diagnosticar.
 function aiError(detail) {
   const err = new Error(USER_FRIENDLY_AI_ERROR);
-  err.detail = String(detail || "").replace(/key=[^&\s"]+/gi, "key=***").slice(0, 300);
+  err.detail = String(detail || "").replace(/key=[^&\s"]+/gi, "key=***").slice(0, 900);
   return err;
 }
 
@@ -363,7 +363,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
         let errText = await response.text();
         try { errText = JSON.parse(errText).error?.message || errText; } catch {}
         console.error(`[Backend Gemini Error] Modelo "${targetModel}" HTTP ${response.status}: ${errText}`);
-        failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 300)}`);
+        failures.push(`[${targetModel}] HTTP ${response.status}: ${errText.slice(0, 160)}`);
 
         const gone = response.status === 404 || /not found|is not supported|no longer available/i.test(errText);
         if (gone) {
@@ -610,6 +610,22 @@ function configWithRequestKey(config, fields = {}) {
   const requestKey = String(fields.apiKey || "").trim();
   if (!requestKey || resolveProviderKey(config, provider)) return config;
   return { ...config, apiKeys: { ...(config.apiKeys || {}), [provider]: requestKey } };
+}
+
+// Claves guardadas en Ajustes (empresa_config en Supabase) que envía el navegador. Rellenan solo los
+// proveedores sin clave en el servidor: ai_settings.json se borra en cada despliegue de Render.
+function withBrowserKeys(config, fields = {}) {
+  let browserKeys = fields.apiKeys;
+  if (typeof browserKeys === "string") {
+    try { browserKeys = JSON.parse(browserKeys); } catch { browserKeys = null; }
+  }
+  if (!browserKeys || typeof browserKeys !== "object") return config;
+  const apiKeys = { ...(config.apiKeys || {}) };
+  for (const provider of PROVIDER_ORDER) {
+    const key = String(browserKeys[provider] || "").trim();
+    if (key && !resolveProviderKey(config, provider)) apiKeys[provider] = key;
+  }
+  return { ...config, apiKeys };
 }
 
 /**
@@ -1002,7 +1018,7 @@ async function handleRequest(req, res) {
       try { fields = JSON.parse(bodyBuffer.toString("utf-8")); } catch { fields = {}; }
     }
 
-    const currentConfig = getSavedAiConfig();
+    const currentConfig = withBrowserKeys(getSavedAiConfig(), fields);
 
     try {
       if (req.method === "PUT" && pathname === "/api/settings/ai") {

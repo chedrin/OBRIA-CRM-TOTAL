@@ -46,7 +46,7 @@ import {
   validatePdfFile,
   extractTextFromPdfBlob
 } from '../services/referenceBudgetService';
-import { analyzeReferenceBudgetViaBackend, deleteAiInstruction } from '../services/backendAiService';
+import { analyzeReferenceBudgetViaBackend, deleteAiInstruction, setClientAiKeys } from '../services/backendAiService';
 
 const AppContext = createContext();
 
@@ -488,6 +488,12 @@ export function AppProvider({ children }) {
   const syncRole = currentUser?.role || null;
   const syncNotify = (msg, type) => showNotification(msg, type);
   const syncBase = { userId: syncUserId, role: syncRole, notify: syncNotify };
+
+  // El servidor usa estas claves si ha perdido las suyas (p. ej. tras un despliegue en Render).
+  useEffect(() => {
+    const ai = empresaConfig.aiConfig || {};
+    setClientAiKeys({ ...(ai.apiKeys || {}), ...(ai.provider && ai.apiKey ? { [ai.provider]: ai.apiKey } : {}) });
+  }, [empresaConfig.aiConfig]);
 
   useCollectionSync({ ...syncBase, collection: 'empresa_config', value: empresaConfig, setValue: setEmpresaConfig, single: true, hadLocalData: hadLegacyData.EMPRESA, emptyValue: INITIAL_EMPRESA_CONFIG });
   useCollectionSync({ ...syncBase, collection: 'obras', value: obras, setValue: setObras, hadLocalData: hadLegacyData.OBRAS, emptyValue: [] });
