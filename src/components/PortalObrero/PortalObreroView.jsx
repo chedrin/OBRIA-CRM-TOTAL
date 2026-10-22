@@ -46,6 +46,7 @@ export default function PortalObreroView() {
     setActiveTab,
     broadcastWorkerProgress,
     broadcastWorkerEvidence,
+    broadcastWorkerEstimate,
     isOnline,
     offlineQueueLength,
     avisosTecnicos,
@@ -129,6 +130,17 @@ export default function PortalObreroView() {
     (o.fases || []).some(f => f.responsable?.toLowerCase().includes(currentObrero.nombre.split(' ')[0].toLowerCase())) ||
     o.estado === 'en_curso'
   );
+
+  // Días que el operario calcula que faltan por etapa (borrador antes de enviar).
+  const [estimateDrafts, setEstimateDrafts] = useState({});
+
+  const handleSendEstimate = (obraId, fase) => {
+    const raw = estimateDrafts[fase.id];
+    if (raw === undefined || raw === '' || Number(raw) < 0) return;
+    broadcastWorkerEstimate(obraId, fase.id, Number(raw), '', currentObrero.nombre);
+    setEstimateDrafts(prev => ({ ...prev, [fase.id]: undefined }));
+    showNotification(`Plazo enviado: ${Math.round(Number(raw))} días para "${fase.nombre}". La oficina recalcula el fin de obra.`);
+  };
 
   const handleUpdateFaseProgress = (obraId, faseId, newProgress) => {
     const progNum = Math.min(100, Math.max(0, newProgress));
@@ -643,6 +655,37 @@ export default function PortalObreroView() {
                             style={{ width: `${fase.progreso}%` }}
                           ></div>
                         </div>
+
+                        {/* Indicación de plazo del operario: alimenta el fin de obra previsto */}
+                        {!isCompleted && (
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                            <Clock className="w-3 h-3 text-amber-400 shrink-0" />
+                            <span className="shrink-0">Me faltan</span>
+                            <input
+                              type="number"
+                              min="0"
+                              inputMode="numeric"
+                              value={estimateDrafts[fase.id] ?? ''}
+                              placeholder={fase.estimacionObrero ? String(fase.estimacionObrero.diasRestantes) : '?'}
+                              onChange={(e) => setEstimateDrafts(prev => ({ ...prev, [fase.id]: e.target.value }))}
+                              className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs"
+                            />
+                            <span className="shrink-0">días</span>
+                            <button
+                              type="button"
+                              onClick={() => handleSendEstimate(currentObra.id, fase)}
+                              disabled={estimateDrafts[fase.id] === undefined || estimateDrafts[fase.id] === ''}
+                              className="px-2 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold disabled:opacity-40"
+                            >
+                              Enviar
+                            </button>
+                            {fase.estimacionObrero && (
+                              <span className="truncate text-slate-500">
+                                Último: {fase.estimacionObrero.diasRestantes}d ({fase.estimacionObrero.fecha})
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Tasks List (Partidas del Presupuesto Firmado) */}

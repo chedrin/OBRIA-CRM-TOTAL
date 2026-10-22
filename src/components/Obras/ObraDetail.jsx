@@ -147,6 +147,21 @@ export default function ObraDetail({ obraId, onBack }) {
     setEditingFase(null);
   };
 
+  // Fechas de la obra en edición: inicio, fin planificado y fecha de entrega comprometida con el cliente.
+  const [editingFechas, setEditingFechas] = useState(null);
+
+  const startEditFechas = () => setEditingFechas({
+    fechaInicio: obra.fechaInicio || '',
+    fechaFinEstimada: obra.fechaFinEstimada || '',
+    fechaEntregaCliente: obra.fechaEntregaCliente || obra.fechaFinEstimada || ''
+  });
+
+  const handleSaveFechas = () => {
+    if (!editingFechas?.fechaInicio) return;
+    updateObra(obra.id, editingFechas);
+    setEditingFechas(null);
+  };
+
   const [showNewAlertModal, setShowNewAlertModal] = useState(false);
   const [alertForm, setAlertForm] = useState({
     titulo: 'Instrucción Técnica / Seguridad',
@@ -400,8 +415,7 @@ export default function ObraDetail({ obraId, onBack }) {
                     <span>{sched.estadoRiesgo}</span>
                   </div>
                   <div className="flex items-center gap-3 text-slate-300">
-                    <span>Inicio: <strong>{sched.fechaInicioFormatted}</strong></span>
-                    <span>Fin: <strong>{sched.fechaFinFormatted}</strong></span>
+                    <span>Fin previsto: <strong>{sched.fechaPrevistaFormatted}</strong></span>
                     <span>Días rem: <strong className="text-amber-400">{sched.diasRestantes}d</strong></span>
                   </div>
                 </div>
@@ -422,10 +436,91 @@ export default function ObraDetail({ obraId, onBack }) {
               style={{ width: `${obra.progreso}%` }}
             ></div>
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2">
-            <span>Inicio: {obra.fechaInicio}</span>
-            <span>Finalización prevista: <strong className="text-slate-200">{obra.fechaFinEstimada}</strong></span>
-          </div>
+          {(() => {
+            const sched = calculateObraScheduling(obra, obras);
+            const desv = sched.desviacionEntregaDias;
+            const metodoTexto = {
+              plan: 'según los días planificados de cada etapa',
+              ritmo_real: `según el ritmo real de la obra (×${sched.ritmo} sobre lo planificado)`,
+              avance_y_obreros: `según el ritmo real (×${sched.ritmo}) y ${sched.estimacionesObrero} indicación(es) de operarios`,
+              finalizada: 'obra terminada: fecha de la última partida completada'
+            }[sched.metodoPrevision];
+            return (
+              <div className="mt-4 bg-slate-950/60 border border-slate-800 rounded-xl p-3 sm:p-4 text-xs">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-amber-400" />
+                    <span>Fechas de la obra</span>
+                  </span>
+                  {!editingFechas && (
+                    <button
+                      type="button"
+                      onClick={startEditFechas}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 font-semibold flex items-center gap-1.5 transition"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Editar fechas</span>
+                    </button>
+                  )}
+                </div>
+
+                {editingFechas ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {[
+                        { key: 'fechaInicio', label: 'Inicio de obra' },
+                        { key: 'fechaFinEstimada', label: 'Fin planificado' },
+                        { key: 'fechaEntregaCliente', label: 'Entrega al cliente' }
+                      ].map(f => (
+                        <div key={f.key}>
+                          <label className="text-slate-400 block mb-1 font-medium">{f.label}</label>
+                          <input
+                            type="date"
+                            value={editingFechas[f.key]}
+                            onChange={(e) => setEditingFechas({ ...editingFechas, [f.key]: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => setEditingFechas(null)} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-300 font-semibold">
+                        Cancelar
+                      </button>
+                      <button type="button" onClick={handleSaveFechas} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold">
+                        Guardar fechas
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Inicio</span>
+                      <span className="text-slate-200 font-semibold">{sched.fechaInicioFormatted}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Fin planificado</span>
+                      <span className="text-slate-200 font-semibold">{sched.fechaFinFormatted}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Entrega al cliente</span>
+                      <span className="text-white font-bold">{sched.fechaEntregaFormatted}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Fin previsto (calculado)</span>
+                      <span className={`font-bold ${desv > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{sched.fechaPrevistaFormatted}</span>
+                      <span className={`block text-[10px] ${desv > 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                        {desv > 0 ? `${desv} días tarde respecto a la entrega` : desv < 0 ? `${-desv} días de margen` : 'Justo en la fecha de entrega'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-500 mt-3">
+                  Fin previsto calculado {metodoTexto}. Se actualiza solo al completar partidas y etapas.
+                </p>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -560,6 +655,16 @@ export default function ObraDetail({ obraId, onBack }) {
                               <span className="text-amber-400 font-semibold">{fase.tareas.length} partidas presupuestadas</span>
                             </>
                           )}
+                          <span>·</span>
+                          <span>Plazo: <strong className="text-slate-200">{fase.dias || 5} días</strong></span>
+                          {fase.estimacionObrero && !isCompleted && (
+                            <>
+                              <span>·</span>
+                              <span className="text-sky-400" title={fase.estimacionObrero.nota || ''}>
+                                {fase.estimacionObrero.autor} estima {fase.estimacionObrero.diasRestantes} días ({fase.estimacionObrero.fecha})
+                              </span>
+                            </>
+                          )}
                         </div>
                         {fase.descripcion && (
                           <p className="text-xs text-slate-300 mt-1.5 whitespace-pre-line">{fase.descripcion}</p>
@@ -610,7 +715,7 @@ export default function ObraDetail({ obraId, onBack }) {
                   {/* Editor de la etapa */}
                   {editingFase?.id === fase.id && (
                     <div className="bg-slate-950/90 border-t border-amber-500/30 p-4 sm:p-5 space-y-4 text-xs">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                         <div className="sm:col-span-2">
                           <label className="text-slate-300 block mb-1 font-bold">Nombre de la etapa:</label>
                           <input
@@ -634,6 +739,16 @@ export default function ObraDetail({ obraId, onBack }) {
                               <option key={o.nombre} value={o.nombre}>{o.nombre}{o.detalle ? ` (${o.detalle})` : ''}</option>
                             ))}
                           </select>
+                        </div>
+                        <div>
+                          <label className="text-slate-300 block mb-1 font-bold">Días previstos:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={editingFase.dias ?? ''}
+                            onChange={(e) => setEditingFase({ ...editingFase, dias: e.target.value === '' ? '' : Math.max(1, Number(e.target.value)) })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                          />
                         </div>
                       </div>
 

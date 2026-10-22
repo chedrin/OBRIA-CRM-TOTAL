@@ -140,6 +140,7 @@ export default function ObrasList() {
 
     const newObra = addObra({
       ...formData,
+      fechaEntregaCliente: formData.fechaEntregaCliente || formData.fechaFinEstimada,
       presupuestoTotal: Number(formData.presupuestoTotal),
       margenEsperadoPct: Number(formData.margenEsperadoPct),
       estado: 'en_curso',
@@ -289,8 +290,15 @@ export default function ObrasList() {
                           <span className="text-slate-200 font-medium">{sched.fechaInicioFormatted}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block text-[9px] uppercase">Fin previsto</span>
-                          <span className="text-slate-200 font-medium">{sched.fechaFinFormatted}</span>
+                          <span className="text-slate-500 block text-[9px] uppercase">Entrega cliente</span>
+                          <span className="text-slate-200 font-medium">{sched.fechaEntregaFormatted}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase">Fin previsto (calculado)</span>
+                          <span className={`font-medium ${sched.desviacionEntregaDias > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                            {sched.fechaPrevistaFormatted}
+                            {sched.desviacionEntregaDias > 0 ? ` (+${sched.desviacionEntregaDias}d)` : ''}
+                          </span>
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[9px] uppercase">Recursos ocupados</span>
@@ -492,7 +500,7 @@ export default function ObrasList() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="text-slate-400 block mb-1 font-medium">Fecha de Inicio</label>
                     <input
@@ -503,11 +511,20 @@ export default function ObrasList() {
                     />
                   </div>
                   <div>
-                    <label className="text-slate-400 block mb-1 font-medium">Fin Estimado</label>
+                    <label className="text-slate-400 block mb-1 font-medium">Fin Planificado</label>
                     <input
                       type="date"
                       value={formData.fechaFinEstimada}
                       onChange={(e) => setFormData({ ...formData, fechaFinEstimada: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-medium">Entrega al Cliente</label>
+                    <input
+                      type="date"
+                      value={formData.fechaEntregaCliente || formData.fechaFinEstimada}
+                      onChange={(e) => setFormData({ ...formData, fechaEntregaCliente: e.target.value })}
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                     />
                   </div>

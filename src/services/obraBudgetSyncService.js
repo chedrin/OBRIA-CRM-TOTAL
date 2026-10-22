@@ -199,28 +199,129 @@ export function calculateGlobalProjectProgress(fases) {
  * @param {Array} presupuestos - Lista de presupuestos
  * @returns {Array} Obras reparadas con vinculación canónica 1:1
  */
+const DAY_MS = 86400000;
+
+// Fechas 'AAAA-MM-DD' en hora local (new Date('AAAA-MM-DD') sería UTC y puede restar un día).
+export function parseObraDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export function toIsoDate(d) {
+  if (!d) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function diffDays(a, b) {
+  return Math.round((startOfDay(a).getTime() - startOfDay(b).getTime()) / DAY_MS);
+}
+
+function addDays(d, days) {
+  const r = startOfDay(d);
+  r.setDate(r.getDate() + Math.ceil(days));
+  return r;
+}
+
+/**
+ * Fin de obra previsto calculado con el avance real:
+ * - Cada etapa aporta sus días planificados × (1 - avance).
+ * - Si un operario ha indicado los días que le faltan a una etapa, manda su indicación
+ *   (descontando los días pasados desde que la dio).
+ * - El ritmo real (días transcurridos frente a días de trabajo ya hechos) corrige lo que no indicó nadie.
+ * Las etapas se consideran consecutivas.
+ */
+export function calculateForecastEndDate(obra, today = new Date()) {
+  const hoy = startOfDay(today);
+  const fases = obra?.fases || [];
+  const inicio = parseObraDate(obra?.fechaInicio) || hoy;
+  const progreso = Number(obra?.progreso) || 0;
+
+  const plannedDays = (f) => Math.max(1, Number(f.dias) || 5);
+  const totalPlanned = fases.length > 0 ? fases.reduce((s, f) => s + plannedDays(f), 0) : 45;
+
+  if (fases.length === 0 && progreso <= 0) {
+    return { fecha: addDays(inicio, totalPlanned), diasRestantesTrabajo: totalPlanned, ritmo: 1, metodo: 'plan', estimacionesObrero: 0 };
+  }
+
+  if (progreso >= 100) {
+    const completions = fases.flatMap(f => [f.completedAt, ...(f.tareas || []).map(t => t.completedAt)])
+      .map(v => (v ? new Date(v) : null))
+      .filter(d => d && !Number.isNaN(d.getTime()));
+    const last = completions.length ? new Date(Math.max(...completions.map(d => d.getTime()))) : hoy;
+    return { fecha: startOfDay(last), diasRestantesTrabajo: 0, ritmo: 1, metodo: 'finalizada', estimacionesObrero: 0 };
+  }
+
+  // Ritmo real: solo es fiable con algo de avance y unos días de obra.
+  const elapsed = Math.max(0, diffDays(hoy, inicio));
+  const doneDays = fases.length > 0
+    ? fases.reduce((s, f) => s + plannedDays(f) * ((Number(f.progreso) || 0) / 100), 0)
+    : totalPlanned * (progreso / 100);
+  let ritmo = 1;
+  if (elapsed >= 3 && doneDays >= 1) {
+    ritmo = Math.min(3, Math.max(0.5, elapsed / doneDays));
+  }
+
+  let remaining = 0;
+  let estimacionesObrero = 0;
+  const pending = fases.length > 0 ? fases : [{ dias: totalPlanned, progreso }];
+  pending.forEach(f => {
+    const prog = Number(f.progreso) || 0;
+    if (prog >= 100) return;
+    const est = f.estimacionObrero;
+    const estDias = Number(est?.diasRestantes);
+    const estFecha = parseObraDate(est?.fecha);
+    if (est && Number.isFinite(estDias) && estDias >= 0 && estFecha) {
+      estimacionesObrero++;
+      // Una etapa sin terminar cuenta al menos medio día aunque su plazo indicado ya haya pasado.
+      remaining += Math.max(0.5, estDias - Math.max(0, diffDays(hoy, estFecha)));
+    } else {
+      remaining += plannedDays(f) * (1 - prog / 100) * ritmo;
+    }
+  });
+
+  // Lo pendiente se cuenta desde hoy, o desde el inicio si la obra aún no ha empezado.
+  const desde = hoy > inicio ? hoy : inicio;
+  return {
+    fecha: addDays(desde, remaining),
+    diasRestantesTrabajo: Math.ceil(remaining),
+    ritmo: Math.round(ritmo * 100) / 100,
+    metodo: estimacionesObrero > 0 ? 'avance_y_obreros' : (ritmo !== 1 ? 'ritmo_real' : 'plan'),
+    estimacionesObrero
+  };
+}
+
 /**
  * Calculates AI scheduling analytics for an obra:
- * - Fin previsto, Días restantes, Estado de riesgo (En plazo 🟢, Riesgo de retraso 🟡, Retraso crítico 🔴)
+ * - Fin planificado (editable), fecha de entrega al cliente y fin previsto calculado
+ * - Días restantes, Estado de riesgo (En plazo 🟢, Riesgo de retraso 🟡, Retraso crítico 🔴)
  * - Capacity analysis & next available start date for new projects
  */
-export function calculateObraScheduling(obra, allObras = []) {
-  const today = new Date();
-  const fechaInicio = obra.fechaInicio ? new Date(obra.fechaInicio) : new Date();
+export function calculateObraScheduling(obra, allObras = [], today = new Date()) {
+  const hoy = startOfDay(today);
+  const fechaInicio = parseObraDate(obra.fechaInicio) || hoy;
 
-  // Total estimated days from phases or default
   const duracionPrevistaDias = obra.fases?.length > 0
     ? obra.fases.reduce((sum, f) => sum + (Number(f.dias) || 5), 0)
     : 45;
 
-  let fechaFin = obra.fechaFinEstimada ? new Date(obra.fechaFinEstimada) : new Date(fechaInicio.getTime() + duracionPrevistaDias * 86400000);
+  const fechaFin = parseObraDate(obra.fechaFinEstimada) || addDays(fechaInicio, duracionPrevistaDias);
+  const fechaEntrega = parseObraDate(obra.fechaEntregaCliente) || fechaFin;
+  const forecast = calculateForecastEndDate(obra, hoy);
+  const fechaPrevista = forecast.fecha;
 
-  const totalDaysMs = fechaFin.getTime() - fechaInicio.getTime();
-  const totalDays = Math.max(1, Math.round(totalDaysMs / 86400000));
-
-  const elapsedDaysMs = today.getTime() - fechaInicio.getTime();
-  const elapsedDays = Math.max(0, Math.round(elapsedDaysMs / 86400000));
-  const diasRestantes = Math.max(0, Math.round((fechaFin.getTime() - today.getTime()) / 86400000));
+  const totalDays = Math.max(1, diffDays(fechaFin, fechaInicio));
+  const elapsedDays = Math.max(0, diffDays(hoy, fechaInicio));
+  const diasRestantes = Math.max(0, diffDays(fechaPrevista, hoy));
+  // Positivo = la previsión llega tarde respecto a lo prometido al cliente.
+  const desviacionEntregaDias = diffDays(fechaPrevista, fechaEntrega);
+  const desviacionPlanDias = diffDays(fechaPrevista, fechaFin);
 
   const progreso = Number(obra.progreso) || 0;
   const expectedProgreso = Math.min(100, Math.round((elapsedDays / totalDays) * 100));
@@ -229,43 +330,49 @@ export function calculateObraScheduling(obra, allObras = []) {
   let riesgoLevel = 'low'; // low, medium, high
 
   if (progreso < 100) {
-    if (diasRestantes <= 0 || (expectedProgreso - progreso) > 30) {
+    if (desviacionEntregaDias > 7 || (hoy > fechaEntrega)) {
       estadoRiesgo = '🔴 Retraso crítico detectado';
       riesgoLevel = 'high';
-    } else if ((expectedProgreso - progreso) > 15) {
+    } else if (desviacionEntregaDias > 0 || (expectedProgreso - progreso) > 15) {
       estadoRiesgo = '🟡 Riesgo de retraso';
       riesgoLevel = 'medium';
     }
   } else {
-    estadoRiesgo = '🟢 Finalizada en plazo';
+    estadoRiesgo = desviacionEntregaDias > 0 ? '🟡 Finalizada con retraso' : '🟢 Finalizada en plazo';
     riesgoLevel = 'low';
   }
 
   // Operarios asignados
   const operariosAsignados = obra.operariosAsignados || 3;
 
-  // Calculate global next available date across all active obras
+  // Próxima fecha disponible: la previsión calculada más tardía de las obras en curso.
   const activeObras = (allObras || []).filter(o => o.estado === 'en_curso');
-  let maxFinMs = today.getTime();
+  let maxFinMs = hoy.getTime();
   activeObras.forEach(o => {
-    if (o.fechaFinEstimada) {
-      const f = new Date(o.fechaFinEstimada).getTime();
-      if (f > maxFinMs) maxFinMs = f;
-    }
+    const f = (o.id === obra.id ? fechaPrevista : calculateForecastEndDate(o, hoy).fecha).getTime();
+    if (f > maxFinMs) maxFinMs = f;
   });
-  const nextAvailableDate = new Date(maxFinMs + 86400000);
+  const nextAvailableDate = addDays(new Date(maxFinMs), 1);
 
   const formatDate = (d) => {
     try {
       return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
     } catch (e) {
-      return d.toISOString().split('T')[0];
+      return toIsoDate(d);
     }
   };
 
   return {
     fechaInicioFormatted: formatDate(fechaInicio),
     fechaFinFormatted: formatDate(fechaFin),
+    fechaEntregaFormatted: formatDate(fechaEntrega),
+    fechaPrevistaFormatted: formatDate(fechaPrevista),
+    fechaPrevistaIso: toIsoDate(fechaPrevista),
+    desviacionEntregaDias,
+    desviacionPlanDias,
+    ritmo: forecast.ritmo,
+    metodoPrevision: forecast.metodo,
+    estimacionesObrero: forecast.estimacionesObrero,
     duracionPrevistaDias: totalDays,
     diasRestantes,
     operariosAsignados,
