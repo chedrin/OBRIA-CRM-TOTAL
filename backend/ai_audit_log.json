@@ -1,17 +1,5 @@
 [
   {
-    "id": "log-1792658320028-1ew51",
-    "timestamp": "2026-10-22T08:38:40.028Z",
-    "provider": "google",
-    "model": "gemini-3.8-flash",
-    "action": "/api/ai/price-sources/extract",
-    "latencyMs": 0,
-    "success": false,
-    "error": "No ha sido posible conectar con la IA. Revise la configuración de la API o seleccione un modelo válido.",
-    "tokensUsed": 0,
-    "estimatedCostUsd": "0.000000"
-  },
-  {
     "id": "log-1792520302372-lfvoa",
     "timestamp": "2026-10-20T18:18:22.372Z",
     "provider": "google",
