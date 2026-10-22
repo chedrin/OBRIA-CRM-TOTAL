@@ -7,6 +7,7 @@
  * - POST /api/ai/test-connection   -> Prueba de latencia y estado de la API
  * - POST /api/ai/transcribe        -> Transcripción unificada de audios
  * - POST /api/ai/generate-budget   -> Generación estructurada de presupuesto
+ * - POST /api/ai/price-sources/extract -> Precios de un presupuesto de gremio (PDF, imagen o texto)
  * - POST /api/ai/analyze-images    -> Inspección de fotos de obra
  */
 
@@ -279,6 +280,25 @@ export async function generateBudgetViaBackend({
     throw new Error(`Error al generar presupuesto IA (${res.status}): ${data.error || res.statusText}`);
   }
 
+  return data;
+}
+
+/**
+ * Lee el presupuesto de un gremio (PDF, imágenes o texto) y devuelve sus partidas con precio de coste.
+ */
+export async function extractPricesViaBackend({ files = [], texto = '', gremio = '', subcontrata = '' }) {
+  const form = new FormData();
+  files.forEach((f, idx) => form.append('documento', f, f.name || `documento-${idx + 1}`));
+  if (texto) form.append('texto', texto);
+  if (gremio) form.append('gremio', gremio);
+  if (subcontrata) form.append('subcontrata', subcontrata);
+  if (clientAiKeysJson()) form.append('apiKeys', clientAiKeysJson());
+
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/price-sources/extract`, { method: 'POST', body: form });
+  const rawText = await res.text();
+  let data = {};
+  try { data = rawText ? JSON.parse(rawText) : {}; } catch { data = { error: rawText }; }
+  if (!res.ok) throw new Error(data.error || `Error ${res.status} al leer los precios`);
   return data;
 }
 

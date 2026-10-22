@@ -502,7 +502,7 @@ async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15,
   }
 }
 
-async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, temperature = 0.15, maxTokens = 4096 }) {
+async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, userContent = null, temperature = 0.15, maxTokens = 4096 }) {
   const effectiveKey = (apiKey || process.env.ANTHROPIC_API_KEY || "").trim();
   if (!effectiveKey) throw aiError("Falta la clave ANTHROPIC_API_KEY.");
 
@@ -518,7 +518,7 @@ async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, 
       body: JSON.stringify({
         model: model || "claude-sonnet-5-5",
         system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
+        messages: [{ role: "user", content: userContent || userPrompt }],
         max_tokens: maxTokens,
         temperature
       })
@@ -646,13 +646,34 @@ function explainAiFailure(provider, detail) {
   return text.slice(0, 350);
 }
 
+// Adjuntos (PDF e imágenes) en el formato de cada proveedor. `part` viene de fileToPart.
+function openAiContent(text, parts) {
+  return [
+    { type: "text", text },
+    ...parts.map(({ inlineData: { mimeType, data } }, idx) => mimeType === "application/pdf"
+      ? { type: "file", file: { filename: `documento-${idx + 1}.pdf`, file_data: `data:application/pdf;base64,${data}` } }
+      : { type: "image_url", image_url: { url: `data:${mimeType};base64,${data}` } })
+  ];
+}
+
+function anthropicContent(text, parts) {
+  return [
+    ...parts.map(({ inlineData: { mimeType, data } }) => ({
+      type: mimeType === "application/pdf" ? "document" : "image",
+      source: { type: "base64", media_type: mimeType, data }
+    })),
+    { type: "text", text }
+  ];
+}
+
 /**
  * Llama a la IA con un prompt de texto y devuelve el texto bruto.
  * Empieza por el proveedor elegido en Ajustes > Motor IA; si falla o no tiene clave,
  * prueba el resto de proveedores con clave configurada en el servidor.
  * `geminiParts` (fotos, PDF, audio) solo se envían cuando responde Gemini.
+ * `attachments` (PDF e imágenes, en formato de fileToPart) se envían a cualquier proveedor.
  */
-async function callActiveProvider({ config, systemInstruction, userPrompt, temperature = 0.15, maxTokens = 4096, geminiParts = [] }) {
+async function callActiveProvider({ config, systemInstruction, userPrompt, temperature = 0.15, maxTokens = 4096, geminiParts = [], attachments = [] }) {
   const preferred = (config.provider || "google").toLowerCase();
   const candidates = [preferred, ...PROVIDER_ORDER].filter((p, i, arr) => arr.indexOf(p) === i && resolveProviderKey(config, p));
   if (!candidates.length) {
@@ -668,25 +689,23 @@ async function callActiveProvider({ config, systemInstruction, userPrompt, tempe
   for (const { provider, apiKey } of attempts) {
     const model = modelForProvider(config, provider);
     try {
-      if (provider === "openai") {
-        return await callOpenAiProvider({
+      if (provider === "openai" || provider === "openrouter") {
+        const call = provider === "openai" ? callOpenAiProvider : callOpenRouterProvider;
+        return await call({
           apiKey, model, temperature, maxTokens,
-          messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
+          messages: [{ role: "system", content: systemInstruction }, { role: "user", content: attachments.length ? openAiContent(userPrompt, attachments) : userPrompt }]
         });
       }
       if (provider === "anthropic") {
-        return await callAnthropicProvider({ apiKey, model, systemPrompt: systemInstruction, userPrompt, temperature, maxTokens });
-      }
-      if (provider === "openrouter") {
-        return await callOpenRouterProvider({
-          apiKey, model, temperature, maxTokens,
-          messages: [{ role: "system", content: systemInstruction }, { role: "user", content: userPrompt }]
+        return await callAnthropicProvider({
+          apiKey, model, systemPrompt: systemInstruction, userPrompt, temperature, maxTokens,
+          userContent: attachments.length ? anthropicContent(userPrompt, attachments) : null
         });
       }
       return await callGeminiProvider({
         apiKey,
         model,
-        contents: [{ role: "user", parts: [{ text: userPrompt }, ...geminiParts] }],
+        contents: [{ role: "user", parts: [{ text: userPrompt }, ...attachments, ...geminiParts] }],
         systemInstruction,
         temperature,
         maxTokens
@@ -709,6 +728,34 @@ function buildReferenceBudgetsText(refBudgets, { max = 4, chars = 3500 } = {}) {
     .slice(0, max)
     .map((r, idx) => `=== PRESUPUESTO DE REFERENCIA ${idx + 1}: ${r.name || "Presupuesto modelo"}${r.tipo_obra ? ` (${r.tipo_obra})` : ""} ===\n${String(r.extracted_text || r.text_content || "").substring(0, chars)}`)
     .join("\n\n");
+}
+
+// Base de precios: elige las partidas que más tienen que ver con la obra para no saturar el prompt.
+const PRICE_STOPWORDS = new Set("de la el los las del con para por una uno sin que en y o a al su sus incluso hasta como cada todo toda".split(" "));
+const priceWords = text => String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .split(/[^a-z0-9]+/).filter(w => w.length > 2 && !PRICE_STOPWORDS.has(w));
+
+function selectRelevantPrices(catalog, contextText, limit = 150) {
+  const items = (Array.isArray(catalog) ? catalog : []).filter(p => p && (p.concepto || p.titulo));
+  if (items.length <= limit) return items;
+  const context = new Set(priceWords(contextText));
+  return items
+    .map((p, idx) => {
+      const words = priceWords(`${p.concepto || p.titulo} ${p.capitulo || ""} ${p.gremio || ""}`);
+      const hits = words.filter(w => context.has(w)).length;
+      return { p, idx, score: words.length ? hits / Math.sqrt(words.length) : 0 };
+    })
+    .sort((a, b) => b.score - a.score || a.idx - b.idx)
+    .slice(0, limit)
+    .map(x => x.p);
+}
+
+function buildPriceBaseText(items) {
+  return items.map(p => {
+    const coste = p.costeUnitario ?? p.costeSubcontrata;
+    const fuente = p.fuente?.subcontrata ? ` | Fuente: ${p.fuente.subcontrata}${p.fuente.fecha ? ` (${p.fuente.fecha})` : ""}` : "";
+    return `- [${p.codigo || "GEN"}] ${p.gremio || p.capitulo ? `(${p.gremio || p.capitulo}) ` : ""}${p.concepto || p.titulo} | Unidad: ${p.unidad || "ud"} | Coste: ${coste ?? "?"}€ | Margen: ${p.margenPct ?? "?"}% | PVP: ${p.precioVenta ?? "?"}€${fuente}`;
+  }).join("\n");
 }
 
 // Transcripción de Audio Robusta: Whisper (OpenAI) si hay clave; si no, o si falla, Gemini.
@@ -1352,10 +1399,7 @@ ${textToImprove.trim()}
         let refBudgets = [];
         try { if (fields.referenceBudgets) refBudgets = typeof fields.referenceBudgets === "string" ? JSON.parse(fields.referenceBudgets) : fields.referenceBudgets; } catch {}
 
-        const catalogText = (catalogList || [])
-          .slice(0, 40)
-          .map(p => `- [${p.codigo || "GEN"}] ${p.capitulo ? `(${p.capitulo}) ` : ""}${p.concepto || p.titulo} | Coste: ${p.costeUnitario ?? p.costeSubcontrata ?? "?"}€ | PVP: ${p.precioVenta ?? "?"}€ / ${p.unidad || "ud"}`)
-          .join("\n");
+        const catalogText = buildPriceBaseText(selectRelevantPrices(catalogList, `${dictadoTexto} ${medidasNotas} ${fields.titulo || ""}`));
 
         const refBudgetsText = buildReferenceBudgetsText(refBudgets);
         const memoryContext = await buildMemoryContext("presupuesto");
@@ -1370,7 +1414,7 @@ CÓMO TRABAJAS:
 2. Agrupa las partidas en capítulos numerados en orden de ejecución de obra (por ejemplo: 01 Actuaciones previas y demoliciones, 02 Albañilería, 03 Fontanería y saneamiento, 04 Electricidad e iluminación, 05 Revestimientos y solados, 06 Carpintería, 07 Pintura, 08 Varios y gestión de residuos). Usa solo los capítulos que correspondan.
 3. Cada partida lleva un título corto y una descripción completa en estilo pliego de condiciones: qué se suministra y ejecuta, materiales y calidades, medios auxiliares, preparación del soporte, remates, limpieza y retirada de restos cuando proceda. Nada de lenguaje coloquial.
 4. Unidades normalizadas (m2, ml, ud, pa, m3, kg). Usa las mediciones dictadas; si falta alguna, estima con criterio y dilo en "observaciones_tecnicas".
-5. Precios: usa la base de precios de la empresa cuando exista la partida; si no, estima un coste realista de mercado en España. "costeUnitario" es el coste; "precioVenta" = coste × (1 + margen).
+5. Precios: la BASE DE PRECIOS DE LA EMPRESA es la fuente principal y sale de presupuestos reales de sus gremios. Si una partida coincide (aunque se redacte distinto) con una de la base, usa su coste como "costeUnitario" y su margen como "margenPct", ajustando solo si cambia la unidad o el alcance, y pon su código en "codigoBase". Si una partida no está en la base, estima un coste realista de mercado en España, deja "codigoBase" vacío y cítala en "observaciones_tecnicas" como precio estimado. "precioVenta" = costeUnitario × (1 + margenPct/100).
 6. IMITA el estilo, la estructura de capítulos, la forma de numerar y el vocabulario de los presupuestos de referencia de la empresa y obedece la memoria de la IA (instrucciones del director, aprendizajes y correcciones). Tienen prioridad sobre estas pautas generales.
 ${memoryContext}
 Devuelve SOLO un JSON válido con esta estructura:
@@ -1390,7 +1434,8 @@ Devuelve SOLO un JSON válido con esta estructura:
           "cantidad": 14.5,
           "costeUnitario": 12.5,
           "margenPct": ${margenGlobal},
-          "precioVenta": 16.0
+          "precioVenta": 16.0,
+          "codigoBase": "DEM-01"
         }
       ]
     }
@@ -1409,7 +1454,7 @@ ${dictadoTexto || "Sin dictado: analiza las evidencias adjuntas."}
 ${medidasNotas ? `\nMediciones y anotaciones:\n${medidasNotas}` : ""}
 """
 ${fotos.length ? `\nSe adjuntan ${fotos.length} foto(s) del estado actual.\n` : ""}
-${catalogText ? `BASE DE PRECIOS DE LA EMPRESA:\n${catalogText}\n` : ""}
+${catalogText ? `BASE DE PRECIOS DE LA EMPRESA (coste de gremio, margen de la empresa y PVP):\n${catalogText}\n` : ""}
 ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y estructura):\n${refBudgetsText}\n` : ""}
 `;
 
@@ -1442,6 +1487,85 @@ ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(parsed));
+        return;
+      }
+
+      // Presupuesto de un gremio (PDF, imagen o texto): extrae sus partidas con el precio de coste
+      // para revisarlas y aplicarlas a la base de precios con el margen de la empresa.
+      if (req.method === "POST" && pathname === "/api/ai/price-sources/extract") {
+        const startTime = performance.now();
+        const providedText = String(fields.texto || fields.text || "").slice(0, 30000);
+        const documentos = [...(files.documento || []), ...(files.fotos || [])]
+          .filter(f => /pdf|image\//i.test(fileToPart(f).inlineData.mimeType));
+        if (!documentos.length && providedText.trim().length < 10) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Adjunta un PDF o una imagen del presupuesto, o pega su texto." }));
+          return;
+        }
+
+        const systemInstruction = `
+Eres el Jefe de Compras de una constructora española. Lees el presupuesto o la tarifa que envía un gremio o subcontrata y extraes TODAS sus partidas con el precio unitario que cobra el gremio (precio de coste para la constructora).
+Reglas:
+- Una partida por cada línea con precio. No inventes partidas ni precios: si una línea no tiene precio unitario, omítela.
+- "precio" es el precio UNITARIO sin IVA. Si solo aparece el importe total y la cantidad, divide. Si los precios llevan IVA, quítalo y dilo en "avisos".
+- Respeta la unidad del documento normalizada (m2, ml, ud, pa, m3, kg, h).
+- "concepto": descripción técnica completa y clara de la partida, en español, sin datos del cliente.
+- "codigo": el del documento si existe; si no, déjalo vacío.
+Devuelve SOLO un JSON válido:
+{
+  "subcontrata": "Nombre del gremio o empresa emisora, si aparece",
+  "gremio": "Oficio principal (Albañilería, Fontanería, Electricidad, Carpintería, Pintura, Climatización...)",
+  "fecha": "AAAA-MM-DD si aparece",
+  "resumen": "1-2 frases sobre lo que cubre el documento",
+  "avisos": ["Dudas de lectura, IVA incluido, partidas ambiguas..."],
+  "partidas": [
+    { "codigo": "", "capitulo": "Fontanería", "concepto": "Punto de agua fría y caliente con tubería multicapa", "unidad": "ud", "precio": 65.0 }
+  ]
+}`;
+
+        const userPrompt = `GREMIO INDICADO: ${fields.gremio || "sin indicar"} | SUBCONTRATA INDICADA: ${fields.subcontrata || "sin indicar"}
+${documentos.length ? `Se adjuntan ${documentos.length} documento(s) (PDF o imagen) con los precios.` : ""}
+${providedText.trim() ? `TEXTO CON PRECIOS:\n"""\n${providedText}\n"""` : ""}`;
+
+        const rawOutput = await callActiveProvider({
+          config: currentConfig,
+          systemInstruction,
+          userPrompt,
+          temperature: 0.05,
+          maxTokens: 16384,
+          attachments: documentos.map(fileToPart)
+        });
+
+        const parsed = parseAiJson(rawOutput);
+        const partidas = (Array.isArray(parsed.partidas) ? parsed.partidas : [])
+          .map(p => ({
+            codigo: String(p.codigo || "").trim(),
+            capitulo: String(p.capitulo || parsed.gremio || fields.gremio || "").trim(),
+            concepto: String(p.concepto || p.titulo || "").trim(),
+            unidad: String(p.unidad || "ud").trim(),
+            precio: Number(String(p.precio ?? p.precioUnitario ?? "").toString().replace(",", "."))
+          }))
+          .filter(p => p.concepto && Number.isFinite(p.precio) && p.precio > 0);
+        if (!partidas.length) throw aiError("La IA no encontró partidas con precio en el documento.");
+
+        logAiCall({
+          provider: currentConfig.provider,
+          model: currentConfig.model,
+          action: "extract-prices",
+          latencyMs: Math.round(performance.now() - startTime),
+          success: true,
+          tokensUsed: Math.ceil((userPrompt.length + rawOutput.length) / 4)
+        });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          subcontrata: String(parsed.subcontrata || fields.subcontrata || "").trim(),
+          gremio: String(parsed.gremio || fields.gremio || "").trim(),
+          fecha: String(parsed.fecha || "").trim(),
+          resumen: String(parsed.resumen || "").trim(),
+          avisos: Array.isArray(parsed.avisos) ? parsed.avisos.map(String) : [],
+          partidas
+        }));
         return;
       }
 
