@@ -37,35 +37,8 @@ import {
   HelpCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-
-const SIMULATED_NEW_QUOTES = [
-  {
-    id: 'sim-carpinteria',
-    subcontrata: 'Carpintería y Maderas Robles SL',
-    gremio: 'Carpintería',
-    archivoNombre: 'Tarifas_Puertas_Tarimas_2026.pdf',
-    resumen: 'Actualización de costes de puertas de paso block lacadas (+12%) y tarimas laminadas AC5 (+9%) por costes de tablero hidrófugo.',
-    margenDefecto: 25,
-    partidasDetectadas: [
-      { codigo: 'CAR-01', concepto: 'Suministro y colocación de puerta de paso maciza block lacada blanco 72.5cm', unidad: 'ud', precioAnterior: 215.00, nuevoPrecioSubcontrata: 240.00, variacionPct: 11.6, margenConfiguradoPct: 25, nuevoPvpCliente: 300.00 },
-      { codigo: 'CAR-02', concepto: 'Instalación de suelo laminado AC5 alta resistencia con rodapié lacado', unidad: 'm²', precioAnterior: 19.00, nuevoPrecioSubcontrata: 21.00, variacionPct: 10.5, margenConfiguradoPct: 25, nuevoPvpCliente: 26.25 },
-      { codigo: 'CAR-03', concepto: 'Frente de armario empotrado 2 puertas correderas suelo-techo', unidad: 'ud', precioAnterior: 550.00, nuevoPrecioSubcontrata: 620.00, variacionPct: 12.7, margenConfiguradoPct: 30, nuevoPvpCliente: 806.00 }
-    ]
-  },
-  {
-    id: 'sim-fontaneria',
-    subcontrata: 'ClimaTec Fontanería y Aerotermia',
-    gremio: 'Fontanería',
-    archivoNombre: 'Presupuesto_Fontaneria_Otoño_ClimaTec.pdf',
-    resumen: 'Incremento en accesorios multicapa y latón. Platos de ducha de resina pizarra con descuento por volumen.',
-    margenDefecto: 30,
-    partidasDetectadas: [
-      { codigo: 'FON-01', concepto: 'Punto de agua fría y caliente con tubería multicapa aislada', unidad: 'ud', precioAnterior: 58.00, nuevoPrecioSubcontrata: 65.00, variacionPct: 12.1, margenConfiguradoPct: 30, nuevoPvpCliente: 84.50 },
-      { codigo: 'FON-02', concepto: 'Punto de desagüe en PVC insonorizado de 40mm/50mm', unidad: 'ud', precioAnterior: 40.00, nuevoPrecioSubcontrata: 45.00, variacionPct: 12.5, margenConfiguradoPct: 30, nuevoPvpCliente: 58.50 },
-      { codigo: 'FON-03', concepto: 'Instalación de plato de ducha resina pizarra con válvula sifónica gran caudal', unidad: 'ud', precioAnterior: 130.00, nuevoPrecioSubcontrata: 120.00, variacionPct: -7.7, margenConfiguradoPct: 30, nuevoPvpCliente: 156.00 }
-    ]
-  }
-];
+import { extractPricesViaBackend } from '../../services/backendAiService';
+import { buildGremioQuote } from '../../services/priceBaseService';
 
 export default function SubcontratasList() {
   const {
@@ -152,8 +125,13 @@ export default function SubcontratasList() {
 
   // Subcontractor Quotes Inbox State (Existing Feature)
   const [selectedSubPresId, setSelectedSubPresId] = useState(subcontratasPresupuestos[0]?.id || null);
-  const [customMargins, setCustomMargins] = useState({});
   const [globalMarginInput, setGlobalMarginInput] = useState(25);
+
+  // Importar presupuesto de gremio (PDF, imagen o texto)
+  const [importForm, setImportForm] = useState({ subcontrata: '', gremio: '', texto: '', margen: 25 });
+  const [importFiles, setImportFiles] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState('');
 
   // Base de Precios State (Existing Feature)
   const [searchPrecios, setSearchPrecios] = useState('');
@@ -338,26 +316,72 @@ export default function SubcontratasList() {
     if (updated) setSelectedSubcontractor(updated);
   };
 
-  // Quote Simulators
-  const handleSimulateNewQuote = (quoteData) => {
-    const newQuote = {
-      ...quoteData,
-      id: `subpres-${Date.now()}`,
-      fecha: new Date().toISOString().split('T')[0],
-      estado: 'analizado'
-    };
-    setSubcontratasPresupuestos(prev => [newQuote, ...prev]);
-    setSelectedSubPresId(newQuote.id);
-    showNotification(`Presupuesto de "${newQuote.subcontrata}" recibido y analizado por IA.`);
+  // Importar presupuesto de gremio: la IA lee el PDF, la imagen o el texto y extrae los precios.
+  const handleImportQuote = async (e) => {
+    e.preventDefault();
+    if (!importFiles.length && importForm.texto.trim().length < 10) {
+      setImportError('Adjunta un PDF o una imagen, o pega el texto con los precios.');
+      return;
+    }
+    setImporting(true);
+    setImportError('');
+    try {
+      const extraction = await extractPricesViaBackend({
+        files: importFiles,
+        texto: importForm.texto,
+        gremio: importForm.gremio,
+        subcontrata: importForm.subcontrata
+      });
+      const newQuote = buildGremioQuote({
+        extraction,
+        base: basePrecios,
+        margen: importForm.margen,
+        archivoNombre: importFiles.map(f => f.name).join(', '),
+        gremio: importForm.gremio,
+        subcontrata: importForm.subcontrata
+      });
+      setSubcontratasPresupuestos(prev => [newQuote, ...prev]);
+      setSelectedSubPresId(newQuote.id);
+      setGlobalMarginInput(newQuote.margenDefecto);
+      setImportFiles([]);
+      setImportForm(f => ({ ...f, texto: '' }));
+      showNotification(`La IA ha leído ${newQuote.partidasDetectadas.length} partidas de "${newQuote.subcontrata}". Revísalas y pulsa "Aplicar a la base de precios".`);
+    } catch (err) {
+      setImportError(err.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const updateQuotePartidas = (subPresId, updater) => {
+    setSubcontratasPresupuestos(prev => prev.map(sp => (
+      sp.id === subPresId ? { ...sp, partidasDetectadas: updater(sp.partidasDetectadas || []) } : sp
+    )));
+  };
+
+  const updateQuotePartida = (subPresId, idx, changes) => {
+    updateQuotePartidas(subPresId, partidas => partidas.map((p, i) => (i === idx ? { ...p, ...changes } : p)));
+  };
+
+  const applyMarginToAll = (subPresId) => {
+    const margen = Number(globalMarginInput) || 0;
+    updateQuotePartidas(subPresId, partidas => partidas.map(p => ({ ...p, margenConfiguradoPct: margen })));
+  };
+
+  const handleDeleteQuote = (subPresId) => {
+    if (!window.confirm('¿Borrar este presupuesto de gremio? La base de precios no cambia.')) return;
+    setSubcontratasPresupuestos(prev => prev.filter(sp => sp.id !== subPresId));
+    setSelectedSubPresId(null);
   };
 
   const handleApplyToDatabase = (subPres) => {
     if (!subPres) return;
-    const itemsToApply = (subPres.partidasDetectadas || []).map(p => {
-      const margin = customMargins[p.codigo] !== undefined ? customMargins[p.codigo] : p.margenConfiguradoPct;
-      return { ...p, margenConfiguradoPct: margin };
-    });
-    applySubcontrataPresupuesto(subPres.id, itemsToApply);
+    const selected = (subPres.partidasDetectadas || []).filter(p => p.incluir !== false);
+    if (!selected.length) {
+      showNotification('Marca al menos una partida para aplicarla a la base de precios.', 'error');
+      return;
+    }
+    applySubcontrataPresupuesto(subPres.id, selected);
     confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
   };
 
@@ -626,35 +650,97 @@ export default function SubcontratasList() {
       {activeTab === 'presupuestos_comparador' && (
         <div className="space-y-6">
           
-          {/* Quick simulator banner */}
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+          {/* Importar presupuesto de gremio */}
+          <form onSubmit={handleImportQuote} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <FileText className="w-5 h-5 text-indigo-400" />
-                <span>Presupuestos Recibidos de Subcontratas & Actualización de Precios</span>
+                <span>Importar presupuesto de gremio</span>
               </h2>
               <p className="text-xs text-slate-400">
-                La IA analiza presupuestos en PDF, detecta partidas y te permite actualizar el catálogo oficial con el margen que elijas
+                Sube el PDF o la foto del presupuesto o tarifa del gremio, o pega el texto. La IA extrae cada partida con su precio de coste; tú eliges el margen de la empresa y lo aplicas a la base de precios, que es la que usa la IA para hacer los presupuestos.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Subcontrata</label>
+                <input
+                  list="subcontratas-nombres"
+                  value={importForm.subcontrata}
+                  onChange={(e) => {
+                    const sub = subcontractors.find(s => s.razonSocial === e.target.value);
+                    setImportForm(f => ({ ...f, subcontrata: e.target.value, gremio: sub ? sub.gremio : f.gremio }));
+                  }}
+                  placeholder="La IA la detecta si se deja vacío"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+                <datalist id="subcontratas-nombres">
+                  {subcontractors.map(sub => <option key={sub.id} value={sub.razonSocial} />)}
+                </datalist>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Gremio</label>
+                <input
+                  value={importForm.gremio}
+                  onChange={(e) => setImportForm(f => ({ ...f, gremio: e.target.value }))}
+                  placeholder="Fontanería, Electricidad..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Margen de beneficio (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="300"
+                  value={importForm.margen}
+                  onChange={(e) => setImportForm(f => ({ ...f, margen: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-amber-400 font-bold focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">PDF o imágenes</label>
+                <label className="w-full flex items-center gap-2 bg-slate-800 border border-dashed border-slate-600 hover:border-indigo-500 rounded-xl px-3 py-1.5 text-xs text-slate-300 cursor-pointer">
+                  <Upload className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{importFiles.length ? importFiles.map(f => f.name).join(', ') : 'Elegir archivos'}</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="application/pdf,image/*"
+                    className="hidden"
+                    onChange={(e) => setImportFiles(Array.from(e.target.files || []))}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <textarea
+              rows={3}
+              value={importForm.texto}
+              onChange={(e) => setImportForm(f => ({ ...f, texto: e.target.value }))}
+              placeholder="O pega aquí el texto del presupuesto, un correo o una lista de precios (por ejemplo: Punto de agua multicapa - 65 €/ud)"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            />
+
+            {importError && (
+              <p className="text-xs text-rose-400 flex items-start gap-1.5">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{importError}</span>
+              </p>
+            )}
+
+            <div className="flex justify-end">
               <button
-                onClick={() => handleSimulateNewQuote(SIMULATED_NEW_QUOTES[0])}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                type="submit"
+                disabled={importing}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition flex items-center gap-2"
               >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Simular PDF Carpintería</span>
-              </button>
-              <button
-                onClick={() => handleSimulateNewQuote(SIMULATED_NEW_QUOTES[1])}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition flex items-center gap-1.5"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Simular PDF Fontanería</span>
+                {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                <span>{importing ? 'La IA está leyendo los precios...' : 'Leer precios con IA'}</span>
               </button>
             </div>
-          </div>
+          </form>
 
           {/* Comparator Matrix & Quotes Selector */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -668,7 +754,7 @@ export default function SubcontratasList() {
               {subcontratasPresupuestos.map((subPres) => (
                 <div
                   key={subPres.id}
-                  onClick={() => setSelectedSubPresId(subPres.id)}
+                  onClick={() => { setSelectedSubPresId(subPres.id); setGlobalMarginInput(subPres.margenDefecto ?? 25); }}
                   className={`p-4 rounded-2xl border transition cursor-pointer ${
                     selectedSubPresId === subPres.id
                       ? 'bg-slate-900 border-indigo-500 ring-2 ring-indigo-500/20'
@@ -702,13 +788,53 @@ export default function SubcontratasList() {
                       <p className="text-xs text-slate-400 font-mono mt-0.5">{selectedSubPres.archivoNombre}</p>
                     </div>
 
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleDeleteQuote(selectedSubPres.id)}
+                        title="Borrar presupuesto de gremio"
+                        className="p-2 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-xl border border-slate-700 transition"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleApplyToDatabase(selectedSubPres)}
+                        className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-xl text-xs font-black flex items-center gap-2 transition shadow-lg shadow-amber-500/20"
+                      >
+                        <Database className="w-4 h-4 stroke-[2.5]" />
+                        <span>Aplicar a la base de precios</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedSubPres.resumen && <p className="text-xs text-slate-300">{selectedSubPres.resumen}</p>}
+                  {(selectedSubPres.avisos || []).length > 0 && (
+                    <ul className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-1">
+                      {selectedSubPres.avisos.map((aviso, i) => (
+                        <li key={i} className="flex items-start gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{aviso}</span></li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {/* Margen de la empresa para todas las partidas */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <Sliders className="w-4 h-4 text-amber-400" />
+                    <span className="text-slate-300 font-semibold">Margen de beneficio de la empresa:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="300"
+                      value={globalMarginInput}
+                      onChange={(e) => setGlobalMarginInput(e.target.value)}
+                      className="w-16 bg-slate-800 border border-slate-700 rounded px-1.5 py-1 text-center text-amber-400 font-bold"
+                    />
+                    <span className="text-slate-400">%</span>
                     <button
-                      onClick={() => handleApplyToDatabase(selectedSubPres)}
-                      className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-xl text-xs font-black flex items-center gap-2 transition shadow-lg shadow-amber-500/20 shrink-0"
+                      onClick={() => applyMarginToAll(selectedSubPres.id)}
+                      className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 font-bold transition"
                     >
-                      <Database className="w-4 h-4 stroke-[2.5]" />
-                      <span>Aplicar a la Base de Precios</span>
+                      Poner a todas
                     </button>
+                    <span className="text-slate-500">También puedes cambiar el margen y el coste de cada partida.</span>
                   </div>
 
                   {/* Partidas Table */}
@@ -716,30 +842,70 @@ export default function SubcontratasList() {
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
                         <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 font-semibold text-[11px]">
+                          <th className="py-2.5 px-3 text-center">Aplicar</th>
                           <th className="py-2.5 px-3">Código</th>
                           <th className="py-2.5 px-3">Partida / Concepto</th>
-                          <th className="py-2.5 px-3 text-right">Coste Subcontrata</th>
+                          <th className="py-2.5 px-3 text-right">Coste actual</th>
+                          <th className="py-2.5 px-3 text-right">Coste gremio</th>
                           <th className="py-2.5 px-3 text-center">Margen (%)</th>
-                          <th className="py-2.5 px-3 text-right">PVP Presupuestos</th>
+                          <th className="py-2.5 px-3 text-right">PVP presupuestos</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60 font-mono">
-                        {(selectedSubPres.partidasDetectadas || []).map((partida) => {
-                          const currentMargin = customMargins[partida.codigo] !== undefined ? customMargins[partida.codigo] : partida.margenConfiguradoPct;
-                          const calculatedPvp = Number((partida.nuevoPrecioSubcontrata * (1 + currentMargin / 100)).toFixed(2));
+                        {(selectedSubPres.partidasDetectadas || []).map((partida, idx) => {
+                          const coste = Number(partida.nuevoPrecioSubcontrata) || 0;
+                          const margen = Number(partida.margenConfiguradoPct) || 0;
+                          const calculatedPvp = Number((coste * (1 + margen / 100)).toFixed(2));
+                          const anterior = partida.precioAnterior;
+                          const variacion = anterior ? ((coste - anterior) / anterior) * 100 : null;
+                          const included = partida.incluir !== false;
 
                           return (
-                            <tr key={partida.codigo} className="hover:bg-slate-800/30">
-                              <td className="py-2.5 px-3 font-bold text-amber-400">{partida.codigo}</td>
-                              <td className="py-2.5 px-3 font-sans font-medium text-white max-w-xs">{partida.concepto}</td>
-                              <td className="py-2.5 px-3 text-right font-bold text-white">{partida.nuevoPrecioSubcontrata.toFixed(2)} €</td>
+                            <tr key={`${partida.codigo}-${idx}`} className={`hover:bg-slate-800/30 ${included ? '' : 'opacity-40'}`}>
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={included}
+                                  onChange={(e) => updateQuotePartida(selectedSubPres.id, idx, { incluir: e.target.checked })}
+                                  className="accent-amber-500"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-amber-400">
+                                {partida.codigo || '—'}
+                                <span className={`block text-[9px] font-sans font-bold uppercase ${anterior !== null && anterior !== undefined ? 'text-sky-400' : 'text-emerald-400'}`}>
+                                  {anterior !== null && anterior !== undefined ? 'Actualiza' : 'Nueva'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-sans font-medium text-white max-w-xs">
+                                {partida.concepto}
+                                <span className="text-slate-500 font-normal"> / {partida.unidad || 'ud'}</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-slate-400">
+                                {anterior !== null && anterior !== undefined ? `${Number(anterior).toFixed(2)} €` : '—'}
+                                {variacion !== null && Number.isFinite(variacion) && (
+                                  <span className={`block text-[10px] ${variacion > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                    {variacion > 0 ? '+' : ''}{variacion.toFixed(1)}%
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={partida.nuevoPrecioSubcontrata}
+                                  onChange={(e) => updateQuotePartida(selectedSubPres.id, idx, { nuevoPrecioSubcontrata: Number(e.target.value) })}
+                                  className="w-20 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-right text-xs text-white font-bold"
+                                />
+                                <span className="text-slate-400 ml-1">€</span>
+                              </td>
                               <td className="py-2.5 px-3 text-center">
                                 <input
                                   type="number"
-                                  min="5"
-                                  max="80"
-                                  value={currentMargin}
-                                  onChange={(e) => setCustomMargins({ ...customMargins, [partida.codigo]: Number(e.target.value) })}
+                                  min="0"
+                                  max="300"
+                                  value={partida.margenConfiguradoPct}
+                                  onChange={(e) => updateQuotePartida(selectedSubPres.id, idx, { margenConfiguradoPct: Number(e.target.value) })}
                                   className="w-14 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-center text-xs text-amber-400 font-bold"
                                 />
                                 <span className="text-slate-400 ml-1">%</span>
@@ -755,7 +921,7 @@ export default function SubcontratasList() {
                 </div>
               ) : (
                 <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl text-center text-slate-500">
-                  Selecciona un presupuesto a la izquierda para inspeccionar sus partidas.
+                  Importa el presupuesto de un gremio o selecciona uno a la izquierda para revisar sus partidas.
                 </div>
               )}
             </div>

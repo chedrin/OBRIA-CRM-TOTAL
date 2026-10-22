@@ -47,6 +47,7 @@ import {
   extractTextFromPdfBlob
 } from '../services/referenceBudgetService';
 import { analyzeReferenceBudgetViaBackend, deleteAiInstruction, setClientAiKeys } from '../services/backendAiService';
+import { findPriceBaseMatch, nextPriceCode } from '../services/priceBaseService';
 
 const AppContext = createContext();
 
@@ -1925,12 +1926,19 @@ export function AppProvider({ children }) {
   };
 
   const applySubcontrataPresupuesto = (subPresupuestoId, partidasToUpdate, globalMargin = null) => {
+    const subPres = subcontratasPresupuestos.find(sp => sp.id === subPresupuestoId) || {};
+    const fecha = new Date().toISOString().split('T')[0];
+    const fuente = { subcontrata: subPres.subcontrata || '', archivo: subPres.archivoNombre || '', presupuestoId: subPresupuestoId, fecha };
+    const items = partidasToUpdate.filter(item => item.incluir !== false && Number(item.nuevoPrecioSubcontrata) > 0);
+
     setBasePrecios(prevBase => {
       const updated = [...prevBase];
-      partidasToUpdate.forEach(item => {
-        const idx = updated.findIndex(bp => bp.codigo === item.codigo);
-        const marginPct = globalMargin !== null ? globalMargin : item.margenConfiguradoPct;
-        const nuevoCoste = item.nuevoPrecioSubcontrata;
+      items.forEach(item => {
+        const idx = item.baseId
+          ? updated.findIndex(bp => bp.id === item.baseId)
+          : findPriceBaseMatch(updated, item);
+        const marginPct = Number(globalMargin !== null ? globalMargin : item.margenConfiguradoPct) || 0;
+        const nuevoCoste = Number(item.nuevoPrecioSubcontrata);
         const nuevoPvp = Number((nuevoCoste * (1 + marginPct / 100)).toFixed(2));
 
         if (idx >= 0) {
@@ -1938,19 +1946,22 @@ export function AppProvider({ children }) {
             ...updated[idx],
             costeSubcontrata: nuevoCoste,
             margenPct: marginPct,
-            precioVenta: nuevoPvp
+            precioVenta: nuevoPvp,
+            fuente
           };
         } else {
+          const gremio = item.gremio || subPres.gremio || 'Subcontratas';
           updated.push({
             id: `bp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-            codigo: item.codigo,
-            capitulo: item.capitulo || 'Subcontratas',
-            gremio: item.gremio || 'Instalaciones',
+            codigo: item.codigo || nextPriceCode(updated, gremio),
+            capitulo: item.capitulo || gremio,
+            gremio,
             concepto: item.concepto,
             unidad: item.unidad || 'ud',
             costeSubcontrata: nuevoCoste,
             margenPct: marginPct,
-            precioVenta: nuevoPvp
+            precioVenta: nuevoPvp,
+            fuente
           });
         }
       });
@@ -1959,12 +1970,12 @@ export function AppProvider({ children }) {
 
     setSubcontratasPresupuestos(prev => prev.map(sp => {
       if (sp.id === subPresupuestoId) {
-        return { ...sp, estado: 'aplicado' };
+        return { ...sp, estado: 'aplicado', aplicadoEl: fecha };
       }
       return sp;
     }));
 
-    showNotification(`¡Base de Precios actualizada con éxito! Precios de coste y PVP actualizados con el margen comercial.`);
+    showNotification(`Base de precios actualizada: ${items.length} partida(s) aplicadas con el margen de la empresa. La IA las usará en los próximos presupuestos.`);
   };
 
   const processMensajeInbox = (mensajeId, obraId, accionTipo, datosExtra) => {
