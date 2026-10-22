@@ -304,6 +304,11 @@ function fileToPart(file) {
   };
 }
 
+// Registra los tokens de cada llamada; "caché" es la parte del prompt que el proveedor cobra con descuento.
+function logAiUsage(provider, model, { input = 0, cached = 0, output = 0 } = {}) {
+  console.log(`[IA uso] ${provider} ${model || ""}: entrada ${input} (caché ${cached}), salida ${output}`);
+}
+
 async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json" }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!effectiveKey) {
@@ -352,6 +357,8 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
             .map(p => p.text)
             .join("");
           if (rawText) {
+            const u = data.usageMetadata || {};
+            logAiUsage("google", targetModel, { input: u.promptTokenCount, cached: u.cachedContentTokenCount || 0, output: u.candidatesTokenCount });
             if (preferredGone) replaceSavedGeminiModel(preferredModel, targetModel);
             return rawText;
           }
@@ -495,6 +502,7 @@ async function callOpenAiProvider({ apiKey, model, messages, temperature = 0.15,
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw aiError("OpenAI devolvió una respuesta vacía.");
+    logAiUsage("openai", data.model, { input: data.usage?.prompt_tokens, cached: data.usage?.prompt_tokens_details?.cached_tokens || 0, output: data.usage?.completion_tokens });
     return content;
   } catch (err) {
     console.error("[OpenAI Provider Exception]", err);
@@ -517,7 +525,9 @@ async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, 
       },
       body: JSON.stringify({
         model: model || "claude-sonnet-5-5",
-        system: systemPrompt,
+        // La instrucción del sistema (pautas, referencias y memoria) se guarda en la caché de Anthropic
+        // y en las llamadas siguientes se cobra a una fracción del precio.
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent || userPrompt }],
         max_tokens: maxTokens,
         temperature
@@ -534,6 +544,12 @@ async function callAnthropicProvider({ apiKey, model, systemPrompt, userPrompt, 
     const data = await response.json();
     const textBlock = data.content?.find(b => b.type === "text")?.text || "";
     if (!textBlock) throw aiError("Anthropic devolvió una respuesta vacía.");
+    const u = data.usage || {};
+    logAiUsage("anthropic", data.model, {
+      input: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0),
+      cached: u.cache_read_input_tokens || 0,
+      output: u.output_tokens
+    });
     return textBlock;
   } catch (err) {
     console.error("[Anthropic Provider Exception]", err);
@@ -1137,7 +1153,8 @@ async function handleRequest(req, res) {
           }
         } catch {}
 
-        const refBudgetsText = buildReferenceBudgetsText(refBudgets, { max: 5, chars: 2500 });
+        // Los presupuestos ya analizados están resumidos en la memoria de la IA: solo se envía el texto de los pendientes.
+        const refBudgetsText = buildReferenceBudgetsText((refBudgets || []).filter(r => r && !r.ai_reviewed_at), { max: 3, chars: 2500 });
 
         const memoryContext = await buildMemoryContext("texto");
 
@@ -1145,14 +1162,14 @@ async function handleRequest(req, res) {
 Eres un Ingeniero Técnico de Edificación y Jefe de Obra experto de "ObraMaster".
 Tu objetivo es reescribir y mejorar borradores o descripciones de trabajos/partidas de presupuesto escritas por el usuario, convirtiéndolas al lenguaje profesional de un constructor o reformista, con la terminología técnica precisa del sector de la edificación (pliegos de condiciones, normativa CTE, saneado de soportes, medios auxiliares, imprimaciones, unidades normalizadas m2/ml/ud/pa, etc.).
 
-${refBudgetsText ? `PRESUPUESTOS Y EJEMPLOS DE REFERENCIA DE LA EMPRESA:\nUtiliza los siguientes ejemplos como referencia obligatoria de estilo, tono, formato y vocabulario técnico. Imita su forma de redactar:\n\n${refBudgetsText}\n` : ""}
-${memoryContext}
-
 Devuelve STRICTLY un JSON válido con esta estructura exacta:
 {
   "textoMejorado": "Texto completo reescrito en lenguaje técnico profesional de construcción y reformas",
   "explicacionCambios": "Breve resumen ejecutivo de las mejoras técnicas y vocabulario introducido (1 frase)"
 }
+
+${refBudgetsText ? `PRESUPUESTOS Y EJEMPLOS DE REFERENCIA DE LA EMPRESA:\nUtiliza los siguientes ejemplos como referencia obligatoria de estilo, tono, formato y vocabulario técnico. Imita su forma de redactar:\n\n${refBudgetsText}\n` : ""}
+${memoryContext}
 `;
 
         const userPrompt = `
@@ -1416,7 +1433,8 @@ CÓMO TRABAJAS:
 4. Unidades normalizadas (m2, ml, ud, pa, m3, kg). Usa las mediciones dictadas; si falta alguna, estima con criterio y dilo en "observaciones_tecnicas".
 5. Precios: la BASE DE PRECIOS DE LA EMPRESA es la fuente principal y sale de presupuestos reales de sus gremios. Si una partida coincide (aunque se redacte distinto) con una de la base, usa su coste como "costeUnitario" y su margen como "margenPct", ajustando solo si cambia la unidad o el alcance, y pon su código en "codigoBase". Si una partida no está en la base, estima un coste realista de mercado en España, deja "codigoBase" vacío y cítala en "observaciones_tecnicas" como precio estimado. "precioVenta" = costeUnitario × (1 + margenPct/100).
 6. IMITA el estilo, la estructura de capítulos, la forma de numerar y el vocabulario de los presupuestos de referencia de la empresa y obedece la memoria de la IA (instrucciones del director, aprendizajes y correcciones). Tienen prioridad sobre estas pautas generales.
-${memoryContext}
+7. "margenPct" por defecto es el margen objetivo indicado en los datos de obra.
+
 Devuelve SOLO un JSON válido con esta estructura:
 {
   "resumen_obra": "Resumen técnico del alcance (2-4 frases)",
@@ -1433,7 +1451,7 @@ Devuelve SOLO un JSON válido con esta estructura:
           "unidad": "m2",
           "cantidad": 14.5,
           "costeUnitario": 12.5,
-          "margenPct": ${margenGlobal},
+          "margenPct": 28,
           "precioVenta": 16.0,
           "codigoBase": "DEM-01"
         }
@@ -1441,6 +1459,9 @@ Devuelve SOLO un JSON válido con esta estructura:
     }
   ]
 }
+
+${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y estructura):\n${refBudgetsText}\n` : ""}
+${memoryContext}
 `;
 
         const userPrompt = `
@@ -1455,7 +1476,6 @@ ${medidasNotas ? `\nMediciones y anotaciones:\n${medidasNotas}` : ""}
 """
 ${fotos.length ? `\nSe adjuntan ${fotos.length} foto(s) del estado actual.\n` : ""}
 ${catalogText ? `BASE DE PRECIOS DE LA EMPRESA (coste de gremio, margen de la empresa y PVP):\n${catalogText}\n` : ""}
-${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y estructura):\n${refBudgetsText}\n` : ""}
 `;
 
         const effectiveConfig = {
