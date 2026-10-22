@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_GEMINI_MODEL, checkAndAutoSelectBestGeminiModel } from '../../services/geminiService';
-import { checkBackendStatus, getBackendAiSettings, updateBackendAiSettings, testBackendAiConnection } from '../../services/backendAiService';
+import { checkBackendStatus, getBackendAiSettings, updateBackendAiSettings, testBackendAiConnection, getAiUsage, resetAiUsage } from '../../services/backendAiService';
 import { supabase } from '../../services/supabaseClient';
 import {
   Sparkles,
@@ -21,6 +21,14 @@ import {
   Cpu
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+
+// 12345 -> "12,3 mil"; 2500000 -> "2,5 M"
+const formatTokens = (n) => {
+  const v = Number(n) || 0;
+  if (v >= 1e6) return `${(v / 1e6).toLocaleString('es-ES', { maximumFractionDigits: 1 })} M`;
+  if (v >= 1e3) return `${(v / 1e3).toLocaleString('es-ES', { maximumFractionDigits: 1 })} mil`;
+  return String(v);
+};
 
 const PROVIDERS = [
   {
@@ -145,6 +153,26 @@ export default function MotorIaConfig() {
       setSelectedProvider(currentActive);
       setApiKeys(prev => ({ ...prev, ...storedAiKeys() }));
       if (appAi.modelName || appAi.model) setModelName(appAi.modelName || appAi.model);
+    }
+  };
+
+  // Contador aproximado de tokens por proveedor (lo suma el servidor con cada respuesta de la IA).
+  const [usage, setUsage] = useState({});
+  const [usagePersistent, setUsagePersistent] = useState(true);
+  const loadUsage = () => {
+    getAiUsage()
+      .then(data => { setUsage(data.usage || {}); setUsagePersistent(data.persistent !== false); })
+      .catch(err => console.warn(err.message));
+  };
+  useEffect(() => { loadUsage(); }, []);
+
+  const handleResetUsage = async (providerId, providerName) => {
+    if (!window.confirm(`¿Poner a cero el contador de tokens de ${providerName}?`)) return;
+    try {
+      const data = await resetAiUsage(providerId);
+      setUsage(prev => ({ ...prev, [providerId]: data.usage }));
+    } catch (err) {
+      showNotification(err.message, 'error');
     }
   };
 
@@ -505,6 +533,11 @@ export default function MotorIaConfig() {
         {/* Selector de Proveedor */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-300 block">Proveedores IA Soportados:</label>
+          {!usagePersistent && (
+            <p className="text-[10px] text-amber-400">
+              El contador de tokens se borra en cada despliegue: ejecuta supabase_schema_ai_usage.sql en Supabase &gt; SQL Editor para guardarlo.
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             {PROVIDERS.map((p) => {
               const isSelected = selectedProvider === p.id;
@@ -537,6 +570,28 @@ export default function MotorIaConfig() {
                         {hasKey ? '🔑 Clave Guardada' : '⚠️ Sin Clave'}
                       </span>
                     </div>
+                    {(() => {
+                      const u = usage[p.id];
+                      const total = (u?.input_tokens || 0) + (u?.output_tokens || 0);
+                      return (
+                        <div
+                          className="flex items-center justify-between mt-1 text-[10px] text-slate-400"
+                          title={u ? `Aproximado, desde ${new Date(u.since).toLocaleDateString('es-ES')}\nLlamadas: ${u.calls}\nEntrada: ${(u.input_tokens || 0).toLocaleString('es-ES')} (de caché: ${(u.cached_tokens || 0).toLocaleString('es-ES')})\nSalida: ${(u.output_tokens || 0).toLocaleString('es-ES')}` : 'Sin uso registrado'}
+                        >
+                          <span>≈ {formatTokens(total)} tokens · {u?.calls || 0} llamadas</span>
+                          {u?.calls > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleResetUsage(p.id, p.name); }}
+                              className="text-slate-500 hover:text-amber-400 transition"
+                              title="Poner a cero"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {!isActive && (

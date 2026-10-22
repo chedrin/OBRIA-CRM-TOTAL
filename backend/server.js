@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAuthRoutes, enforceApiAuth } from "./authRoutes.js";
 import { handleMemoryRoutes, buildMemoryContext, saveReferenceLearning } from "./aiMemory.js";
+import { handleUsageRoutes, recordAiUsage } from "./aiUsage.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -305,8 +306,10 @@ function fileToPart(file) {
 }
 
 // Registra los tokens de cada llamada; "caché" es la parte del prompt que el proveedor cobra con descuento.
+// También se suma al contador de Ajustes > Motor IA.
 function logAiUsage(provider, model, { input = 0, cached = 0, output = 0 } = {}) {
   console.log(`[IA uso] ${provider} ${model || ""}: entrada ${input} (caché ${cached}), salida ${output}`);
+  recordAiUsage(provider, { input, cached, output });
 }
 
 async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json" }) {
@@ -589,6 +592,7 @@ async function callOpenRouterProvider({ apiKey, model, messages, temperature = 0
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw aiError("OpenRouter devolvió una respuesta vacía.");
+    logAiUsage("openrouter", data.model, { input: data.usage?.prompt_tokens, cached: data.usage?.prompt_tokens_details?.cached_tokens || 0, output: data.usage?.completion_tokens });
     return content;
   } catch (err) {
     console.error("[OpenRouter Provider Exception]", err);
@@ -1024,6 +1028,9 @@ async function handleRequest(req, res) {
 
   // Memoria de la IA (instrucciones permanentes y correcciones)
   if (await handleMemoryRoutes(req, res, pathname)) return;
+
+  // Contador de tokens por proveedor (Ajustes > Motor IA)
+  if (await handleUsageRoutes(req, res, pathname)) return;
 
   // Endpoints GET
   if (req.method === "GET") {
