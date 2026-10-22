@@ -20,3 +20,4 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 dist/
+backend/ai_usage.json

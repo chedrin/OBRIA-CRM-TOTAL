@@ -382,3 +382,21 @@ export function recordBudgetEditDebounced(key, payload) {
   }, 2500);
   pendingBudgetEdits.set(key, { first, timer });
 }
+
+/**
+ * Tokens aproximados usados por cada proveedor (los que declara cada respuesta de la IA).
+ * Devuelve { usage: { google: { calls, input_tokens, cached_tokens, output_tokens, since } }, persistent }.
+ */
+export async function getAiUsage() {
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/usage`);
+  if (!res.ok) throw new Error(`No se pudo leer el uso de tokens (${res.status})`);
+  return res.json();
+}
+
+/** Pone a cero el contador de un proveedor. */
+export async function resetAiUsage(provider) {
+  const res = await fetch(`${BACKEND_BASE_URL}/ai/usage/${encodeURIComponent(provider)}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `No se pudo poner a cero (${res.status})`);
+  return data;
+}
