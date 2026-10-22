@@ -259,7 +259,7 @@ export default function Dashboard() {
 
                     <div className="flex items-center gap-2 text-slate-400">
                       <Calendar className="w-3.5 h-3.5" />
-                      <span>Entrega: {obra.fechaFinEstimada}</span>
+                      <span>Entrega: {obra.fechaEntregaCliente || obra.fechaFinEstimada}</span>
                     </div>
                   </div>
                 </div>

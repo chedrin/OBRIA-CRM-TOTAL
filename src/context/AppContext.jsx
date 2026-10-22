@@ -267,6 +267,18 @@ export function AppProvider({ children }) {
       setTimeout(() => setActiveRealtimeAlert(null), 5000);
     });
 
+    const unsubEstimate = realtimeSync.subscribe('WORKER_ESTIMATE_UPDATED', ({ obraId, faseId, estimacion }) => {
+      setObras(prev => prev.map(o => o.id === obraId
+        ? { ...o, fases: (o.fases || []).map(f => f.id === faseId ? { ...f, estimacionObrero: estimacion } : f) }
+        : o));
+      setActiveRealtimeAlert({
+        type: 'progress',
+        msg: `⏱️ [Realtime] ${estimacion.autor || 'Operario'} estima ${estimacion.diasRestantes} días para terminar una etapa`,
+        timestamp: Date.now()
+      });
+      setTimeout(() => setActiveRealtimeAlert(null), 5000);
+    });
+
     const unsubTask = realtimeSync.subscribe('ADMIN_TASK_DISPATCHED', (payload) => {
       const { obraId, task } = payload;
       setObras(prev => prev.map(o => o.id === obraId ? { ...o, fases: [...(o.fases || []), task] } : o));
@@ -310,6 +322,7 @@ export function AppProvider({ children }) {
     return () => {
       unsubProgress();
       unsubEvidence();
+      unsubEstimate();
       unsubTask();
       unsubAlert();
       unsubNetwork();
@@ -996,6 +1009,21 @@ export function AppProvider({ children }) {
     });
 
     addAuditLog('EVIDENCIA_FOTOGRAFICA_OBRERO', `Obra: ${obraId} - Autor: ${newEntry.autor}`);
+  };
+
+  // Indicación del operario: días que le faltan para terminar una etapa. Alimenta el fin previsto calculado.
+  const broadcastWorkerEstimate = (obraId, faseId, diasRestantes, nota = '', autor = '') => {
+    const estimacion = {
+      diasRestantes: Math.max(0, Math.round(Number(diasRestantes) || 0)),
+      nota: (nota || '').trim(),
+      autor: autor || currentUser?.fullName || 'Operario',
+      fecha: new Date().toISOString().split('T')[0]
+    };
+    setObras(prev => prev.map(o => o.id === obraId
+      ? { ...o, fases: (o.fases || []).map(f => f.id === faseId ? { ...f, estimacionObrero: estimacion } : f) }
+      : o));
+    realtimeSync.broadcast('WORKER_ESTIMATE_UPDATED', { obraId, faseId, estimacion });
+    addAuditLog('ESTIMACION_PLAZO_OBRERO', `Obra: ${obraId} - Fase: ${faseId} - ${estimacion.diasRestantes} días (${estimacion.autor})`);
   };
 
   const broadcastAdminTask = (obraId, taskData) => {
@@ -2104,6 +2132,7 @@ export function AppProvider({ children }) {
       setActiveRealtimeAlert,
       broadcastWorkerProgress,
       broadcastWorkerEvidence,
+      broadcastWorkerEstimate,
       broadcastAdminTask,
       broadcastAdminAlert,
       avisosTecnicos,
