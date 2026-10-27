@@ -74,10 +74,12 @@ function Acciones({ pres, size = 'full', handlers, nowrap = false }) {
         <Send className="w-3.5 h-3.5" />
         {!iconOnly && <span>Enviar</span>}
       </button>
-      <button onClick={() => handlers.onFacturar(pres)} title="Pasar a factura" className={`${base} bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20`}>
-        <Receipt className="w-3.5 h-3.5" />
-        {!iconOnly && <span>Facturar</span>}
-      </button>
+      {handlers.onFacturar && (
+        <button onClick={() => handlers.onFacturar(pres)} title="Pasar a factura" className={`${base} bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20`}>
+          <Receipt className="w-3.5 h-3.5" />
+          {!iconOnly && <span>Facturar</span>}
+        </button>
+      )}
     </div>
   );
 }

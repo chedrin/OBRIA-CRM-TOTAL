@@ -35,6 +35,7 @@ export default function PresupuestosList() {
     updatePresupuesto,
     addObra,
     convertPresupuestoToFactura,
+    facturacionActivada,
     setPdfModalData,
     setActiveTab,
     showNotification
@@ -68,9 +69,10 @@ export default function PresupuestosList() {
     setConvertTipo('Certificación 1 (Anticipo 40% Inicio Obra)');
   };
 
-  const handleConfirmConvert = () => {
+  const handleConfirmConvert = async () => {
     if (!showConvertModal) return;
-    convertPresupuestoToFactura(showConvertModal.id, convertTipo, Number(convertPorcentaje));
+    const factura = await convertPresupuestoToFactura(showConvertModal.id, convertTipo, Number(convertPorcentaje));
+    if (!factura) return;
     setShowConvertModal(null);
     setActiveTab('facturas');
   };
@@ -166,7 +168,8 @@ export default function PresupuestosList() {
           },
           onPdf: (pres) => setPdfModalData({ type: 'presupuesto', data: pres }),
           onEnviar: (pres) => setQuoteToSend(pres),
-          onFacturar: (pres) => handleOpenConvertModal(pres)
+          // Sin la facturación activada no se ofrece facturar.
+          onFacturar: facturacionActivada ? (pres) => handleOpenConvertModal(pres) : null
         }}
       />}
 

@@ -28,7 +28,7 @@ function getInitialRoute() {
 }
 
 function MainLayout() {
-  const { activeTab = 'dashboard', setActiveTab = () => {}, notification, currentUser, logout = () => {}, activeRealtimeAlert, authReady = true } = useApp() || {};
+  const { activeTab = 'dashboard', setActiveTab = () => {}, notification, currentUser, logout = () => {}, activeRealtimeAlert, authReady = true, facturacionActivada = false } = useApp() || {};
   const [route, setRoute] = useState(getInitialRoute);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -218,7 +218,7 @@ function MainLayout() {
           {activeTab === 'obras' && <ObrasList />}
           {activeTab === 'inbox' && <AudioEmailInbox />}
           {activeTab === 'presupuestos' && <PresupuestosList />}
-          {activeTab === 'facturas' && <FacturasList />}
+          {activeTab === 'facturas' && facturacionActivada && <FacturasList />}
           {activeTab === 'gestoria' && <GestoriaTrimestres />}
           {activeTab === 'obreros' && <ObrerosList />}
           {activeTab === 'subcontratas' && <SubcontratasList />}

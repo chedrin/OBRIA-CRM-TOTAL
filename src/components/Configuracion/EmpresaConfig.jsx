@@ -26,10 +26,11 @@ import PerfilDirectorConfig from './PerfilDirectorConfig';
 import MotorIaConfig from './MotorIaConfig';
 import AiMemoryConfig from './AiMemoryConfig';
 import PresupuestosModeloConfig from './PresupuestosModeloConfig';
+import FacturacionConfig from './FacturacionConfig';
 import AparienciaConfig from './AparienciaConfig';
 
 export default function EmpresaConfig() {
-  const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification } = useApp();
+  const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification, facturacionActivada } = useApp();
 
   const [form, setForm] = useState({ ...empresaConfig });
   const [activeSubTab, setActiveSubTab] = useState('perfil_director'); // perfil_director, motor_ia, presupuestos_modelo, usuarios, verifactu, ticketbai, sii_facturae, audit
@@ -79,7 +80,7 @@ export default function EmpresaConfig() {
           { id: 'presupuestos_modelo', label: 'Presupuestos Modelo (PDFs IA)', icon: FileText, badge: `${activeRefsCount} Activos` },
           { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
           { id: 'apariencia', label: 'Apariencia y Vistas', icon: Palette, badge: 'Nuevo' },
-          { id: 'verifactu', label: 'VeriFactu (AEAT Ley 11/2021)', icon: ShieldCheck, badge: 'Obligatorio' },
+          { id: 'verifactu', label: 'Facturación (VeriFactu)', icon: ShieldCheck, badge: facturacionActivada ? 'Activada' : 'Desactivada' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
           { id: 'sii_facturae', label: 'SII & Facturae B2B', icon: FileSpreadsheet },
           { id: 'audit', label: 'Registro de Auditoría e Inalterabilidad', icon: History, count: auditLogs?.length }
@@ -272,73 +273,8 @@ export default function EmpresaConfig() {
         </form>
       )}
 
-      {/* TAB 2: VERIFACTU (AEAT LEY 11/2021) */}
-      {activeSubTab === 'verifactu' && (
-        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                <span>Módulo de Facturación Garante VeriFactu (AEAT)</span>
-              </h3>
-              <p className="text-xs text-slate-400">Reglamento Antifraude de la Ley 11/2021 y RD 1007/2023</p>
-            </div>
-            <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-bold">
-              ● VeriFactu Activo
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-
-            {/* Box 1: Requisitos de Encadenamiento */}
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
-              <span className="font-bold text-amber-400 uppercase tracking-wider block flex items-center gap-2">
-                <Lock className="w-4 h-4" />
-                <span>1. Encadenamiento y Registro Inalterable</span>
-              </span>
-              <p className="text-slate-300">
-                Cada factura genera un **hash SHA-256** derivado del número de factura, NIF expedidor, fecha y total, encadenado matemáticamente con la huella de la factura anterior.
-              </p>
-              <div className="p-2.5 bg-slate-900 rounded-lg font-mono text-[11px] text-emerald-400 border border-slate-800 break-all">
-                Hash Enlace: sha256(FAC2026024 + B87654321 + 2026-10-16 + 10720.00 + [HashAnterior])
-              </div>
-            </div>
-
-            {/* Box 2: Huella y QR en Facturas */}
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
-              <span className="font-bold text-amber-400 uppercase tracking-wider block flex items-center gap-2">
-                <QrCode className="w-4 h-4" />
-                <span>2. Código QR y Cotejo Público AEAT</span>
-              </span>
-              <p className="text-slate-300">
-                Todas las facturas impresas o en PDF incorporan obligatoriamente el código QR oficial conforme al formato especificado por la Agencia Tributaria.
-              </p>
-              <div className="flex items-center gap-3 bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                <div className="theme-native w-12 h-12 bg-white rounded p-1 flex items-center justify-center shrink-0">
-                  <QrCode className="w-10 h-10 text-slate-950" />
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  URL Cotejo AEAT: <span className="text-amber-400">https://www2.agenciatributaria.gob.es/vf/fac?...</span>
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Declaración Responsable Software Garante */}
-          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950/20 p-4 rounded-xl border border-amber-500/30 text-xs space-y-2">
-            <span className="font-bold text-amber-400 uppercase tracking-wider block">Declaración Responsable de Software Garante</span>
-            <p className="text-slate-300">
-              ObraMaster garantiza la conservación, legibilidad, trazabilidad, inalterabilidad e integridad de los registros sin interpolaciones ni eliminaciones físicas.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-slate-400 font-mono">
-              <div>Software: <strong className="text-white">{form.softwareNombre}</strong></div>
-              <div>Versión: <strong className="text-white">{form.softwareVersion}</strong></div>
-              <div>Licencia Garante: <strong className="text-amber-400">{form.softwareLicencia}</strong></div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* TAB 2: FACTURACIÓN LEGAL (VERIFACTU) */}
+      {activeSubTab === 'verifactu' && <FacturacionConfig />}
 
       {/* TAB 3: TICKETBAI */}
       {activeSubTab === 'ticketbai' && (

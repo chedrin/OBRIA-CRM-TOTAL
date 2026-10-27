@@ -1,16 +1,43 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Printer, Download, FileText, CheckCircle2, Building2, ShieldCheck, QrCode, Lock } from 'lucide-react';
+import { X, Printer, Download, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
+import QRCode from 'qrcode';
+
+const eur = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function PdfModal() {
-  const { pdfModalData, setPdfModalData, empresaConfig, showNotification } = useApp();
+  const { pdfModalData, setPdfModalData, empresaConfig, facturacion, showNotification } = useApp();
   const printRef = useRef(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  // QR tributario (solo facturas emitidas con registro VeriFactu): nivel de corrección M.
+  const qrUrl = pdfModalData?.data?.qrUrl || '';
+  useEffect(() => {
+    if (!qrUrl) {
+      setQrDataUrl('');
+      return undefined;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(qrUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 })
+      .then((url) => { if (!cancelled) setQrDataUrl(url); })
+      .catch(() => { if (!cancelled) setQrDataUrl(''); });
+    return () => { cancelled = true; };
+  }, [qrUrl]);
 
   if (!pdfModalData) return null;
 
   const { type, data } = pdfModalData; // type: 'presupuesto' | 'factura'
   const isFactura = type === 'factura';
+  const esRectificativa = isFactura && data.tipoAeat && data.tipoAeat !== 'F1';
+  const tituloFactura = esRectificativa ? 'FACTURA RECTIFICATIVA' : 'FACTURA';
+  // En una factura legal el emisor es siempre la empresa registrada en Ajustes > Facturación.
+  const empresaLegal = isFactura && data.legal ? facturacion?.empresa : null;
+  const emisorNombre = empresaLegal?.razonSocial || empresaConfig?.razonSocial || '';
+  const emisorNif = empresaLegal?.nif || empresaConfig?.cifNif || '';
+  const emisorDireccion = empresaLegal?.domicilio
+    || [empresaConfig?.direccion, empresaConfig?.codigoPostal, empresaConfig?.localidad].filter(Boolean).join(' ');
+  const textoIsp = data?.isp ? (facturacion?.empresa?.textoIsp || 'Operación con inversión del sujeto pasivo (art. 84.Uno.2º.f Ley 37/1992 del IVA).') : '';
 
   const handlePrint = () => {
     window.print();
@@ -28,13 +55,21 @@ export default function PdfModal() {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(18);
       doc.setTextColor(30, 41, 59); // Slate-800
-      doc.text(isFactura ? 'FACTURA OFICIAL' : 'PRESUPUESTO DE OBRA', 20, 25);
+      doc.text(isFactura ? tituloFactura : 'PRESUPUESTO DE OBRA', 20, 25);
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 116, 139);
-      doc.text('CONSTRUCCIONES Y REFORMAS PRO S.L. - NIF: B-88776655', 20, 32);
-      doc.text('C/ Alcalá 120, Planta 2, 28009 Madrid · Tel: +34 912 345 678', 20, 37);
+      doc.text(`${emisorNombre} - NIF: ${emisorNif}`, 20, 32);
+      doc.text(emisorDireccion, 20, 37);
+
+      // QR tributario arriba a la derecha (unos 35 mm), con sus leyendas.
+      if (isFactura && qrDataUrl) {
+        doc.setFontSize(7);
+        doc.text('QR tributario:', 160, 9);
+        doc.addImage(qrDataUrl, 'PNG', 158, 10, 32, 32);
+        doc.text('VERI*FACTU', 174, 45, { align: 'center' });
+      }
 
       // Separator line
       doc.setDrawColor(226, 232, 240);
@@ -115,9 +150,16 @@ export default function PdfModal() {
       doc.text(`${Number(data.baseImponible || 0).toFixed(2)} €`, 172, y);
       y += 6;
 
-      doc.text(`IVA (${data.tipoIvaPct || 10}%):`, 122, y);
+      doc.text(`IVA (${data.tipoIvaPct ?? 10}%):`, 122, y);
       doc.text(`${Number(data.cuotaIva || 0).toFixed(2)} €`, 172, y);
-      y += 8;
+      y += 6;
+
+      if (data.cuotaRetencion) {
+        doc.text(`Retención IRPF (${data.retencionIrpfPct}%):`, 122, y);
+        doc.text(`-${Number(data.cuotaRetencion).toFixed(2)} €`, 172, y);
+        y += 6;
+      }
+      y += 2;
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
@@ -128,7 +170,9 @@ export default function PdfModal() {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(148, 163, 184);
-      doc.text('Inscrita en el Registro Mercantil de Madrid. Garantía de obra según Ley de Ordenación de la Edificación (LOE).', 20, 285);
+      if (textoIsp) doc.text(doc.splitTextToSize(textoIsp, 170), 20, 270);
+      if (esRectificativa) doc.text(doc.splitTextToSize(`Rectificativa (${data.tipoAeat}). Causa: ${data.rectificacionCausa || ''}`, 170), 20, 276);
+      doc.text('Garantía de obra según Ley de Ordenación de la Edificación (LOE).', 20, 285);
 
       doc.save(`${data.numero || 'documento'}.pdf`);
       showNotification(`Documento ${data.numero}.pdf descargado correctamente.`);
@@ -200,16 +244,16 @@ export default function PdfModal() {
                   )}
                   <div>
                     <h2 className="text-xl font-black tracking-tight text-slate-900 leading-tight">
-                      {empresaConfig?.nombreComercial || empresaConfig?.razonSocial || 'CONSTRUCCIONES OBRAMASTER SL'}
+                      {empresaConfig?.nombreComercial || emisorNombre || 'CONSTRUCCIONES OBRAMASTER SL'}
                     </h2>
-                    {empresaConfig?.nombreComercial && empresaConfig?.razonSocial !== empresaConfig?.nombreComercial && (
-                      <span className="text-[11px] text-slate-500 font-semibold block">{empresaConfig.razonSocial}</span>
+                    {empresaConfig?.nombreComercial && emisorNombre !== empresaConfig?.nombreComercial && (
+                      <span className="text-[11px] text-slate-500 font-semibold block">{emisorNombre}</span>
                     )}
                   </div>
                 </div>
                 <p className="text-xs text-slate-500 leading-tight">
-                  NIF: {empresaConfig?.cifNif || 'B-88776655'}<br />
-                  {empresaConfig?.direccion || 'C/ Velázquez 48'}, {empresaConfig?.codigoPostal} {empresaConfig?.localidad}<br />
+                  NIF: {emisorNif}<br />
+                  {emisorDireccion}<br />
                   Tel: {empresaConfig?.telefono || '+34 912 345 678'} · {empresaConfig?.email || 'info@obramaster.es'}
                 </p>
               </div>
@@ -218,7 +262,7 @@ export default function PdfModal() {
                 <span className={`inline-block px-3 py-1 rounded text-xs font-black uppercase tracking-wider mb-1 ${
                   isFactura ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
                 }`}>
-                  {isFactura ? (empresaConfig?.modoVeriFactu ? 'FACTURA VERIFACTU' : 'FACTURA') : 'PRESUPUESTO'}
+                  {isFactura ? tituloFactura : 'PRESUPUESTO'}
                 </span>
                 <p className="font-mono font-bold text-slate-800 text-base">{data.numero}</p>
                 <p className="text-xs text-slate-500">Fecha: {isFactura ? data.fechaEmision : data.fecha}</p>
@@ -289,26 +333,24 @@ export default function PdfModal() {
               </table>
             </div>
 
-            {/* VeriFactu / TicketBAI Stamp Box (Conforme a Ley 11/2021) */}
-            {isFactura && (
+            {/* QR tributario VeriFactu: solo si la factura se emitió con registro real */}
+            {isFactura && qrUrl && (
               <div className="bg-slate-50 p-3 rounded-lg border border-slate-300 flex items-center justify-between gap-4 text-[11px] text-slate-600">
-                <div className="space-y-0.5">
-                  <span className="font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Factura Verificable en Sede Electrónica de la AEAT (VeriFactu)</span>
-                  </span>
-                  <p className="font-mono text-[9px] text-slate-500 break-all">
-                    Huella SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-                  </p>
-                  <p className="text-[10px] text-slate-500">
-                    Software garante: ObraMaster Engine v2.4.0 · Reg. Antifraude Ley 11/2021
-                  </p>
+                <div className="space-y-1 min-w-0">
+                  <p className="font-bold text-slate-900">Factura verificable en la sede electrónica de la AEAT</p>
+                  <p className="font-mono text-[9px] text-slate-500 break-all">Huella: {data.huella}</p>
+                  {esRectificativa && (
+                    <p className="text-[10px] text-slate-600">Rectificativa ({data.tipoAeat}). Causa: {data.rectificacionCausa}</p>
+                  )}
                 </div>
-                <div className="bg-white p-1 rounded border border-slate-300 shrink-0 text-center">
-                  <div className="w-12 h-12 bg-slate-900 text-white flex items-center justify-center font-bold text-[8px]">
-                    QR AEAT
-                  </div>
-                  <span className="text-[8px] font-bold text-slate-500 block mt-0.5">VERIFACTU</span>
+                <div className="shrink-0 text-center">
+                  <span className="text-[9px] text-slate-500 block">QR tributario:</span>
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt="QR tributario de la AEAT" className="w-[35mm] h-[35mm] max-w-[132px] max-h-[132px]" />
+                  ) : (
+                    <div className="w-24 h-24 bg-slate-100" />
+                  )}
+                  <span className="text-[10px] font-bold text-slate-700 block">VERI*FACTU</span>
                 </div>
               </div>
             )}
@@ -316,6 +358,7 @@ export default function PdfModal() {
             {/* Totals Breakdown */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4 border-t border-slate-200">
               <div className="text-[11px] text-slate-500 max-w-sm space-y-1">
+                {textoIsp && <p className="font-semibold text-slate-700">{textoIsp}</p>}
                 <p><strong>Garantía:</strong> 2 años en instalaciones y acabados según LOE.</p>
                 <p><strong>Cuenta Bancaria IBAN:</strong> {empresaConfig?.iban || 'ES91 2100 0418 45 0200051234'}</p>
                 {empresaConfig?.registroMercantil && (
@@ -329,9 +372,15 @@ export default function PdfModal() {
                   <span className="font-mono font-semibold">{Number(data.baseImponible || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
-                  <span>IVA ({data.tipoIvaPct || 10}%):</span>
-                  <span className="font-mono font-semibold">{Number(data.cuotaIva || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €</span>
+                  <span>IVA ({data.tipoIvaPct ?? 10}%):</span>
+                  <span className="font-mono font-semibold">{eur(data.cuotaIva)} €</span>
                 </div>
+                {Boolean(data.cuotaRetencion) && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Retención IRPF ({data.retencionIrpfPct}%):</span>
+                    <span className="font-mono font-semibold">-{eur(data.cuotaRetencion)} €</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-900 font-black text-sm pt-2 border-t border-slate-200">
                   <span>TOTAL A PAGAR:</span>
                   <span className="font-mono text-amber-600">
