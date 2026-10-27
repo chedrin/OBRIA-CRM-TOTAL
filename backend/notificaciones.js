@@ -33,6 +33,8 @@ import crypto from "node:crypto";
 import { getAdminClient, isSupabaseReady } from "./authRoutes.js";
 import { buildSupplierOrderEmail, normalizeItems } from "./supplierEmail.js";
 import { sendPushForNotification } from "./webPush.js";
+import { flattenPlan, findPartida, WHOLE_PHASE } from "../src/utils/avanceObra.js";
+import { contactName, generateWhatsAppAssignmentUrl, isWhatsAppCloudConfigured, sendWhatsAppCloud } from "./whatsapp.js";
 
 const MAX_JSON_BYTES = 256 * 1024;
 const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
@@ -55,18 +57,18 @@ const NEED_LABELS = {
   otro: "Otra incidencia"
 };
 
-const clip = (value, max = 500) => String(value ?? "").trim().slice(0, max);
+export const clip = (value, max = 500) => String(value ?? "").trim().slice(0, max);
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
 // ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
-function sendJson(res, status, body) {
+export function sendJson(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(body));
 }
 
-function httpError(status, message) {
+export function httpError(status, message) {
   return Object.assign(new Error(message), { status });
 }
 
@@ -88,7 +90,7 @@ function readBuffer(req, limit) {
   });
 }
 
-async function readJson(req) {
+export async function readJson(req) {
   const buffer = await readBuffer(req, MAX_JSON_BYTES);
   if (buffer.length === 0) return {};
   try {
@@ -99,7 +101,7 @@ async function readJson(req) {
 }
 
 /** Acepta JSON o multipart/form-data (fotos en campos foto / fotos). */
-async function readForm(req, parseMultipart) {
+export async function readForm(req, parseMultipart) {
   const contentType = String(req.headers["content-type"] || "");
   if (!contentType.includes("multipart/form-data")) return { fields: await readJson(req), photos: [] };
   const boundary = contentType.match(/boundary=([^;]+)/i)?.[1]?.trim();
@@ -116,7 +118,7 @@ function clientIp(req) {
 
 // Límite sencillo por IP para las rutas públicas del enlace.
 const hits = new Map();
-function rateLimited(req, max) {
+export function rateLimited(req, max) {
   const key = `${clientIp(req)}|${max}`;
   const now = Date.now();
   const entry = hits.get(key);
@@ -139,7 +141,7 @@ function publicBaseUrl(req) {
 // ---------------------------------------------------------------------------
 // Datos de la app guardados en app_records (obras, subcontratas, empresa)
 // ---------------------------------------------------------------------------
-async function getAppRecord(collection, id) {
+export async function getAppRecord(collection, id) {
   if (!id) return null;
   const { data, error } = await getAdminClient()
     .from("app_records")
@@ -151,10 +153,10 @@ async function getAppRecord(collection, id) {
   return data?.data || null;
 }
 
-const getObra = (id) => getAppRecord("obras", id);
+export const getObra = (id) => getAppRecord("obras", id);
 const getEmpresa = async () => (await getAppRecord("empresa_config", "main")) || {};
 
-function obraLabel(obra, fallback = "") {
+export function obraLabel(obra, fallback = "") {
   if (!obra) return fallback;
   return [obra.codigo, obra.titulo].filter(Boolean).join(" - ") || fallback;
 }
@@ -166,7 +168,7 @@ function obraLabel(obra, fallback = "") {
  * Crea un aviso. El panel de administración abierto lo recibe al instante por
  * Supabase Realtime (tabla notifications) y los dispositivos suscritos, por Web Push.
  */
-export async function createNotification({ category = "aviso", origin = "sistema", obraId = null, obraLabel: label = null, title, body = "", link = null, refTable = null, refId = null, recipientId = null }) {
+export async function createNotification({ category = "aviso", origin = "sistema", obraId = null, obraLabel: label = null, title, body = "", link = null, refTable = null, refId = null, recipientId = null, faseId = null, partidaId = null }) {
   const row = {
     category: NOTIFICATION_CATEGORIES.has(category) ? category : "aviso",
     origin,
@@ -179,6 +181,11 @@ export async function createNotification({ category = "aviso", origin = "sistema
     ref_id: refId,
     recipient_id: recipientId
   };
+  // Columnas de supabase_schema_avance_obra.sql: solo se envían si el aviso va ligado a una fase.
+  if (faseId !== null) {
+    row.fase_id = faseId;
+    row.partida_id = partidaId || "";
+  }
   const { data, error } = await getAdminClient().from("notifications").insert(row).select().single();
   if (error) {
     console.error("[avisos] No se pudo crear el aviso:", error.message);
@@ -198,7 +205,7 @@ function detectImageType(buffer) {
   return null;
 }
 
-async function uploadPhotos(photos, obraId) {
+export async function uploadPhotos(photos, obraId) {
   if (photos.length > MAX_PHOTOS) throw httpError(400, `Como máximo ${MAX_PHOTOS} fotos.`);
   const storage = getAdminClient().storage.from(PHOTO_BUCKET);
   const month = new Date().toISOString().slice(0, 7);
@@ -216,7 +223,7 @@ async function uploadPhotos(photos, obraId) {
   return paths;
 }
 
-async function signPhotos(paths) {
+export async function signPhotos(paths) {
   if (!Array.isArray(paths) || paths.length === 0) return [];
   const { data, error } = await getAdminClient().storage.from(PHOTO_BUCKET).createSignedUrls(paths, 60 * 60);
   if (error) return [];
@@ -226,7 +233,7 @@ async function signPhotos(paths) {
 // ---------------------------------------------------------------------------
 // Enlace mágico de subcontratas
 // ---------------------------------------------------------------------------
-async function findToken(rawToken) {
+export async function findToken(rawToken) {
   if (!TOKEN_PATTERN.test(rawToken)) return null;
   const { data, error } = await getAdminClient()
     .from("subcontractor_tokens")
@@ -238,11 +245,29 @@ async function findToken(rawToken) {
   return data;
 }
 
-async function touchToken(token) {
+export async function touchToken(token) {
   await getAdminClient()
     .from("subcontractor_tokens")
     .update({ last_used_at: new Date().toISOString(), use_count: (token.use_count || 0) + 1 })
     .eq("id", token.id);
+}
+
+/** Función (faseId, partidaId) => bool: la partida está asignada a la subcontrata del enlace. */
+export async function subAssignmentCheck(token) {
+  if (!token.obra_id) return () => false;
+  const { data, error } = await getAdminClient()
+    .from("work_assignments")
+    .select("fase_id, partida_id, subcontractor_id, assignee_name")
+    .eq("obra_id", token.obra_id)
+    .eq("assignee_type", "subcontrata")
+    .eq("is_active", true);
+  if (error) return () => false;
+  const mine = (data || []).filter((a) => (token.subcontractor_id
+    ? a.subcontractor_id === token.subcontractor_id
+    : String(a.assignee_name || "").toLowerCase() === String(token.subcontractor_name || "").toLowerCase()));
+  // Sin asignaciones todavía, puede avisar de cualquier partida de su obra.
+  if (data && data.length === 0) return () => true;
+  return (faseId, partidaId) => mine.some((a) => a.fase_id === faseId && (!a.partida_id || a.partida_id === partidaId));
 }
 
 async function handleSubGet(res, token) {
@@ -255,7 +280,9 @@ async function handleSubGet(res, token) {
     empresa: empresa.nombreComercial || empresa.razonSocial || "ObraMaster",
     telefonoEmpresa: empresa.telefono || "",
     categorias: Object.entries(NEED_LABELS).map(([value, label]) => ({ value, label })),
-    caduca: token.expires_at
+    caduca: token.expires_at,
+    // Enlace de una asignación concreta: la página se centra en esa fase o partida.
+    foco: token.fase_id ? { faseId: token.fase_id, partidaId: token.partida_id || "" } : null
   });
 }
 
@@ -299,19 +326,33 @@ async function handleSubDone(req, res, token, parseMultipart) {
 async function handleSubNeed(req, res, token, parseMultipart) {
   const { fields, photos } = await readForm(req, parseMultipart);
   const category = NEED_CATEGORIES.has(fields.categoria) ? fields.categoria : "otro";
-  const description = clip(fields.descripcion, 2000);
+  const motivo = clip(fields.motivo, 120);
+  const notes = clip(fields.descripcion, 2000);
+  const description = clip([motivo, notes].filter(Boolean).join(". "), 2000);
   if (!description) throw httpError(400, "Escribe brevemente qué pasa o qué hace falta.");
   const urgency = fields.urgente === "true" || fields.urgente === true ? "urgente" : "normal";
+  // Partida afectada: la que elija o, en un enlace de asignación, la suya. Debe ser de su obra
+  // y estar asignada a su empresa.
+  const hasTarget = fields.fase_id !== undefined && fields.fase_id !== "";
+  const faseId = hasTarget ? fields.fase_id : token.fase_id;
+  const partidaId = hasTarget ? fields.partida_id : token.partida_id;
+  const linked = faseId
+    ? needPartidaFields(await getObra(token.obra_id), faseId, partidaId, await subAssignmentCheck(token))
+    : {};
   const photoPaths = await uploadPhotos(photos, token.obra_id);
+  const items = category === "material"
+    ? normalizeItems([{ material: notes || motivo, cantidad: clip(fields.cantidad, 20), unidad: clip(fields.unidad, 20) }], description)
+    : [];
 
   const need = await insertNeed({
+    ...linked,
     obra_id: token.obra_id,
     obra_label: token.obra_label,
-    tajo: token.task_label,
+    tajo: linked.partida_label || linked.fase_label || token.task_label,
     category,
     urgency,
     description,
-    items: category === "material" ? normalizeItems([], description) : [],
+    items,
     needed_by: /^\d{4}-\d{2}-\d{2}$/.test(fields.fecha_limite || "") ? fields.fecha_limite : null,
     reported_by_type: "subcontrata",
     reported_by_name: token.subcontractor_name,
@@ -319,70 +360,204 @@ async function handleSubNeed(req, res, token, parseMultipart) {
     token_id: token.id,
     photos: photoPaths
   });
+  // Petición de material: el borrador de pedido queda listo para que compras elija proveedor y lo envíe.
+  if (category === "material") {
+    await createOrderDrafts(need).catch((err) => console.error("[avisos] No se pudo crear el borrador de pedido:", err?.message || err));
+  }
   await touchToken(token);
-  sendJson(res, 201, { ok: true, id: need.id, mensaje: "Aviso enviado. Te contactarán en breve." });
+  sendJson(res, 201, {
+    ok: true,
+    id: need.id,
+    mensaje: category === "material"
+      ? "Pedido de material enviado a la oficina. Te avisarán cuando esté tramitado."
+      : category === "bloqueo"
+        ? "Incidencia enviada. La partida queda marcada como bloqueada y el jefe de obra ya tiene el aviso."
+        : "Aviso enviado. Te contactarán en breve."
+  });
 }
 
-async function handleCreateToken(req, res) {
-  const body = await readJson(req);
-  const subcontractorId = clip(body.subcontractor_id, 100) || null;
+/**
+ * Crea un enlace mágico. Devuelve la fila (sin el token), la URL y el enlace de
+ * WhatsApp con el mensaje escrito. `faseId`/`partidaId`/`assignmentId` lo centran
+ * en una asignación concreta (se crea solo al asignar una fase o partida).
+ */
+export async function createSubToken({ req, subcontractorId = null, name = "", phone = "", obraId = null, obraLabelText = "", taskRef = null, taskLabel = null, taskKind = "partida", faseId = null, partidaId = null, assignmentId = null, days = 60 }) {
   const sub = subcontractorId ? await getAppRecord("subcontractors", subcontractorId) : null;
-  const name = clip(body.subcontractor_name || sub?.nombreComercial || sub?.razonSocial, 200);
-  if (!name) throw httpError(400, "Indica la subcontrata.");
-  const obraId = clip(body.obra_id, 100) || null;
+  const subName = clip(name || sub?.nombreComercial || sub?.razonSocial, 200);
+  if (!subName) throw httpError(400, "Indica la subcontrata.");
   const obra = obraId ? await getObra(obraId) : null;
-  const phone = clip(body.phone || sub?.telefono, 40);
-  const days = Math.min(Math.max(Number(body.days) || 60, 1), 365);
+  const tel = clip(phone || sub?.telefono, 40);
+  const validDays = Math.min(Math.max(Number(days) || 60, 1), 365);
 
   const rawToken = `tk_${crypto.randomBytes(24).toString("base64url")}`;
+  const row = {
+    token_hash: hashToken(rawToken),
+    subcontractor_id: subcontractorId,
+    subcontractor_name: subName,
+    phone: tel,
+    obra_id: obraId,
+    obra_label: obraLabel(obra, clip(obraLabelText, 200)),
+    obra_address: clip(obra?.direccion, 300),
+    task_ref: taskRef,
+    task_label: clip(taskLabel, 200) || null,
+    expires_at: new Date(Date.now() + validDays * 86400000).toISOString(),
+    created_by: req?.user?.id || null
+  };
+  // Columnas de supabase_schema_avance_obra.sql: solo si el enlace va ligado a una asignación.
+  if (faseId) Object.assign(row, { fase_id: faseId, partida_id: partidaId || "", assignment_id: assignmentId });
   const { data, error } = await getAdminClient()
     .from("subcontractor_tokens")
-    .insert({
-      token_hash: hashToken(rawToken),
-      subcontractor_id: subcontractorId,
-      subcontractor_name: name,
-      phone,
-      obra_id: obraId,
-      obra_label: obraLabel(obra, clip(body.obra_label, 200)),
-      obra_address: clip(obra?.direccion || body.obra_address, 300),
-      task_ref: clip(body.task_ref, 100) || null,
-      task_label: clip(body.task_label, 200) || null,
-      expires_at: new Date(Date.now() + days * 86400000).toISOString(),
-      created_by: req.user?.id || null
-    })
+    .insert(row)
     .select("id, subcontractor_name, obra_label, task_label, expires_at")
     .single();
   if (error) throw new Error(error.message);
 
   const url = `${publicBaseUrl(req)}/sub/${rawToken}`;
-  const message = `Hola ${name}. Para avisar de que has terminado${data.task_label ? ` "${data.task_label}"` : ""} o de cualquier problema en la obra ${data.obra_label || ""}, usa este enlace (no hace falta instalar nada): ${url}`;
-  const digits = phone.replace(/[^\d]/g, "");
-  const waNumber = digits.length === 9 ? `34${digits}` : digits;
-  sendJson(res, 201, {
-    ...data,
-    url,
-    whatsappUrl: waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}`,
-    mensaje: message
+  const wa = generateWhatsAppAssignmentUrl({
+    phone: tel,
+    project: data.obra_label || "",
+    task: data.task_label,
+    taskKind,
+    contact: contactName(sub?.personaContacto, subName),
+    url
   });
+  return { ...data, url, phone: wa.phone, whatsappUrl: wa.url, mensaje: wa.message, whatsappCloud: isWhatsAppCloudConfigured() };
+}
+
+async function handleCreateToken(req, res) {
+  const body = await readJson(req);
+  sendJson(res, 201, await createSubToken({
+    req,
+    subcontractorId: clip(body.subcontractor_id, 100) || null,
+    name: body.subcontractor_name,
+    phone: body.phone,
+    obraId: clip(body.obra_id, 100) || null,
+    obraLabelText: body.obra_label,
+    taskRef: clip(body.task_ref, 100) || null,
+    taskLabel: body.task_label,
+    taskKind: String(body.task_ref || "").startsWith("fase:") ? "fase" : "partida",
+    days: body.days
+  }));
 }
 
 // ---------------------------------------------------------------------------
 // Necesidades de obra y pedidos
 // ---------------------------------------------------------------------------
+/** Ruta del panel de avance para abrir una partida concreta (enlaces de avisos y push). */
+export function avanceLink(obraId, faseId, partidaId = WHOLE_PHASE) {
+  return `#admin/avance/${encodeURIComponent(obraId || "")}/${encodeURIComponent(faseId || "")}/${encodeURIComponent(partidaId || "")}`;
+}
+
+/**
+ * Liga una necesidad a su fase y partida. Comprueba que existen en la obra y,
+ * si `allowed` es una función, que el emisor tiene esa partida asignada.
+ * Devuelve las columnas a añadir a worksite_needs ({} si no se indicó fase).
+ */
+export function needPartidaFields(obra, faseId, partidaId, allowed = null) {
+  const fase = clip(faseId, 120);
+  if (!fase || !obra) return {};
+  const plan = flattenPlan(obra);
+  let found = findPartida(plan, fase, clip(partidaId, 120));
+  // Aviso de una fase entera (asignación de fase): se liga a la fase, partida ''.
+  if (!found && !clip(partidaId, 120)) {
+    const faseRow = plan.fases.find((f) => f.id === fase);
+    if (faseRow) found = { fase: faseRow, partida: { id: WHOLE_PHASE } };
+  }
+  if (!found) throw httpError(400, "La fase o partida indicada no existe en esta obra.");
+  if (allowed && !allowed(found.fase.id, found.partida.id)) throw httpError(403, "Esa partida no está asignada a tu empresa.");
+  return {
+    fase_id: found.fase.id,
+    fase_label: clip(found.fase.nombre, 200),
+    partida_id: found.partida.id,
+    partida_label: found.partida.id ? clip(`${found.partida.codigo} ${found.partida.titulo}`, 200) : null
+  };
+}
+
+// Avisos que paran o ponen en alerta la partida en el panel del jefe de obra.
+const ALERT_BY_CATEGORY = { bloqueo: "bloqueo", material: "material" };
+
+async function markPartidaAlert(need) {
+  const alert = ALERT_BY_CATEGORY[need.category];
+  if (!alert || !need.fase_id) return;
+  const admin = getAdminClient();
+  const key = { obra_id: need.obra_id, fase_id: need.fase_id, partida_id: need.partida_id || WHOLE_PHASE };
+  try {
+    const { data: current } = await admin.from("work_item_progress").select("*").match(key).maybeSingle();
+    const row = {
+      ...key,
+      alert,
+      alert_need_id: need.id,
+      alert_text: clip(need.description, 300),
+      status: alert === "bloqueo" ? "bloqueada" : current?.status || "no_iniciada"
+    };
+    const { error } = await admin.from("work_item_progress").upsert(row, { onConflict: "obra_id,fase_id,partida_id" });
+    if (error) throw new Error(error.message);
+    await admin.from("execution_logs").insert({
+      ...key,
+      kind: "bloqueo",
+      status: row.status,
+      pct_before: current?.reported_pct ?? null,
+      pct_after: current?.reported_pct ?? null,
+      notes: `${NEED_LABELS[need.category]}: ${clip(need.description, 500)}`,
+      photos: need.photos || [],
+      author_type: need.reported_by_type === "subcontrata" ? "subcontrata" : need.reported_by_type === "obrero" ? "obrero" : "admin",
+      author_name: need.reported_by_name,
+      token_id: need.token_id || null,
+      need_id: need.id
+    });
+  } catch (err) {
+    console.error("[avance] No se pudo marcar la partida en alerta:", err?.message || err);
+  }
+}
+
+/** Al resolver, entregar o descartar la necesidad, la partida sale de la alerta. */
+async function clearPartidaAlert(need, userId) {
+  if (!need?.fase_id || !["entregado", "resuelto", "descartada"].includes(need.status)) return;
+  const admin = getAdminClient();
+  try {
+    const { data: rows } = await admin.from("work_item_progress").select("*").eq("alert_need_id", need.id);
+    for (const r of rows || []) {
+      const status = r.status === "bloqueada" ? (r.reported_pct >= 100 ? "completada" : r.reported_pct > 0 ? "en_curso" : "no_iniciada") : r.status;
+      await admin
+        .from("work_item_progress")
+        .update({ alert: null, alert_need_id: null, alert_text: null, status })
+        .match({ obra_id: r.obra_id, fase_id: r.fase_id, partida_id: r.partida_id });
+      await admin.from("execution_logs").insert({
+        obra_id: r.obra_id,
+        fase_id: r.fase_id,
+        partida_id: r.partida_id,
+        kind: "desbloqueo",
+        status,
+        pct_before: r.reported_pct,
+        pct_after: r.reported_pct,
+        notes: `Necesidad ${need.status === "descartada" ? "descartada" : "resuelta"}: ${clip(need.description, 300)}`,
+        author_type: "admin",
+        author_user: userId || null,
+        need_id: need.id
+      });
+    }
+  } catch (err) {
+    console.error("[avance] No se pudo quitar la alerta de la partida:", err?.message || err);
+  }
+}
+
 async function insertNeed(row) {
   const { data: need, error } = await getAdminClient().from("worksite_needs").insert(row).select().single();
   if (error) throw new Error(error.message);
+  await markPartidaAlert(need);
   const isMaterial = need.category === "material";
   await createNotification({
     category: need.urgency === "urgente" ? "urgente" : isMaterial ? "material" : "incidencia",
     origin: need.reported_by_type === "subcontrata" ? "subcontrata" : need.reported_by_type === "admin" ? "admin" : "obrero",
     obraId: need.obra_id,
     obraLabel: need.obra_label,
-    title: `${NEED_LABELS[need.category] || "Necesidad"}${need.obra_label ? ` · ${need.obra_label}` : ""}`,
+    title: `${NEED_LABELS[need.category] || "Necesidad"}${need.partida_label ? ` en ${need.partida_label}` : need.fase_label ? ` en ${need.fase_label}` : ""}${need.obra_label ? ` · ${need.obra_label}` : ""}`,
     body: `${need.reported_by_name ? `${need.reported_by_name}: ` : ""}${need.description}`,
-    link: `#admin/necesidades/${need.id}`,
+    link: need.fase_id ? avanceLink(need.obra_id, need.fase_id, need.partida_id) : `#admin/necesidades/${need.id}`,
     refTable: "worksite_needs",
-    refId: need.id
+    refId: need.id,
+    faseId: need.fase_id || null,
+    partidaId: need.partida_id || null
   });
   return need;
 }
@@ -395,10 +570,12 @@ async function handleCreateNeed(req, res) {
   const obraId = clip(body.obra_id, 100) || null;
   const obra = obraId ? await getObra(obraId) : null;
   const isAdmin = req.user?.role === "admin";
+  const linked = body.fase_id ? needPartidaFields(obra, body.fase_id, body.partida_id) : {};
   const need = await insertNeed({
+    ...linked,
     obra_id: obraId,
     obra_label: obraLabel(obra, clip(body.obra_label, 200)),
-    tajo: clip(body.tajo, 200) || null,
+    tajo: clip(body.tajo, 200) || linked.partida_label || linked.fase_label || null,
     category,
     urgency: body.urgency === "urgente" ? "urgente" : "normal",
     description,
@@ -428,6 +605,7 @@ async function handleUpdateNeed(req, res, id) {
   if (body.urgency !== undefined) patch.urgency = body.urgency === "urgente" ? "urgente" : "normal";
   const { data, error } = await getAdminClient().from("worksite_needs").update(patch).eq("id", id).select().single();
   if (error) throw httpError(404, "Necesidad no encontrada.");
+  if (patch.status) await clearPartidaAlert(data, req.user?.id);
   sendJson(res, 200, data);
 }
 
@@ -435,17 +613,13 @@ async function handleUpdateNeed(req, res, id) {
  * Genera el borrador de correo (uno por proveedor elegido) a partir de una necesidad.
  * No envía nada: deja los pedidos en estado "borrador" para revisarlos y editarlos.
  */
-async function handleOrderDraft(req, res, needId) {
-  const body = await readJson(req);
+/**
+ * Crea los borradores de pedido (uno por proveedor; sin proveedor, uno para elegirlo
+ * después). No envía nada. Lo usan el botón "Generar borrador" y la petición de
+ * material desde el enlace de la subcontrata.
+ */
+export async function createOrderDrafts(need, supplierIds = [], kind = "pedido") {
   const admin = getAdminClient();
-  const { data: need } = await admin.from("worksite_needs").select("*").eq("id", needId).maybeSingle();
-  if (!need) throw httpError(404, "Necesidad no encontrada.");
-  const kind = body.kind === "solicitud_presupuesto" ? "solicitud_presupuesto" : "pedido";
-
-  const supplierIds = (Array.isArray(body.supplier_ids) ? body.supplier_ids : [body.supplier_id])
-    .map((s) => clip(s, 40))
-    .filter((s) => new RegExp(`^${UUID}$`).test(s))
-    .slice(0, 5);
   let suppliers = [];
   if (supplierIds.length) {
     const { data, error } = await admin.from("suppliers").select("*").in("id", supplierIds);
@@ -477,7 +651,19 @@ async function handleOrderDraft(req, res, needId) {
   const { data, error } = await admin.from("material_orders").insert(rows).select();
   if (error) throw new Error(error.message);
   if (need.status === "nueva") await admin.from("worksite_needs").update({ status: "en_revision" }).eq("id", need.id);
-  sendJson(res, 201, { drafts: data });
+  return data;
+}
+
+async function handleOrderDraft(req, res, needId) {
+  const body = await readJson(req);
+  const { data: need } = await getAdminClient().from("worksite_needs").select("*").eq("id", needId).maybeSingle();
+  if (!need) throw httpError(404, "Necesidad no encontrada.");
+  const kind = body.kind === "solicitud_presupuesto" ? "solicitud_presupuesto" : "pedido";
+  const supplierIds = (Array.isArray(body.supplier_ids) ? body.supplier_ids : [body.supplier_id])
+    .map((s) => clip(s, 40))
+    .filter((s) => new RegExp(`^${UUID}$`).test(s))
+    .slice(0, 5);
+  sendJson(res, 201, { drafts: await createOrderDrafts(need, supplierIds, kind) });
 }
 
 async function handleUpdateOrder(req, res, id) {
@@ -648,6 +834,12 @@ export async function handleNotificationRoutes(req, res, pathname, query) {
       const { error } = await getAdminClient().from("subcontractor_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", id);
       if (error) throw new Error(error.message);
       sendJson(res, 200, { ok: true });
+    } }],
+    [/^\/api\/whatsapp\/send$/, { POST: async () => {
+      // Envío directo opcional (WhatsApp Business Cloud API). Sin configurar responde 503.
+      const body = await readJson(req);
+      if (!clip(body.message, 4000)) throw httpError(400, "Falta el mensaje.");
+      sendJson(res, 200, await sendWhatsAppCloud({ phone: body.phone, message: body.message }));
     } }],
     [/^\/api\/notifications$/, { GET: () => handleListNotifications(res, query) }],
     [/^\/api\/notifications\/read$/, { POST: () => handleMarkRead(req, res) }],
