@@ -18,7 +18,8 @@ import {
   Download,
   Info,
   KeyRound,
-  Brain
+  Brain,
+  Palette
 } from 'lucide-react';
 import GestionUsuarios from './GestionUsuarios';
 import PerfilDirectorConfig from './PerfilDirectorConfig';
@@ -26,6 +27,7 @@ import MotorIaConfig from './MotorIaConfig';
 import AiMemoryConfig from './AiMemoryConfig';
 import PresupuestosModeloConfig from './PresupuestosModeloConfig';
 import FacturacionConfig from './FacturacionConfig';
+import AparienciaConfig from './AparienciaConfig';
 
 export default function EmpresaConfig() {
   const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification, facturacionActivada } = useApp();
@@ -77,6 +79,7 @@ export default function EmpresaConfig() {
           { id: 'memoria_ia', label: 'Memoria de la IA', icon: Brain, badge: 'Aprende' },
           { id: 'presupuestos_modelo', label: 'Presupuestos Modelo (PDFs IA)', icon: FileText, badge: `${activeRefsCount} Activos` },
           { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
+          { id: 'apariencia', label: 'Apariencia y Vistas', icon: Palette, badge: 'Nuevo' },
           { id: 'verifactu', label: 'Facturación (VeriFactu)', icon: ShieldCheck, badge: facturacionActivada ? 'Activada' : 'Desactivada' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
           { id: 'sii_facturae', label: 'SII & Facturae B2B', icon: FileSpreadsheet },
@@ -125,6 +128,8 @@ export default function EmpresaConfig() {
 
       {/* TAB USUARIOS & ACCESOS */}
       {activeSubTab === 'usuarios' && <GestionUsuarios />}
+
+      {activeSubTab === 'apariencia' && <AparienciaConfig />}
 
       {/* TAB 1: IDENTIFICACIÓN Y DATOS FISCALES */}
       {activeSubTab === 'fiscal_data' && (

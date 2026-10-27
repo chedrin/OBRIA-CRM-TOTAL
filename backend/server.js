@@ -771,6 +771,23 @@ function selectRelevantPrices(catalog, contextText, limit = 150) {
     .map(x => x.p);
 }
 
+// Valida los parámetros del cliente que el asistente exige antes de generar un presupuesto.
+function validateParametrosCliente(p) {
+  const errors = [];
+  if (!p || typeof p !== "object") return ["faltan los parámetros."];
+  const tipos = ["particular", "comunidad", "empresa", "constructor", "administracion"];
+  const fiscalidades = ["iva10", "iva21", "isp", "exento"];
+  if (!tipos.includes(p.tipoCliente)) errors.push("Falta el tipo de cliente.");
+  const margen = Number(p.margenComercialPct);
+  if (!Number.isFinite(margen) || margen < 5 || margen > 60) errors.push("El margen comercial debe estar entre 5% y 60%.");
+  if (!String(p.condicionesPago || "").trim()) errors.push("Faltan las condiciones de pago.");
+  if (!fiscalidades.includes(p.fiscalidad)) errors.push("Falta la fiscalidad estimada.");
+  if (p.fiscalidad === "isp" && p.tipoCliente !== "constructor") errors.push("La inversión del sujeto pasivo solo aplica a constructores o promotores.");
+  const irpf = Number(p.retencionIrpfPct || 0);
+  if (![0, 1, 7, 15].includes(irpf)) errors.push("Retención de IRPF no válida.");
+  return errors;
+}
+
 function buildPriceBaseText(items) {
   return items.map(p => {
     const coste = p.costeUnitario ?? p.costeSubcontrata;
@@ -1421,6 +1438,24 @@ ${textToImprove.trim()}
         const calidades = fields.calidades || "Media-Alta";
         const margenGlobal = Number(fields.margenGlobal) || 28;
 
+        // Paso 1 del asistente: parámetros del cliente y condiciones económicas. Si llegan, deben ser válidos.
+        let parametrosCliente = null;
+        if (fields.parametrosCliente) {
+          try {
+            parametrosCliente = typeof fields.parametrosCliente === "string" ? JSON.parse(fields.parametrosCliente) : fields.parametrosCliente;
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Los parámetros del cliente no tienen un formato válido." }));
+            return;
+          }
+          const paramErrors = validateParametrosCliente(parametrosCliente);
+          if (paramErrors.length) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: `Parámetros del cliente incompletos: ${paramErrors.join(" ")}` }));
+            return;
+          }
+        }
+
         let catalogList = [];
         try { if (fields.basePrecios) catalogList = typeof fields.basePrecios === "string" ? JSON.parse(fields.basePrecios) : fields.basePrecios; } catch {}
 
@@ -1431,7 +1466,8 @@ ${textToImprove.trim()}
 
         const refBudgetsText = buildReferenceBudgetsText(refBudgets);
         const memoryContext = await buildMemoryContext("presupuesto");
-        const tipoIva = Number(fields.tipoIva) || 10;
+        const tipoIvaRaw = Number(fields.tipoIva);
+        const tipoIva = fields.tipoIva !== undefined && fields.tipoIva !== "" && Number.isFinite(tipoIvaRaw) ? tipoIvaRaw : 10;
 
         const systemInstruction = `
 Eres el Ingeniero Técnico de Edificación y Jefe de Presupuestos de la constructora "ObraMaster" (España: LOE, CTE, REBT).
@@ -1479,7 +1515,15 @@ ${memoryContext}
 DATOS DE OBRA:
 - Obra: ${fields.titulo || "Reforma"} | Cliente: ${cliente} | Ubicación: ${direccion}
 - Calidades: ${calidades} | Margen objetivo: ${margenGlobal}% | IVA: ${tipoIva}%${fields.plazo ? ` | Plazo deseado: ${fields.plazo}` : ""}
-
+${parametrosCliente ? `
+PARÁMETROS DEL CLIENTE Y CONDICIONES ECONÓMICAS (validados, obligatorios):
+- Tipo de cliente: ${parametrosCliente.tipoClienteLabel || parametrosCliente.tipoCliente}${parametrosCliente.nif ? ` | NIF/CIF: ${parametrosCliente.nif}` : ""}
+- Margen comercial: ${parametrosCliente.margenComercialPct}% (úsalo como "margenPct" salvo que la base de precios fije otro para esa partida)
+- Condiciones de pago: ${parametrosCliente.condicionesPago}
+- Fiscalidad: ${parametrosCliente.fiscalidadLabel || parametrosCliente.fiscalidad}${parametrosCliente.retencionIrpfPct ? ` | Retención IRPF estimada: ${parametrosCliente.retencionIrpfPct}%` : ""}
+- Validez de la oferta: ${parametrosCliente.validezDias || 30} días
+Ten en cuenta estos parámetros en la propuesta económica y añade en "observaciones_tecnicas" cualquier aspecto fiscal a confirmar (por ejemplo, el límite del 40% de materiales con IVA reducido o la mención de inversión del sujeto pasivo).
+` : ""}
 DICTADO DE LA VISITA (AUDIO TRANSCRITO Y NOTAS):
 """
 ${dictadoTexto || "Sin dictado: analiza las evidencias adjuntas."}

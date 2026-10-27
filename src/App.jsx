@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { UiPreferencesProvider } from './context/UiPreferencesContext';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import Dashboard from './components/Dashboard';
@@ -212,7 +213,7 @@ function MainLayout() {
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <main key={activeTab} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 om-page-enter">
           {activeTab === 'dashboard' && <Dashboard />}
           {activeTab === 'obras' && <ObrasList />}
           {activeTab === 'inbox' && <AudioEmailInbox />}
@@ -278,7 +279,9 @@ function MainLayout() {
 export default function App() {
   return (
     <AppProvider>
-      <MainLayout />
+      <UiPreferencesProvider>
+        <MainLayout />
+      </UiPreferencesProvider>
     </AppProvider>
   );
 }

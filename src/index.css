@@ -4,6 +4,192 @@
   body {
     background-color: #0b1120;
     color: #f1f5f9;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 }
+
+/* =====================================================================
+   TEMA CLARO
+   Los componentes están escritos con la paleta oscura (bg-slate-950/900,
+   text-white...). En el tema claro se reasignan las variables de color de
+   Tailwind: la escala slate se invierte, el blanco pasa a texto oscuro y los
+   tonos claros de acento (300/400) se oscurecen para que se lean sobre fondo
+   claro. Así toda la app cambia sin reescribir cada pantalla.
+   ===================================================================== */
+:root[data-theme="claro"] {
+  color-scheme: light;
+
+  --color-white: #0f172a;
+
+  --color-slate-50: #020617;
+  --color-slate-100: #0f172a;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #52627a;
+  --color-slate-500: #64748b;
+  --color-slate-600: #94a3b8;
+  --color-slate-700: #e2e8f0;
+  --color-slate-750: #e9eef5;
+  --color-slate-800: #f1f5f9;
+  --color-slate-900: #ffffff;
+  --color-slate-950: #f8fafc;
+
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-400: #d97706;
+  --color-yellow-300: #ca8a04;
+  --color-yellow-400: #eab308;
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-green-400: #16a34a;
+  --color-rose-200: #9f1239;
+  --color-rose-300: #be123c;
+  --color-rose-400: #e11d48;
+  --color-red-300: #b91c1c;
+  --color-red-400: #dc2626;
+  --color-indigo-300: #4338ca;
+  --color-indigo-400: #4f46e5;
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #2563eb;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+  --color-cyan-300: #0e7490;
+  --color-cyan-400: #0891b2;
+  --color-teal-300: #0f766e;
+  --color-teal-400: #0d9488;
+  --color-violet-300: #6d28d9;
+  --color-violet-400: #7c3aed;
+  --color-purple-300: #7e22ce;
+  --color-purple-400: #9333ea;
+  --color-orange-300: #c2410c;
+  --color-orange-400: #ea580c;
+
+  /* Tonos muy oscuros de acento (fondos tintados del modo oscuro) pasan a tintes claros. */
+  --color-amber-900: #fef3c7;
+  --color-amber-950: #fffbeb;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-950: #ecfdf5;
+  --color-rose-900: #ffe4e6;
+  --color-rose-950: #fff1f2;
+  --color-indigo-900: #e0e7ff;
+  --color-indigo-950: #eef2ff;
+  --color-red-900: #fee2e2;
+  --color-red-950: #fef2f2;
+  --color-blue-900: #dbeafe;
+  --color-blue-950: #eff6ff;
+}
+
+:root[data-theme="claro"] body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Bordes y sombras de tarjeta. Van en la capa de utilidades con :where() para
+   que los estados hover/focus de cada componente sigan mandando. */
+@layer utilities {
+  :where(:root[data-theme="claro"]) :is(.border-slate-800, .border-slate-800\/80, .border-slate-800\/60, .border-slate-800\/50) { border-color: #e2e8f0; }
+  :where(:root[data-theme="claro"]) :is(.border-slate-700, .border-slate-700\/60, .border-slate-700\/50) { border-color: #cbd5e1; }
+}
+@layer base {
+  :root[data-theme="claro"] :is(.rounded-2xl, .rounded-3xl).bg-slate-900 {
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  }
+}
+
+/* Elementos con fondo de color sólido: su texto sigue siendo blanco y el
+   "slate-950" (texto sobre botones ámbar) sigue siendo oscuro. */
+:root[data-theme="claro"] :is(
+  .bg-amber-400, .bg-amber-500, .bg-amber-600, .bg-amber-700,
+  .bg-emerald-400, .bg-emerald-500, .bg-emerald-600, .bg-emerald-700,
+  .bg-rose-400, .bg-rose-500, .bg-rose-600, .bg-rose-700, .bg-rose-600\/90,
+  .bg-red-500, .bg-red-600, .bg-indigo-500, .bg-indigo-600, .bg-indigo-700,
+  .bg-blue-500, .bg-blue-600, .bg-violet-500, .bg-violet-600, .bg-purple-500, .bg-purple-600,
+  .bg-sky-500, .bg-sky-600, .bg-teal-500, .bg-teal-600, .bg-cyan-500, .bg-cyan-600,
+  .bg-orange-500, .bg-orange-600, .bg-green-500, .bg-green-600,
+  [class*="from-amber-4"], [class*="from-amber-5"]:not([class*="from-amber-500/"]), [class*="from-amber-6"],
+  [class*="from-emerald-4"], [class*="from-emerald-5"], [class*="from-emerald-6"],
+  [class*="from-rose-5"], [class*="from-rose-6"], [class*="from-indigo-4"], [class*="from-indigo-5"],
+  .om-solid
+) {
+  --color-white: #ffffff;
+  --color-slate-950: #020617;
+  --color-slate-900: #0f172a;
+  --color-amber-400: #fbbf24;
+  --color-amber-300: #fcd34d;
+}
+
+/* Capas de fondo de los modales: velo claro y difuminado en lugar de negro. */
+:root[data-theme="claro"] .fixed.inset-0[class*="bg-black/"] {
+  background-color: rgb(15 23 42 / 0.35);
+}
+
+/* Zonas que deben verse siempre con los colores originales (hoja del PDF, logotipos). */
+:root[data-theme="claro"] .theme-native {
+  color-scheme: light;
+  --color-white: #ffffff;
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-emerald-400: #34d399;
+  --color-rose-400: #fb7185;
+  --color-indigo-400: #818cf8;
+}
+
+/* =====================================================================
+   ANIMACIONES (150–300 ms, ver AGENTS.md)
+   Las clases animate-in / fade-in / slide-in-from-* / zoom-in-* ya se usaban
+   en el código sin plugin que las definiera: aquí se implementan.
+   ===================================================================== */
+@keyframes om-enter {
+  from {
+    opacity: var(--om-enter-opacity, 1);
+    transform: translate3d(var(--om-enter-x, 0), var(--om-enter-y, 0), 0) scale(var(--om-enter-scale, 1));
+  }
+}
+.animate-in { animation: om-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+.fade-in { --om-enter-opacity: 0; }
+.zoom-in, .zoom-in-95 { --om-enter-scale: 0.95; }
+.slide-in-from-top-2 { --om-enter-y: -0.5rem; }
+.slide-in-from-top-4 { --om-enter-y: -1rem; }
+.slide-in-from-bottom-2 { --om-enter-y: 0.5rem; }
+.slide-in-from-bottom-3 { --om-enter-y: 0.75rem; }
+.slide-in-from-bottom-4 { --om-enter-y: 1rem; }
+.slide-in-from-left { --om-enter-x: -100%; }
+.slide-in-from-right-4 { --om-enter-x: 1rem; }
+
+/* Cualquier modal (capa fija con desenfoque): fundido del fondo y escala del panel. */
+@keyframes om-backdrop { from { opacity: 0; } }
+@keyframes om-pop { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md) { animation: om-backdrop 180ms ease-out backwards; }
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md) > :not(.fixed) { animation: om-pop 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+/* Cambio de pestaña. */
+@keyframes om-page { from { opacity: 0; transform: translateY(6px); } }
+.om-page-enter { animation: om-page 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+/* Cajón lateral móvil. */
+@keyframes om-drawer { from { transform: translateX(-100%); } }
+.om-drawer-enter { animation: om-drawer 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in, .om-page-enter, .om-drawer-enter,
+  .fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md),
+  .fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md) > * { animation: none; }
+}
+
+/* =====================================================================
+   DENSIDAD: la vista compacta reduce rellenos de tablas.
+   ===================================================================== */
+.om-table-compact td, .om-table-compact th { padding-top: 0.35rem; padding-bottom: 0.35rem; }

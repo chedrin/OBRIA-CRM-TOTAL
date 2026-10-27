@@ -225,7 +225,7 @@ export default function PdfModal() {
         <div className="overflow-y-auto p-4 sm:p-8 bg-slate-950/40">
           <div
             ref={printRef}
-            className="bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-lg max-w-2xl mx-auto space-y-6 text-xs sm:text-sm font-sans"
+            className="theme-native bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-lg max-w-2xl mx-auto space-y-6 text-xs sm:text-sm font-sans"
           >
             {/* Header: Company & Doc Title */}
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 border-b border-slate-200 pb-6">
