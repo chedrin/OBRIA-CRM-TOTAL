@@ -18,6 +18,7 @@ import { handleMemoryRoutes, buildMemoryContext, saveReferenceLearning } from ".
 import { handleUsageRoutes, recordAiUsage } from "./aiUsage.js";
 import { handleSubcontractorPublicRoutes, handleNotificationRoutes } from "./notificaciones.js";
 import { handlePushRoutes } from "./webPush.js";
+import { handleFacturacionRoutes } from "./facturacionRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1057,6 +1058,9 @@ async function handleRequest(req, res) {
 
   // Contador de tokens por proveedor (Ajustes > Motor IA)
   if (await handleUsageRoutes(req, res, pathname)) return;
+
+  // Facturación legal: empresa, numeración y VeriFactu (Ajustes > Facturación)
+  if (await handleFacturacionRoutes(req, res, pathname)) return;
 
   // Endpoints GET
   if (req.method === "GET") {
