@@ -29,58 +29,10 @@ export default function FacturasList() {
     setPdfModalData,
     presupuestos,
     convertPresupuestoToFactura,
-    empresaConfig,
+    rectificarFactura,
     showNotification,
     setActiveTab
   } = useApp();
-
-  const handleDownloadFacturaeXml = (fac) => {
-    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<fe:Facturae xmlns:fe="http://www.facturae.es/Facturae/2014/v3.2.2/Facturae">
-  <FileHeader>
-    <SchemaVersion>3.2.2</SchemaVersion>
-    <Modality>I</Modality>
-    <InvoiceIssuerType>EM</InvoiceIssuerType>
-    <Batch>
-      <InvoicesCount>1</InvoicesCount>
-      <TotalInvoicesAmount><TotalAmount>${fac.totalFactura.toFixed(2)}</TotalAmount></TotalInvoicesAmount>
-    </Batch>
-  </FileHeader>
-  <Parties>
-    <SellerParty>
-      <TaxIdentification><TaxIdentificationNumber>${empresaConfig.cifNif}</TaxIdentificationNumber></TaxIdentification>
-      <LegalEntity><CorporateName>${empresaConfig.razonSocial}</CorporateName></LegalEntity>
-    </SellerParty>
-    <BuyerParty>
-      <TaxIdentification><TaxIdentificationNumber>${fac.cifNif}</TaxIdentificationNumber></TaxIdentification>
-      <Individual><Name>${fac.cliente}</Name></Individual>
-    </BuyerParty>
-  </Parties>
-  <Invoices>
-    <Invoice>
-      <InvoiceHeader>
-        <InvoiceNumber>${fac.numero}</InvoiceNumber>
-        <InvoiceDocumentType>FC</InvoiceDocumentType>
-        <InvoiceClass>OO</InvoiceClass>
-        <IssueDate>${fac.fechaEmision}</IssueDate>
-      </InvoiceHeader>
-      <InvoiceTotals>
-        <TotalGrossAmount>${fac.baseImponible.toFixed(2)}</TotalGrossAmount>
-        <TotalTaxOutputs>${fac.cuotaIva.toFixed(2)}</TotalTaxOutputs>
-        <InvoiceTotal>${fac.totalFactura.toFixed(2)}</InvoiceTotal>
-      </InvoiceTotals>
-    </Invoice>
-  </Invoices>
-</fe:Facturae>`;
-
-    const blob = new Blob([xmlContent], { type: 'application/xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Facturae_${fac.numero}.xml`;
-    a.click();
-    showNotification(`Facturae XML generado y descargado para ${fac.numero}`);
-  };
 
   const [filterEstado, setFilterEstado] = useState('todas'); // todas, cobrada, pendiente
   const [filterTrimestre, setFilterTrimestre] = useState('todos'); // todos, 1T, 2T, 3T, 4T
@@ -90,6 +42,9 @@ export default function FacturasList() {
   const [selectedPresId, setSelectedPresId] = useState(presupuestos[0]?.id || '');
   const [certificacionTipo, setCertificacionTipo] = useState('Certificación 1 (Anticipo 40% Inicio Obra)');
   const [certificacionPct, setCertificacionPct] = useState(40);
+  const [emitiendo, setEmitiendo] = useState(false);
+  const [facturaARectificar, setFacturaARectificar] = useState(null);
+  const [rectificacion, setRectificacion] = useState({ causa: '', diferenciaBase: '' });
 
   // Financial Stats
   const totalFacturado = facturas.reduce((s, f) => s + f.totalFactura, 0);
@@ -107,11 +62,30 @@ export default function FacturasList() {
     return matchesEstado && matchesTrim && matchesSearch;
   });
 
-  const handleConvertSubmit = (e) => {
+  const handleConvertSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedPresId) return;
-    convertPresupuestoToFactura(selectedPresId, certificacionTipo, Number(certificacionPct));
-    setShowConvertModal(false);
+    if (!selectedPresId || emitiendo) return;
+    setEmitiendo(true);
+    const factura = await convertPresupuestoToFactura(selectedPresId, certificacionTipo, Number(certificacionPct));
+    setEmitiendo(false);
+    if (factura) setShowConvertModal(false);
+  };
+
+  const handleRectificarSubmit = async (e) => {
+    e.preventDefault();
+    if (!facturaARectificar || emitiendo) return;
+    const diferencia = Number(String(rectificacion.diferenciaBase).replace(',', '.'));
+    if (!rectificacion.causa.trim() || !Number.isFinite(diferencia) || diferencia === 0) {
+      showNotification('Indica la causa y la diferencia de base imponible (negativa para rebajar).', 'error');
+      return;
+    }
+    setEmitiendo(true);
+    const factura = await rectificarFactura(facturaARectificar.id, { causa: rectificacion.causa.trim(), baseImponible: diferencia });
+    setEmitiendo(false);
+    if (factura) {
+      setFacturaARectificar(null);
+      setRectificacion({ causa: '', diferenciaBase: '' });
+    }
   };
 
   return (
@@ -233,6 +207,11 @@ export default function FacturasList() {
                   <span className="text-xs font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded">
                     {fac.trimestre}
                   </span>
+                  {fac.tipoAeat && fac.tipoAeat !== 'F1' && (
+                    <span className="text-[10px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 rounded">
+                      Rectificativa {fac.tipoAeat}
+                    </span>
+                  )}
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                     isCobrada ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                   }`}>
@@ -255,33 +234,42 @@ export default function FacturasList() {
                     </>
                   )}
                 </div>
+                {fac.huella && (
+                  <p className="text-[10px] text-slate-500 font-mono flex items-center gap-1" title={fac.huella}>
+                    <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                    VeriFactu · huella {fac.huella.slice(0, 16)}…
+                    {fac.rectificacionCausa && <span className="font-sans"> · Causa: {fac.rectificacionCausa}</span>}
+                  </p>
+                )}
               </div>
 
               {/* Amounts & Actions */}
               <div className="flex flex-row md:flex-col items-end justify-between md:justify-center gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-slate-800 shrink-0">
                 <div className="text-left md:text-right">
-                  <span className="text-xs text-slate-400 block">Total con IVA ({fac.tipoIvaPct}%)</span>
+                  <span className="text-xs text-slate-400 block">
+                    {fac.cuotaRetencion ? `Total a cobrar (IVA ${fac.tipoIvaPct}%, IRPF ${fac.retencionIrpfPct}%)` : `Total con IVA (${fac.tipoIvaPct}%)`}
+                  </span>
                   <span className="text-xl font-black text-white">{fac.totalFactura?.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €</span>
                   <span className="text-[11px] text-slate-500 block">Base: {fac.baseImponible?.toLocaleString('es-ES')} € · IVA: {fac.cuotaIva?.toLocaleString('es-ES')} €</span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* VeriFactu & Facturae XML Buttons */}
-                  <button
-                    onClick={() => handleDownloadFacturaeXml(fac)}
-                    className="px-2.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-xl text-xs font-semibold flex items-center gap-1 transition"
-                    title="Descargar XML Facturae v3.2.2 para Administración / B2B"
-                  >
-                    <FileCode className="w-3.5 h-3.5" />
-                    <span>Facturae XML</span>
-                  </button>
+                  {fac.legal && fac.tipoAeat === 'F1' && (
+                    <button
+                      onClick={() => setFacturaARectificar(fac)}
+                      className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition"
+                      title="Una factura emitida no se modifica: se corrige con una rectificativa"
+                    >
+                      Rectificar
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setPdfModalData({ type: 'factura', data: fac })}
                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    <span>Ver PDF VeriFactu</span>
+                    <span>Ver PDF</span>
                   </button>
 
                   <button
@@ -391,13 +379,57 @@ export default function FacturasList() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20"
+                  disabled={emitiendo}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20"
                 >
-                  Emitir Factura Oficial
+                  {emitiendo ? 'Emitiendo…' : 'Emitir factura (VeriFactu)'}
                 </button>
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Modal Factura Rectificativa */}
+      {facturaARectificar && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={handleRectificarSubmit} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4 text-xs sm:text-sm">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white">Rectificar {facturaARectificar.numero}</h3>
+              <button type="button" onClick={() => setFacturaARectificar(null)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            <p className="text-slate-400">
+              La factura original no cambia. Se emite una factura rectificativa por la diferencia, con su propia serie y registro VeriFactu.
+              Base original: <strong className="text-slate-200">{facturaARectificar.baseImponible?.toLocaleString('es-ES')} €</strong>.
+            </p>
+            <div>
+              <label className="text-slate-400 block mb-1 font-medium">Causa de la rectificación</label>
+              <input
+                value={rectificacion.causa}
+                onChange={(e) => setRectificacion(r => ({ ...r, causa: e.target.value }))}
+                placeholder="Ej.: error en la medición de la partida de alicatado"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 block mb-1 font-medium">Diferencia de base imponible (€, negativa para rebajar)</label>
+              <input
+                value={rectificacion.diferenciaBase}
+                onChange={(e) => setRectificacion(r => ({ ...r, diferenciaBase: e.target.value }))}
+                inputMode="decimal"
+                placeholder="-150,00"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button type="button" onClick={() => setFacturaARectificar(null)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 text-xs">
+                Cancelar
+              </button>
+              <button type="submit" disabled={emitiendo} className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-60 text-white font-bold rounded-xl text-xs">
+                {emitiendo ? 'Emitiendo…' : 'Emitir rectificativa'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

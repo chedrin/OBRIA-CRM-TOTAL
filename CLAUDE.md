@@ -28,6 +28,7 @@ Pendiente:
 - Poner `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` en `.env` y en Render; probar IA de extremo a extremo (mejorar texto, generar presupuesto, Memoria de la IA).
 - Desplegar en Render con las variables `VITE_*` y de servidor.
 - Seguridad: `VITE_RESEND_API_KEY` y `VITE_WHATSAPP_ACCESS_TOKEN` siguen expuestos al navegador (moverlos al servidor).
+- Facturación legal (plan por fases hasta julio de 2027): fase 1 hecha (`supabase_schema_facturacion.sql`, `backend/facturacionRoutes.js`, `backend/verifactu/`). Pedro debe ejecutar ese SQL en Supabase. Faltan el envío SOAP a la AEAT con certificado, Facturae, la exportación contable y los certificados por cliente. Hasta tenerlo, Factusol sigue emitiendo las facturas reales.
 Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.
 
 ## Diagnóstico sugerido del login, en orden

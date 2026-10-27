@@ -48,6 +48,13 @@ import {
 } from '../services/referenceBudgetService';
 import { analyzeReferenceBudgetViaBackend, deleteAiInstruction, setClientAiKeys } from '../services/backendAiService';
 import { findPriceBaseMatch, nextPriceCode } from '../services/priceBaseService';
+import {
+  getFacturacion,
+  listFacturasLegales,
+  emitirFactura,
+  rectificarFactura as rectificarFacturaApi,
+  cambiarCobroFactura
+} from '../services/facturacionService';
 
 const AppContext = createContext();
 
@@ -186,6 +193,29 @@ export function AppProvider({ children }) {
       stopListening();
     };
   }, []);
+
+  // Facturación legal: empresa e interruptor "Facturación activada" + facturas emitidas en el servidor.
+  const [facturacion, setFacturacion] = useState({ cargada: false, empresa: null, error: '' });
+  const [facturasLegales, setFacturasLegales] = useState([]);
+  const facturacionActivada = Boolean(facturacion.empresa?.facturacionActivada);
+
+  const recargarFacturacion = useCallback(async () => {
+    const estado = await getFacturacion();
+    const empresa = estado.ok ? estado.data?.empresa || null : null;
+    setFacturacion({ cargada: true, empresa, error: estado.ok ? '' : estado.error });
+    if (empresa) {
+      const lista = await listFacturasLegales();
+      if (lista.ok) setFacturasLegales(lista.data?.facturas || []);
+    } else {
+      setFacturasLegales([]);
+    }
+    return empresa;
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') return;
+    recargarFacturacion();
+  }, [currentUser?.id, currentUser?.role, recargarFacturacion]);
 
   // El administrador carga la lista de usuarios (la base de datos solo se la entrega a administradores).
   useEffect(() => {
@@ -1216,53 +1246,62 @@ export function AppProvider({ children }) {
     showNotification('Presupuesto actualizado y sincronizado');
   };
 
-  const convertPresupuestoToFactura = (presupuestoId, tipoFactura = 'Certificación 1 (Anticipo 40%)', porcentaje = 40) => {
+  // Con la facturación activada, toda factura se emite en el servidor (número + VeriFactu).
+  const convertPresupuestoToFactura = async (presupuestoId, tipoFactura = 'Certificación 1 (Anticipo 40%)', porcentaje = 40) => {
     const pres = presupuestos.find(p => p.id === presupuestoId);
     if (!pres) return null;
+    if (!facturacionActivada) {
+      showNotification('La facturación está desactivada. Actívala en Ajustes > Facturación (VeriFactu).', 'error');
+      return null;
+    }
 
-    const fechaHoy = new Date().toISOString().split('T')[0];
-    const fechaVenc = new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0];
     const factor = (porcentaje || 100) / 100;
-
-    const baseCalculada = Number((pres.baseImponible * factor).toFixed(2));
-    const cuotaIvaCalculada = Number((baseCalculada * (pres.tipoIvaPct / 100)).toFixed(2));
-    const totalCalculado = Number((baseCalculada + cuotaIvaCalculada).toFixed(2));
-
-    const mes = new Date().getMonth();
-    const trim = mes < 3 ? '1T' : mes < 6 ? '2T' : mes < 9 ? '3T' : '4T';
-
-    const newFactura = {
-      id: `fac-${Date.now()}`,
-      numero: `FAC-2026-${String(facturas.length + 1).padStart(3, '0')}`,
-      presupuestoId: pres.id,
+    const result = await emitirFactura({
+      clienteNombre: pres.cliente,
+      clienteNif: pres.nif || '',
+      clienteDireccion: pres.direccion || '',
+      descripcion: tipoFactura,
       obraId: pres.obraId || null,
-      obraTitulo: pres.obraTitulo || pres.cliente,
-      cliente: pres.cliente,
-      cifNif: pres.nif || 'Sin NIF',
-      direccion: pres.direccion || 'Domicilio de obra',
-      fechaEmision: fechaHoy,
-      fechaVencimiento: fechaVenc,
-      tipoFactura: tipoFactura,
-      trimestre: trim,
-      ano: 2026,
-      baseImponible: baseCalculada,
-      tipoIvaPct: pres.tipoIvaPct || 10,
-      cuotaIva: cuotaIvaCalculada,
-      retencionIrpfPct: 0,
-      cuotaRetencion: 0,
-      totalFactura: totalCalculado,
-      estadoCobro: 'pendiente',
-      fechaCobro: null,
-      metodoPago: 'Transferencia bancaria a 15 días'
-    };
+      presupuestoId: pres.id,
+      baseImponible: Number(((pres.baseImponible || 0) * factor).toFixed(2)),
+      ivaPct: Number(pres.tipoIvaPct ?? facturacion.empresa?.ivaPorDefectoPct ?? 21),
+      metodoPago: 'Transferencia bancaria'
+    });
+    if (!result.ok) {
+      showNotification(`No se emitió la factura: ${result.error}`, 'error');
+      return null;
+    }
 
-    setFacturas(prev => [newFactura, ...prev]);
+    const factura = result.data.factura;
+    setFacturasLegales(prev => [factura, ...prev]);
     setPresupuestos(prev => prev.map(p => p.id === pres.id ? { ...p, estado: 'facturado' } : p));
-    showNotification(`¡Factura ${newFactura.numero} generada con éxito por ${totalCalculado.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}!`);
-    return newFactura;
+    showNotification(`Factura ${factura.numero} emitida y registrada (VeriFactu) por ${factura.importeTotal.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}.`);
+    return factura;
   };
 
-  const updateFacturaStatus = (facturaId, estadoCobro, metodoPago = null) => {
+  const rectificarFactura = async (facturaId, datos) => {
+    const result = await rectificarFacturaApi(facturaId, datos);
+    if (!result.ok) {
+      showNotification(`No se emitió la rectificativa: ${result.error}`, 'error');
+      return null;
+    }
+    const factura = result.data.factura;
+    setFacturasLegales(prev => [factura, ...prev]);
+    showNotification(`Factura rectificativa ${factura.numero} emitida.`);
+    return factura;
+  };
+
+  const updateFacturaStatus = async (facturaId, estadoCobro, metodoPago = null) => {
+    if (facturasLegales.some(f => f.id === facturaId)) {
+      const result = await cambiarCobroFactura(facturaId, { estadoCobro, ...(metodoPago ? { metodoPago } : {}) });
+      if (!result.ok) {
+        showNotification(`No se pudo cambiar el cobro: ${result.error}`, 'error');
+        return;
+      }
+      setFacturasLegales(prev => prev.map(f => (f.id === facturaId ? result.data.factura : f)));
+      showNotification(`Factura marcada como ${estadoCobro}`);
+      return;
+    }
     setFacturas(prev => prev.map(f => {
       if (f.id === facturaId) {
         return {
@@ -2096,7 +2135,12 @@ export function AppProvider({ children }) {
       addPresupuesto,
       updatePresupuesto,
       convertPresupuestoToFactura,
-      facturas,
+      rectificarFactura,
+      // Con la facturación activada, las facturas son las emitidas en el servidor.
+      facturas: facturacionActivada ? facturasLegales : facturas,
+      facturacion,
+      facturacionActivada,
+      recargarFacturacion,
       setFacturas,
       updateFacturaStatus,
       facturasProveedores,

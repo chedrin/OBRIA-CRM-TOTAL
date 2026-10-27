@@ -36,7 +36,8 @@ export default function Sidebar({
     subcontratasPresupuestos,
     currentUser,
     logout,
-    showNotification
+    showNotification,
+    facturacionActivada
   } = useApp();
 
   const [copiedLink, setCopiedLink] = useState(false);
@@ -218,7 +219,7 @@ export default function Sidebar({
             )}
             
             <div className="space-y-1">
-              {section.items.map((item) => {
+              {section.items.filter((item) => item.id !== 'facturas' || facturacionActivada).map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
 

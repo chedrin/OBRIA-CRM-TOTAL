@@ -32,6 +32,7 @@ export default function PresupuestosList() {
     updatePresupuesto,
     addObra,
     convertPresupuestoToFactura,
+    facturacionActivada,
     setPdfModalData,
     setActiveTab,
     showNotification
@@ -64,9 +65,10 @@ export default function PresupuestosList() {
     setConvertTipo('Certificación 1 (Anticipo 40% Inicio Obra)');
   };
 
-  const handleConfirmConvert = () => {
+  const handleConfirmConvert = async () => {
     if (!showConvertModal) return;
-    convertPresupuestoToFactura(showConvertModal.id, convertTipo, Number(convertPorcentaje));
+    const factura = await convertPresupuestoToFactura(showConvertModal.id, convertTipo, Number(convertPorcentaje));
+    if (!factura) return;
     setShowConvertModal(null);
     setActiveTab('facturas');
   };
@@ -265,14 +267,16 @@ export default function PresupuestosList() {
                     <span>Enviar</span>
                   </button>
 
-                  {/* 1-Click Convert to Invoice */}
-                  <button
-                    onClick={() => handleOpenConvertModal(pres)}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-emerald-600/20"
-                  >
-                    <Receipt className="w-4 h-4" />
-                    <span>Pasar a Factura (1 Clic)</span>
-                  </button>
+                  {/* 1-Click Convert to Invoice (solo con la facturación activada) */}
+                  {facturacionActivada && (
+                    <button
+                      onClick={() => handleOpenConvertModal(pres)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-emerald-600/20"
+                    >
+                      <Receipt className="w-4 h-4" />
+                      <span>Pasar a Factura (1 Clic)</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
