@@ -28,7 +28,8 @@ const WORKER_ALLOWED_PATHS = new Set([
   "/api/ai/refine-text",
   "/api/ai/transcribe",
   "/api/transcribir",
-  "/api/ai/memory/corrections"
+  "/api/ai/memory/corrections",
+  "/api/needs"
 ]);
 
 // ---------------------------------------------------------------------------
