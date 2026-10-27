@@ -14,8 +14,8 @@ const { chromium } = require('playwright');
   await page.click('text="Presupuestos IA"');
   await page.waitForTimeout(2000);
 
-  console.log('--- Clicking Config. Fiscal & IA ---');
-  await page.click('text="Config. Fiscal & IA"');
+  console.log('--- Clicking Ajustes ---');
+  await page.click('text="Ajustes"');
   await page.waitForTimeout(2000);
 
   console.log('--- Clicking Motor Central IA tab ---');

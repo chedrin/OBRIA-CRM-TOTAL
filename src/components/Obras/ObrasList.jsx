@@ -3,6 +3,9 @@ import { useApp } from '../../context/AppContext';
 import ObraDetail from './ObraDetail';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
+import ViewModeSwitcher from '../Common/ViewModeSwitcher';
+import ObrasTabla from './ObrasTabla';
+import { useUiPreferences } from '../../context/UiPreferencesContext';
 import {
   HardHat,
   Plus,
@@ -29,6 +32,7 @@ export default function ObrasList() {
     setSelectedObraId
   } = useApp();
 
+  const { viewMode } = useUiPreferences();
   const [filterState, setFilterState] = useState('todas'); // todas, en_curso, presupuestada, finalizada
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
@@ -172,6 +176,8 @@ export default function ObrasList() {
           </p>
         </div>
 
+        <div className="flex items-center gap-2">
+        <ViewModeSwitcher />
         <button
           onClick={handleOpenNewModal}
           className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
@@ -179,6 +185,7 @@ export default function ObrasList() {
           <Plus className="w-4 h-4 stroke-[3]" />
           <span>Nueva Obra</span>
         </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -218,7 +225,12 @@ export default function ObrasList() {
         </div>
       </div>
 
+      {viewMode !== 'tarjetas' && (
+        <ObrasTabla obras={filteredObras} compact={viewMode === 'compacta'} onOpen={setSelectedObraId} />
+      )}
+
       {/* Works Cards Grid */}
+      {viewMode === 'tarjetas' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredObras.map(obra => {
           const isEnCurso = obra.estado === 'en_curso';
@@ -228,7 +240,7 @@ export default function ObrasList() {
             <div
               key={obra.id}
               onClick={() => setSelectedObraId(obra.id)}
-              className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-5 rounded-2xl cursor-pointer transition shadow-sm hover:shadow-lg flex flex-col justify-between group"
+              className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-5 rounded-2xl cursor-pointer transition-all duration-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5 flex flex-col justify-between group animate-in fade-in"
             >
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
@@ -341,6 +353,7 @@ export default function ObrasList() {
           );
         })}
       </div>
+      )}
 
       {/* Modal Nueva Obra con Selección de Presupuesto */}
       {showNewModal && (
