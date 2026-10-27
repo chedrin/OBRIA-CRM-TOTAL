@@ -28,12 +28,39 @@ import {
   Volume2,
   Square,
   FileAudio,
-  Check
+  Check,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
+import { isValidNif } from '../../utils/nifValidator';
 import confetti from 'canvas-confetti';
 import { transcribeAudio } from '../../services/aiAudioTextService';
 import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
 import AiImprovementControl from '../Common/AiImprovementControl';
+
+export const TIPOS_CLIENTE = [
+  { id: 'particular', label: 'Particular' },
+  { id: 'comunidad', label: 'Comunidad de propietarios' },
+  { id: 'empresa', label: 'Empresa / Autónomo' },
+  { id: 'constructor', label: 'Constructor o promotor (subcontrata)' },
+  { id: 'administracion', label: 'Administración pública' }
+];
+
+export const FISCALIDADES = [
+  { id: 'iva10', label: 'IVA 10% · reforma de vivienda para uso particular', short: 'IVA 10%', tipoIva: 10 },
+  { id: 'iva21', label: 'IVA 21% · tipo general', short: 'IVA 21%', tipoIva: 21 },
+  { id: 'isp', label: 'Inversión del sujeto pasivo (art. 84.Uno.2º.f LIVA)', short: 'ISP (sin IVA repercutido)', tipoIva: 0 },
+  { id: 'exento', label: 'Exento de IVA', short: 'Exento de IVA', tipoIva: 0 }
+];
+
+export const CONDICIONES_PAGO = [
+  { id: '40-40-20', label: '40% firma · 40% avance de obra · 20% entrega' },
+  { id: '50-50', label: '50% inicio · 50% a la finalización' },
+  { id: '30-40-30', label: '30% firma · 40% mitad de obra · 30% entrega' },
+  { id: 'certificaciones', label: 'Certificaciones mensuales según avance' },
+  { id: 'final', label: '100% a la finalización' },
+  { id: 'otra', label: 'Otra (personalizada)' }
+];
 
 // inline = se muestra dentro de la página de Presupuestos en lugar de como ventana emergente.
 export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inline = false }) {
@@ -75,7 +102,17 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   const [calidades, setCalidades] = useState('Media-Alta (Confort Plus)');
   const [plazoDeseado, setPlazoDeseado] = useState('');
   const [margenObjetivo, setMargenObjetivo] = useState(30);
-  const [tipoIva, setTipoIva] = useState(10);
+  // Paso 1 (obligatorio): parámetros del cliente y condiciones económicas
+  const [wizardStep, setWizardStep] = useState(1);
+  const [tipoCliente, setTipoCliente] = useState('');
+  const [clienteNif, setClienteNif] = useState('');
+  const [condicionesPago, setCondicionesPago] = useState('40-40-20');
+  const [condicionesPagoOtra, setCondicionesPagoOtra] = useState('');
+  const [fiscalidad, setFiscalidad] = useState('iva10');
+  const [retencionIrpf, setRetencionIrpf] = useState(0);
+  const [validezDias, setValidezDias] = useState(30);
+  const [paramsTouched, setParamsTouched] = useState(false);
+  const [validatedSignature, setValidatedSignature] = useState(null);
 
   // Audio Recording & Text Input State
   const [audioFile, setAudioFile] = useState(null);
@@ -119,6 +156,64 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   }, [isProcessing]);
 
   if (!isOpen) return null;
+
+  const tipoIva = FISCALIDADES.find(f => f.id === fiscalidad)?.tipoIva ?? 21;
+  const condicionesPagoTexto = condicionesPago === 'otra'
+    ? condicionesPagoOtra.trim()
+    : CONDICIONES_PAGO.find(c => c.id === condicionesPago)?.label || '';
+
+  // Validación de los parámetros base. Sin ellos no se puede dictar ni generar.
+  const paramErrors = {};
+  if (clienteNombre.trim().length < 2) paramErrors.clienteNombre = 'Indica el nombre del cliente.';
+  if (!tipoCliente) paramErrors.tipoCliente = 'Elige el tipo de cliente.';
+  if (!obraTitulo.trim()) paramErrors.obraTitulo = 'Pon un título a la obra.';
+  if (direccion.trim().length < 5) paramErrors.direccion = 'Escribe la dirección de la obra.';
+  if (clienteNif.trim() && !isValidNif(clienteNif)) paramErrors.clienteNif = 'El NIF/CIF no es válido (revisa la letra de control).';
+  else if (tipoCliente && tipoCliente !== 'particular' && !clienteNif.trim()) paramErrors.clienteNif = 'Para este tipo de cliente el NIF/CIF es obligatorio.';
+  if (clienteEmail.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clienteEmail.trim())) paramErrors.clienteEmail = 'El email no es válido.';
+  if (!(margenObjetivo >= 5 && margenObjetivo <= 60)) paramErrors.margenObjetivo = 'El margen debe estar entre 5% y 60%.';
+  if (condicionesPago === 'otra' && condicionesPagoOtra.trim().length < 5) paramErrors.condicionesPagoOtra = 'Describe las condiciones de pago.';
+  if (fiscalidad === 'isp' && tipoCliente !== 'constructor') paramErrors.fiscalidad = 'La inversión del sujeto pasivo solo aplica si el cliente es un constructor o promotor (subcontrata).';
+  if (retencionIrpf > 0 && tipoCliente === 'particular') paramErrors.retencionIrpf = 'Un particular no practica retenciones de IRPF.';
+
+  const paramWarnings = [];
+  if (fiscalidad === 'iva10' && ['empresa', 'administracion'].includes(tipoCliente)) {
+    paramWarnings.push('El IVA del 10% solo aplica a reformas de vivienda para uso particular. Revisa si corresponde el 21%.');
+  }
+  if (fiscalidad === 'iva10') {
+    paramWarnings.push('Recuerda: con IVA reducido los materiales aportados no pueden superar el 40% de la base imponible.');
+  }
+  if (fiscalidad === 'exento') paramWarnings.push('Indica en las notas el artículo de exención aplicable.');
+
+  const paramsSignature = JSON.stringify([clienteNombre, tipoCliente, clienteNif, obraTitulo, direccion, clienteEmail, clienteTelefono, plazoDeseado, calidades, margenObjetivo, validezDias, condicionesPago, condicionesPagoOtra, fiscalidad, retencionIrpf]);
+  const paramsValidated = validatedSignature === paramsSignature && Object.keys(paramErrors).length === 0;
+
+  const paramField = (name) => `w-full bg-slate-900 border rounded-xl p-2.5 text-white font-medium focus:outline-none focus:ring-2 transition ${
+    paramsTouched && paramErrors[name] ? 'border-rose-500 focus:ring-rose-500/30' : 'border-slate-700 focus:border-amber-400 focus:ring-amber-500/20'
+  }`;
+  const ParamError = ({ name }) => (paramsTouched && paramErrors[name]
+    ? <p data-param-error className="text-[11px] text-rose-400 mt-1">{paramErrors[name]}</p>
+    : null);
+
+  const handleTipoClienteChange = (value) => {
+    setTipoCliente(value);
+    // Valores fiscales por defecto según el tipo de cliente (se pueden cambiar).
+    if (value === 'particular' || value === 'comunidad') { setFiscalidad('iva10'); setRetencionIrpf(0); }
+    else if (value === 'constructor') setFiscalidad('isp');
+    else if (value) setFiscalidad('iva21');
+  };
+
+  const handleValidateParams = () => {
+    setParamsTouched(true);
+    if (Object.keys(paramErrors).length > 0) {
+      showNotification('Revisa los parámetros del cliente marcados en rojo.', 'error');
+      setTimeout(() => document.querySelector('[data-param-error]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+      return;
+    }
+    setValidatedSignature(paramsSignature);
+    setWizardStep(2);
+    showNotification('Parámetros validados. Ya puedes dictar o subir la visita.');
+  };
 
   // Una medición = una línea en las anotaciones (ej: "- Salón: 5 x 4 x 2,30 m (superficie 20 m², perímetro 18 m)").
   const handleAddMedicion = () => {
@@ -237,6 +332,12 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
 
   // Run Multimodal AI Pipeline
   const handleLaunchAiPipeline = async () => {
+    if (!paramsValidated) {
+      setWizardStep(1);
+      setParamsTouched(true);
+      showNotification('Primero completa y valida los parámetros del cliente y las condiciones económicas.', 'error');
+      return;
+    }
     const realUploadedCapturas = (capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
 
     if (!audioTranscript?.trim() && !complementaryText?.trim() && realUploadedCapturas.length === 0 && !audioFile) {
@@ -276,6 +377,19 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
       plazoMeses: plazoDeseado,
       margenGlobalPct: margenObjetivo,
       tipoIvaPct: tipoIva,
+      parametrosCliente: {
+        tipoCliente,
+        tipoClienteLabel: TIPOS_CLIENTE.find(t => t.id === tipoCliente)?.label || tipoCliente,
+        nif: clienteNif.trim(),
+        margenComercialPct: margenObjetivo,
+        condicionesPago: condicionesPagoTexto,
+        fiscalidad,
+        fiscalidadLabel: FISCALIDADES.find(f => f.id === fiscalidad)?.label || fiscalidad,
+        tipoIvaPct: tipoIva,
+        inversionSujetoPasivo: fiscalidad === 'isp',
+        retencionIrpfPct: retencionIrpf,
+        validezDias
+      },
       audioTranscripcion: finalAudioText,
       audioBlob: audioFile,
       capturas: realUploadedCapturas,
@@ -519,6 +633,217 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
               </div>
             )}
             
+            {/* Pasos del asistente: los parámetros del cliente van primero y son obligatorios */}
+            <ol className="grid grid-cols-2 gap-2">
+              {[
+                { n: 1, label: 'Parámetros del cliente y condiciones económicas' },
+                { n: 2, label: 'Dictado, notas y evidencias de la visita' }
+              ].map(st => {
+                const done = st.n === 1 && paramsValidated;
+                const active = wizardStep === st.n;
+                const locked = st.n === 2 && !paramsValidated;
+                return (
+                  <li key={st.n}>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => setWizardStep(st.n)}
+                      title={locked ? 'Valida primero los parámetros del cliente' : undefined}
+                      className={`w-full flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all duration-200 ${
+                        active ? 'border-amber-500/50 bg-amber-500/10' : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                      } ${locked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 transition-colors ${
+                        done ? 'bg-emerald-500 text-white' : active ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {done ? <Check className="w-4 h-4 stroke-[3]" /> : locked ? <Lock className="w-3.5 h-3.5" /> : st.n}
+                      </span>
+                      <span className={`text-[11px] sm:text-xs font-bold leading-tight ${active ? 'text-white' : 'text-slate-400'}`}>{st.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+
+            {wizardStep === 1 && (
+              <div className="animate-in fade-in slide-in-from-bottom-2">
+                <div className="bg-slate-950 border border-slate-800 p-4 sm:p-5 rounded-2xl space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Sliders className="w-4 h-4 text-emerald-400" />
+                        <span>1. Parámetros del Cliente y Condiciones Económicas</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Obligatorio antes de dictar: la IA usa el margen, el tipo de cliente, las condiciones de pago y la fiscalidad para calcular la propuesta.
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-slate-500 shrink-0">* obligatorio</span>
+                  </div>
+
+                  {/* Cliente y obra */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Nombre del cliente *</label>
+                      <input type="text" value={clienteNombre} onChange={(e) => setClienteNombre(e.target.value)} className={paramField('clienteNombre')} />
+                      <ParamError name="clienteNombre" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Tipo de cliente *</label>
+                      <select value={tipoCliente} onChange={(e) => handleTipoClienteChange(e.target.value)} className={paramField('tipoCliente')}>
+                        <option value="">Selecciona…</option>
+                        {TIPOS_CLIENTE.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                      </select>
+                      <ParamError name="tipoCliente" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">NIF / CIF {tipoCliente && tipoCliente !== 'particular' ? '*' : '(opcional)'}</label>
+                      <input type="text" value={clienteNif} onChange={(e) => setClienteNif(e.target.value.toUpperCase())} placeholder="12345678Z / B12345678" className={`${paramField('clienteNif')} font-mono uppercase`} />
+                      <ParamError name="clienteNif" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Título de la obra *</label>
+                      <input type="text" value={obraTitulo} placeholder="ej: Reforma integral de vivienda" onChange={(e) => setObraTitulo(e.target.value)} className={paramField('obraTitulo')} />
+                      <ParamError name="obraTitulo" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-slate-400 block mb-1">Dirección de la vivienda / local *</label>
+                      <input type="text" value={direccion} onChange={(e) => setDireccion(e.target.value)} className={paramField('direccion')} />
+                      <ParamError name="direccion" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Teléfono móvil (WhatsApp)</label>
+                      <input type="text" value={clienteTelefono} onChange={(e) => setClienteTelefono(e.target.value)} className={paramField('clienteTelefono')} />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Email del cliente</label>
+                      <input type="email" value={clienteEmail} onChange={(e) => setClienteEmail(e.target.value)} className={paramField('clienteEmail')} />
+                      <ParamError name="clienteEmail" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Plazo deseado</label>
+                      <input type="text" value={plazoDeseado} placeholder="ej: 6 semanas" onChange={(e) => setPlazoDeseado(e.target.value)} className={paramField('plazoDeseado')} />
+                    </div>
+                  </div>
+
+                  {/* Condiciones económicas */}
+                  <div className="pt-4 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Nivel de calidades *</label>
+                      <select value={calidades} onChange={(e) => setCalidades(e.target.value)} className={paramField('calidades')}>
+                        <option value="Económica / Funcional">Económica / Funcional</option>
+                        <option value="Media-Alta (Confort Plus)">Media-Alta (Confort Plus)</option>
+                        <option value="Alta / Premium">Alta / Premium (Marcas Oficiales)</option>
+                        <option value="Lujo / Exclusiva">Lujo / Exclusiva (Diseño a medida)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Margen comercial objetivo *</label>
+                      <div className="flex items-center gap-2">
+                        <input type="range" min="5" max="60" value={margenObjetivo} onChange={(e) => setMargenObjetivo(Number(e.target.value))} className="w-full accent-amber-500" />
+                        <input
+                          type="number"
+                          min="5"
+                          max="60"
+                          value={margenObjetivo}
+                          onChange={(e) => setMargenObjetivo(Number(e.target.value))}
+                          className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-right font-mono font-bold text-amber-400"
+                        />
+                        <span className="text-slate-400">%</span>
+                      </div>
+                      <ParamError name="margenObjetivo" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Validez de la oferta</label>
+                      <select value={validezDias} onChange={(e) => setValidezDias(Number(e.target.value))} className={paramField('validezDias')}>
+                        {[15, 30, 60, 90].map(d => <option key={d} value={d}>{d} días</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Condiciones de pago *</label>
+                      <select value={condicionesPago} onChange={(e) => setCondicionesPago(e.target.value)} className={paramField('condicionesPago')}>
+                        {CONDICIONES_PAGO.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                      </select>
+                      {condicionesPago === 'otra' && (
+                        <input
+                          type="text"
+                          value={condicionesPagoOtra}
+                          onChange={(e) => setCondicionesPagoOtra(e.target.value)}
+                          placeholder="Describe los hitos de pago"
+                          className={`${paramField('condicionesPagoOtra')} mt-2`}
+                        />
+                      )}
+                      <ParamError name="condicionesPagoOtra" />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Fiscalidad estimada (IVA) *</label>
+                      <select value={fiscalidad} onChange={(e) => setFiscalidad(e.target.value)} className={paramField('fiscalidad')}>
+                        {FISCALIDADES.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                      </select>
+                      <ParamError name="fiscalidad" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Retención IRPF estimada</label>
+                      <select value={retencionIrpf} onChange={(e) => setRetencionIrpf(Number(e.target.value))} className={paramField('retencionIrpf')}>
+                        <option value={0}>Sin retención</option>
+                        <option value={1}>1% (actividad en módulos)</option>
+                        <option value={7}>7% (profesional, inicio de actividad)</option>
+                        <option value={15}>15% (profesional)</option>
+                      </select>
+                      <ParamError name="retencionIrpf" />
+                    </div>
+                    {paramWarnings.length > 0 && (
+                      <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 text-[11px] text-amber-300 space-y-1 self-end">
+                        {paramWarnings.map((w, i) => <p key={i} className="flex gap-1.5"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />{w}</p>)}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={handleValidateParams}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition active:scale-95"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Validar parámetros y continuar</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 2 && paramsValidated && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                {/* Resumen de los parámetros validados */}
+                <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 text-[11px]">
+                  <span className="flex items-center gap-1.5 font-bold text-emerald-400"><ShieldCheck className="w-4 h-4" />Parámetros validados</span>
+                  {[
+                    clienteNombre,
+                    TIPOS_CLIENTE.find(t => t.id === tipoCliente)?.label,
+                    `Margen ${margenObjetivo}%`,
+                    FISCALIDADES.find(f => f.id === fiscalidad)?.short,
+                    retencionIrpf > 0 ? `IRPF ${retencionIrpf}%` : null,
+                    condicionesPagoTexto
+                  ].filter(Boolean).map((t, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-300 max-w-[18rem] truncate">{t}</span>
+                  ))}
+                  <button type="button" onClick={() => setWizardStep(1)} className="ml-auto font-bold text-amber-400 hover:text-amber-300">Editar</button>
+                </div>
+
             {/* In Situ Multimodal Capture Section */}
             <div className="space-y-4">
               <div className="space-y-2">
@@ -802,128 +1127,13 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
               )}
             </div>
 
-            {/* Client Parameters & Economic Targets */}
-            <div className="bg-slate-950 border border-slate-800 p-4 sm:p-5 rounded-2xl space-y-4">
-              <h3 className="font-bold text-white text-xs sm:text-sm flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-emerald-400" />
-                <span>3. Parámetros del Cliente y Condiciones Económicas</span>
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div>
-                  <label className="text-slate-400 block mb-1">Título de la Obra:</label>
-                  <input
-                    type="text"
-                    value={obraTitulo}
-                    placeholder="ej: Reforma integral de vivienda"
-                    onChange={(e) => setObraTitulo(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Email del Cliente:</label>
-                  <input
-                    type="email"
-                    value={clienteEmail}
-                    onChange={(e) => setClienteEmail(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Plazo Deseado:</label>
-                  <input
-                    type="text"
-                    value={plazoDeseado}
-                    placeholder="ej: 6 semanas"
-                    onChange={(e) => setPlazoDeseado(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
-                  />
-                </div>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div>
-                  <label className="text-slate-400 block mb-1">Nombre del Cliente:</label>
-                  <input
-                    type="text"
-                    value={clienteNombre}
-                    onChange={(e) => { setClienteNombre(e.target.value); }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Teléfono Móvil (WhatsApp):</label>
-                  <input
-                    type="text"
-                    value={clienteTelefono}
-                    onChange={(e) => { setClienteTelefono(e.target.value); }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Dirección de la Vivienda / Local:</label>
-                  <input
-                    type="text"
-                    value={direccion}
-                    onChange={(e) => { setDireccion(e.target.value); }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-medium focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
-                <div>
-                  <label className="text-slate-400 block mb-1">Nivel de Calidades Deseado:</label>
-                  <select
-                    value={calidades}
-                    onChange={(e) => { setCalidades(e.target.value); }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-bold focus:outline-none focus:border-amber-400"
-                  >
-                    <option value="Económica / Funcional">Económica / Funcional</option>
-                    <option value="Media-Alta (Confort Plus)">Media-Alta (Confort Plus)</option>
-                    <option value="Alta / Premium">Alta / Premium (Marcas Oficiales)</option>
-                    <option value="Lujo / Exclusiva">Lujo / Exclusiva (Diseño a medida)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Margen Comercial Objetivo:</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="15"
-                      max="50"
-                      value={margenObjetivo}
-                      onChange={(e) => setMargenObjetivo(Number(e.target.value))}
-                      className="w-full accent-amber-500"
-                    />
-                    <span className="font-mono font-bold text-amber-400 w-12 text-right">{margenObjetivo}%</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Tipo de IVA Aplicable:</label>
-                  <select
-                    value={tipoIva}
-                    onChange={(e) => setTipoIva(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white font-bold focus:outline-none focus:border-amber-400"
-                  >
-                    <option value="10">10% Reducido (Reforma Vivienda Habitual)</option>
-                    <option value="21">21% General (Locales o Materiales superior al 40%)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
+            )}
           </div>
         )}
 
         {/* Footer Actions - Positioned Bottom Right as required by AGENTS.md */}
-        {!isProcessing && !generatedQuoteResult && (
+        {!isProcessing && !generatedQuoteResult && wizardStep === 2 && paramsValidated && (
           <div className={`p-5 border-t border-slate-800 bg-slate-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 rounded-b-3xl ${inline ? 'sticky bottom-0 z-10' : 'sticky bottom-0'}`}>
             <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
