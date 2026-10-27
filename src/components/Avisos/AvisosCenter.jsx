@@ -147,7 +147,7 @@ export default function AvisosCenter() {
 
   // Llegada desde un aviso, un toast o una notificación push.
   useEffect(() => {
-    if (!target) return;
+    if (!target || target.section === 'avance') return;
     setTab(target.section === 'avisos' ? 'avisos' : target.section);
     setFocusId(target.id);
     setTarget(null);

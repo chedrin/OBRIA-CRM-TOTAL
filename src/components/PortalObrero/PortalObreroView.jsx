@@ -34,6 +34,7 @@ import PwaInstallPrompt from './PwaInstallPrompt';
 import TaskProgressSelector from './TaskProgressSelector';
 import AvisosTecnicosModal from './AvisosTecnicosModal';
 import PedirMaterialModal from './PedirMaterialModal';
+import MisTajos from './MisTajos';
 
 export default function PortalObreroView() {
   const {
@@ -74,6 +75,11 @@ export default function PortalObreroView() {
         foto: 'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f8?auto=format&fit=crop&w=200&q=80'
       })
     : (obreros.find(o => o.id === selectedObreroId) || obreros[0]);
+
+  // Con el módulo de avance activo, el obrero reporta en "Mis tajos" (avance reportado)
+  // y la lista de fases solo muestra el avance certificado por la oficina.
+  const [avanceDisponible, setAvanceDisponible] = useState(false);
+  const lockLegacyProgress = avanceDisponible && isObreroLoggedIn;
 
   // Quick Action in Obra
   const [activeObraId, setActiveObraId] = useState(obras[0]?.id || '');
@@ -590,6 +596,14 @@ export default function PortalObreroView() {
               </div>
             )}
 
+            {/* Mis tajos: partidas asignadas a este obrero en la obra activa */}
+            <MisTajos
+              obraId={currentObra?.id}
+              obreroId={currentObrero?.id}
+              isAdmin={!isObreroLoggedIn}
+              onAvailable={setAvanceDisponible}
+            />
+
             {/* Phases / Tasks List for this Worker */}
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
@@ -597,7 +611,7 @@ export default function PortalObreroView() {
                   <Layers className="w-4 h-4 text-amber-400" />
                   <span>Fases del Presupuesto Firmado</span>
                 </span>
-                <span className="text-[10px] text-slate-400">Pulsa para avanzar</span>
+                <span className="text-[10px] text-slate-400">{lockLegacyProgress ? 'Avance certificado' : 'Pulsa para avanzar'}</span>
               </div>
 
               <div className="space-y-3">
@@ -748,6 +762,7 @@ export default function PortalObreroView() {
 
                                   {/* Tactile Progress Selector */}
                                   <TaskProgressSelector
+                                    disabled={lockLegacyProgress}
                                     currentProgress={tarea.progreso}
                                     onProgressChange={(pct) => handleUpdateTaskProgress(currentObra.id, fase.id, tarea.id, pct)}
                                     onRequestEvidencePhoto={() => setShowPhotoModal(true)}
@@ -763,6 +778,7 @@ export default function PortalObreroView() {
                       {!hasTasks && (
                         <div className="bg-slate-900/50 border-t border-slate-800/80 p-3">
                           <TaskProgressSelector
+                            disabled={lockLegacyProgress}
                             currentProgress={fase.progreso}
                             onProgressChange={(pct) => handleUpdateFaseProgress(currentObra.id, fase.id, pct)}
                             onRequestEvidencePhoto={() => setShowPhotoModal(true)}

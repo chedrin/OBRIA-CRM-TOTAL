@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { flattenPlan } from '../../utils/avanceObra';
 import { X, Loader2, Plus, Trash2 } from 'lucide-react';
 
 // Botón "Pedir material / avisar" del Portal del Obrero: crea una necesidad de obra
@@ -23,6 +24,10 @@ export default function PedirMaterialModal({ isOpen, onClose, obra, onSent }) {
   const [urgent, setUrgent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [target, setTarget] = useState('');
+  // Partida afectada: el aviso queda ligado a ella y, si es bloqueo o falta de material,
+  // la partida sale en alerta en el panel del jefe de obra.
+  const partidas = useMemo(() => flattenPlan(obra || {}).fases.flatMap((f) => f.partidas.map((p) => ({ ...p, faseNombre: f.nombre }))), [obra]);
 
   if (!isOpen) return null;
 
@@ -49,7 +54,8 @@ export default function PedirMaterialModal({ isOpen, onClose, obra, onSent }) {
           description: text,
           items: category === 'material' ? lines : [],
           needed_by: neededBy || null,
-          urgency: urgent ? 'urgente' : 'normal'
+          urgency: urgent ? 'urgente' : 'normal',
+          ...(target ? { fase_id: target.split('::')[0], partida_id: target.split('::')[1] } : {})
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -58,6 +64,7 @@ export default function PedirMaterialModal({ isOpen, onClose, obra, onSent }) {
       setItems([{ material: '', cantidad: '', unidad: '' }]);
       setNeededBy('');
       setUrgent(false);
+      setTarget('');
       onSent?.();
       onClose();
     } catch (err) {
@@ -84,6 +91,17 @@ export default function PedirMaterialModal({ isOpen, onClose, obra, onSent }) {
             </button>
           ))}
         </div>
+
+        {partidas.length > 0 && (
+          <select value={target} onChange={(e) => setTarget(e.target.value)} className={field} aria-label="Partida afectada">
+            <option value="">Partida afectada: general de la obra</option>
+            {partidas.map((p) => (
+              <option key={`${p.faseId}::${p.id}`} value={`${p.faseId}::${p.id}`}>
+                {p.faseCompleta ? p.titulo : `${p.codigo} · ${p.titulo}`}
+              </option>
+            ))}
+          </select>
+        )}
 
         {category === 'material' && (
           <div className="space-y-2">

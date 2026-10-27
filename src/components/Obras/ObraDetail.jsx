@@ -580,6 +580,15 @@ export default function ObraDetail({ obraId, onBack }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => { window.location.hash = `#admin/avance/${encodeURIComponent(obra.id)}`; }}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                title="Asignar fases y partidas a obreros o subcontratas y validar su avance"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Seguimiento y asignaciones</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowNewAlertModal(true)}
                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
                 title="Enviar aviso o instrucción técnica a los operarios"

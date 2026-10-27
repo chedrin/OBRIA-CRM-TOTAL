@@ -17,6 +17,7 @@ import { handleAuthRoutes, enforceApiAuth } from "./authRoutes.js";
 import { handleMemoryRoutes, buildMemoryContext, saveReferenceLearning } from "./aiMemory.js";
 import { handleUsageRoutes, recordAiUsage } from "./aiUsage.js";
 import { handleSubcontractorPublicRoutes, handleNotificationRoutes } from "./notificaciones.js";
+import { handleAvancePublicRoutes, handleAvanceRoutes } from "./avanceRoutes.js";
 import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
 
@@ -1042,6 +1043,7 @@ async function handleRequest(req, res) {
 
   // Enlace mágico de subcontratas (público: lo protege el token de la URL)
   if (await handleSubcontractorPublicRoutes(req, res, pathname, { parseMultipart: parseMultipartBuffer })) return;
+  if (await handleAvancePublicRoutes(req, res, pathname, { parseMultipart: parseMultipartBuffer })) return;
 
   // Login y gestión de usuarios (Supabase Auth)
   if (await handleAuthRoutes(req, res, pathname)) return;
@@ -1051,6 +1053,8 @@ async function handleRequest(req, res) {
 
   // Avisos, necesidades de obra, pedidos a proveedor y enlaces de subcontratas
   if (await handleNotificationRoutes(req, res, pathname, parsedUrl.searchParams)) return;
+  // Asignaciones y avance de obra por fase y partida
+  if (await handleAvanceRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
   if (await handlePushRoutes(req, res, pathname)) return;
 
   // Memoria de la IA (instrucciones permanentes y correcciones)
