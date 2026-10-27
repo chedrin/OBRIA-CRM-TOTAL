@@ -137,7 +137,8 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
   const activeRefs = (referenceBudgets || []).filter(b => b.is_active);
 
   const margen = Number(expediente.margenGlobalPct || 30);
-  const tipoIva = Number(expediente.tipoIvaPct || 10);
+  const tipoIva = Number(expediente.tipoIvaPct ?? 10);
+  const params = expediente.parametrosCliente || null;
   const realCapturas = (expediente.capturas || []).filter(c => c.isLocalBlob || (c.url && !c.url.includes('images.unsplash.com')));
 
   let rawChapters = [];
@@ -195,7 +196,8 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
       basePrecios: catalog || [],
       referenceBudgets: activeRefs,
       margenGlobal: margen,
-      tipoIva
+      tipoIva,
+      parametrosCliente: params
     });
     rawChapters = toChapters(result?.capitulos);
     if (rawChapters.length > 0) {
@@ -215,7 +217,8 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
       const combinedInput = [
         expediente.audioTranscripcion ? `[AUDIO TRANSCRITO DE LA VISITA]:\n"${expediente.audioTranscripcion}"` : '',
         expediente.medidasNotas ? `[MEDICIONES Y COTAS DICTADAS IN SITU]:\n${expediente.medidasNotas}` : '',
-        `[CALIDADES SOLICITADAS]: ${expediente.calidades || 'Media-Alta'}`
+        `[CALIDADES SOLICITADAS]: ${expediente.calidades || 'Media-Alta'}`,
+        params ? `[PARÁMETROS DEL CLIENTE Y CONDICIONES ECONÓMICAS]: tipo de cliente ${params.tipoClienteLabel}; margen ${params.margenComercialPct}%; pago: ${params.condicionesPago}; fiscalidad: ${params.fiscalidadLabel}${params.retencionIrpfPct ? `; retención IRPF ${params.retencionIrpfPct}%` : ''}` : ''
       ].filter(Boolean).join('\n\n');
 
       const geminiModel = normalizeGeminiModel(aiConfig.model || aiConfig.modelName || DEFAULT_GEMINI_MODEL);
@@ -325,6 +328,21 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
     direccion: expediente.direccion || '',
     calidades: expediente.calidades || 'Media-Alta',
     tipoIvaPct: tipoIva,
+    ...(params ? {
+      nif: params.nif || '',
+      tipoCliente: params.tipoCliente,
+      condicionesPago: params.condicionesPago,
+      fiscalidad: params.fiscalidad,
+      inversionSujetoPasivo: !!params.inversionSujetoPasivo,
+      retencionIrpfPct: Number(params.retencionIrpfPct || 0),
+      validezDias: Number(params.validezDias || 30),
+      notasLegales: [
+        `Forma de pago: ${params.condicionesPago}.`,
+        `Validez de la oferta: ${params.validezDias || 30} días.`,
+        params.inversionSujetoPasivo ? 'Operación con inversión del sujeto pasivo (art. 84.Uno.2º.f de la Ley 37/1992 del IVA).' : '',
+        params.retencionIrpfPct ? `Retención de IRPF estimada: ${params.retencionIrpfPct}%.` : ''
+      ].filter(Boolean).join(' ')
+    } : {}),
     margenGlobalPct: margenGlobalCalculado,
     baseImponible,
     cuotaIva,

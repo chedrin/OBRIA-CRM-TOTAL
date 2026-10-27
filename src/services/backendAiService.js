@@ -224,6 +224,7 @@ export async function generateBudgetViaBackend({
   tipoIva = 10,
   titulo = '',
   plazo = '',
+  parametrosCliente = null,
   customApiKey = ''
 }) {
   const form = new FormData();
@@ -247,9 +248,11 @@ export async function generateBudgetViaBackend({
   if (direccion) form.append('direccion', direccion);
   if (calidades) form.append('calidades', calidades);
   if (margenGlobal) form.append('margenGlobal', String(margenGlobal));
-  if (tipoIva) form.append('tipoIva', String(tipoIva));
+  if (tipoIva !== undefined && tipoIva !== null && tipoIva !== '') form.append('tipoIva', String(tipoIva));
   if (titulo) form.append('titulo', titulo);
   if (plazo) form.append('plazo', plazo);
+  // Parámetros del cliente y condiciones económicas (paso 1 del asistente): el servidor los valida.
+  if (parametrosCliente) form.append('parametrosCliente', JSON.stringify(parametrosCliente));
   if (customApiKey) form.append('apiKey', customApiKey);
 
   if (basePrecios && basePrecios.length > 0) {

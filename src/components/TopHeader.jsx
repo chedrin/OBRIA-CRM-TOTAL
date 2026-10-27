@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { NAV_ITEMS, NAV_TONES } from './navigation/navConfig';
 import {
   Menu,
   Building2,
@@ -88,10 +89,11 @@ export default function TopHeader({
   };
 
   const Icon = currentTabInfo.icon;
+  const tone = NAV_TONES[NAV_ITEMS.find(i => i.id === activeTab)?.tone || 'amber'];
   const activeObrasCount = obras.filter(o => o.estado === 'en_curso').length;
 
   return (
-    <header className="sticky top-0 z-20 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-6 lg:px-8 py-3.5 transition-all">
+    <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 lg:px-8 py-3.5 transition-all">
       <div className="flex items-center justify-between gap-4 max-w-7xl mx-auto w-full">
         
         {/* Left: Hamburger (Mobile) + Current View Breadcrumb */}
@@ -105,7 +107,7 @@ export default function TopHeader({
           </button>
 
           <div className="flex items-center gap-3 min-w-0">
-            <div className="hidden sm:flex w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 items-center justify-center text-amber-400 shrink-0 shadow-sm">
+            <div key={activeTab} className={`hidden sm:flex w-9 h-9 rounded-xl border items-center justify-center shrink-0 shadow-sm animate-in zoom-in fade-in ${tone.tile}`}>
               <Icon className="w-4 h-4 stroke-[2.2]" />
             </div>
             

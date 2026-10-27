@@ -791,7 +791,7 @@ export function AppProvider({ children }) {
     const newObra = {
       ...obraData,
       id: `obra-${Date.now()}`,
-      codigo: `OBR-2026-${String(obras.length + 1).padStart(3, '0')}`,
+      codigo: obraData.codigo || `OBR-2026-${String(obras.length + 1).padStart(3, '0')}`,
       progreso: obraData.progreso || 0,
       costeRealActual: obraData.costeRealActual || 0,
       margenRealPct: obraData.margenRealPct || obraData.margenEsperadoPct || 30,
