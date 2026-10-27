@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { NAV_ITEMS, NAV_TONES } from './navigation/navConfig';
+import { useNotifications } from '../context/NotificationsContext';
 import {
   Menu,
   Building2,
@@ -15,7 +16,9 @@ import {
   ShieldCheck,
   ExternalLink,
   Sparkles,
-  TrendingUp
+  TrendingUp,
+  Bell,
+  BellRing
 } from 'lucide-react';
 
 const TAB_CONFIG = {
@@ -28,6 +31,11 @@ const TAB_CONFIG = {
     title: 'Obras y Reformas',
     desc: 'Gestión de proyectos, fases constructivas, partes diarios y costes',
     icon: HardHat,
+  },
+  avisos: {
+    title: 'Avisos, Necesidades y Pedidos',
+    desc: 'Avisos de obra en tiempo real, pedidos de material a proveedores y enlaces para subcontratas',
+    icon: BellRing,
   },
   inbox: {
     title: 'Bandeja Audio / Email IA',
@@ -78,9 +86,11 @@ export default function TopHeader({
 }) {
   const {
     activeTab,
+    setActiveTab,
     obras,
     currentUser
   } = useApp();
+  const { unreadCount, available: avisosAvailable } = useNotifications();
 
   const currentTabInfo = TAB_CONFIG[activeTab] || {
     title: 'ObraMaster AI',
@@ -145,6 +155,23 @@ export default function TopHeader({
               Margen obj: <strong className="text-amber-400 font-semibold">32%</strong>
             </span>
           </div>
+
+          {/* Avisos sin leer */}
+          {currentUser?.role === 'admin' && avisosAvailable && (
+            <button
+              onClick={() => setActiveTab('avisos')}
+              title={unreadCount ? `${unreadCount} avisos sin leer` : 'Avisos'}
+              aria-label={unreadCount ? `${unreadCount} avisos sin leer` : 'Avisos'}
+              className="relative p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition border border-slate-700/60"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Quick Access to Mobile Portal */}
           <button

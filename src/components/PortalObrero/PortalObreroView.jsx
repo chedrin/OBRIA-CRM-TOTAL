@@ -26,12 +26,14 @@ import {
   Check,
   FileText,
   Bell,
+  PackagePlus,
   ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import PwaInstallPrompt from './PwaInstallPrompt';
 import TaskProgressSelector from './TaskProgressSelector';
 import AvisosTecnicosModal from './AvisosTecnicosModal';
+import PedirMaterialModal from './PedirMaterialModal';
 
 export default function PortalObreroView() {
   const {
@@ -80,6 +82,7 @@ export default function PortalObreroView() {
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showHorasModal, setShowHorasModal] = useState(false);
   const [showAvisosModal, setShowAvisosModal] = useState(false);
+  const [showPedirModal, setShowPedirModal] = useState(false);
 
   // Unread technical notices calculation for this worker
   const obreroIdentifier = currentObrero?.username ||
@@ -442,7 +445,18 @@ export default function PortalObreroView() {
             </div>
 
             {/* Quick Actions in Jobsite */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <button
+                onClick={() => setShowPedirModal(true)}
+                className="col-span-2 sm:col-span-1 p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/30 rounded-xl text-left transition space-y-1 group"
+              >
+                <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center group-hover:scale-110 transition">
+                  <PackagePlus className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-white text-[11px] block truncate">Pedir Material</span>
+                <span className="text-[9px] text-slate-400 block truncate">Falta algo / avería</span>
+              </button>
+
               <button
                 onClick={() => setShowPhotoModal(true)}
                 className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 rounded-xl text-left transition space-y-1 group"
@@ -929,6 +943,14 @@ export default function PortalObreroView() {
           </div>
         </div>
       )}
+
+      {/* Pedir material o avisar de una incidencia a la oficina */}
+      <PedirMaterialModal
+        isOpen={showPedirModal}
+        onClose={() => setShowPedirModal(false)}
+        obra={currentObra}
+        onSent={() => showNotification('Aviso enviado a la oficina.')}
+      />
 
       {/* Modal Avisos Técnicos e Instrucciones de Dirección de Obra */}
       <AvisosTecnicosModal

@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import { handleAuthRoutes, enforceApiAuth } from "./authRoutes.js";
 import { handleMemoryRoutes, buildMemoryContext, saveReferenceLearning } from "./aiMemory.js";
 import { handleUsageRoutes, recordAiUsage } from "./aiUsage.js";
+import { handleSubcontractorPublicRoutes, handleNotificationRoutes } from "./notificaciones.js";
+import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1038,11 +1040,18 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // Enlace mágico de subcontratas (público: lo protege el token de la URL)
+  if (await handleSubcontractorPublicRoutes(req, res, pathname, { parseMultipart: parseMultipartBuffer })) return;
+
   // Login y gestión de usuarios (Supabase Auth)
   if (await handleAuthRoutes(req, res, pathname)) return;
 
   // Resto de la API: exige sesión válida (administradores; obreros solo en rutas permitidas)
   if (!(await enforceApiAuth(req, res, pathname))) return;
+
+  // Avisos, necesidades de obra, pedidos a proveedor y enlaces de subcontratas
+  if (await handleNotificationRoutes(req, res, pathname, parsedUrl.searchParams)) return;
+  if (await handlePushRoutes(req, res, pathname)) return;
 
   // Memoria de la IA (instrucciones permanentes y correcciones)
   if (await handleMemoryRoutes(req, res, pathname)) return;
