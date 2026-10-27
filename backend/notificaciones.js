@@ -21,7 +21,10 @@
  *   PATCH /api/material-orders/:id      Editar el borrador (asunto, cuerpo, destinatario).
  *   POST  /api/material-orders/:id/send "Aprobar y enviar pedido" (Resend).
  *   GET   /api/suppliers  ·  POST /api/suppliers  ·  PATCH /api/suppliers/:id
+ *   GET   /api/sub-tokens               Enlaces creados (sin el token).
+ *   GET   /api/material-orders          ?need=<id>
  *   GET   /api/site-reports             Partes recibidos por enlace, con fotos firmadas.
+ *   PATCH /api/site-reports/:id         { review_result: "aprobado" | "rechazado" }
  *
  * Variables de entorno (servidor): RESEND_API_KEY, RESEND_FROM_EMAIL, PUBLIC_APP_URL.
  */
@@ -29,6 +32,7 @@
 import crypto from "node:crypto";
 import { getAdminClient, isSupabaseReady } from "./authRoutes.js";
 import { buildSupplierOrderEmail, normalizeItems } from "./supplierEmail.js";
+import { sendPushForNotification } from "./webPush.js";
 
 const MAX_JSON_BYTES = 256 * 1024;
 const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
@@ -160,7 +164,7 @@ function obraLabel(obra, fallback = "") {
 // ---------------------------------------------------------------------------
 /**
  * Crea un aviso. El panel de administración abierto lo recibe al instante por
- * Supabase Realtime (tabla notifications). El envío Web Push llega en la fase 2.
+ * Supabase Realtime (tabla notifications) y los dispositivos suscritos, por Web Push.
  */
 export async function createNotification({ category = "aviso", origin = "sistema", obraId = null, obraLabel: label = null, title, body = "", link = null, refTable = null, refId = null, recipientId = null }) {
   const row = {
@@ -180,6 +184,7 @@ export async function createNotification({ category = "aviso", origin = "sistema
     console.error("[avisos] No se pudo crear el aviso:", error.message);
     return null;
   }
+  sendPushForNotification(data); // sin esperar: el push no debe retrasar la respuesta
   return data;
 }
 
@@ -627,7 +632,18 @@ export async function handleSubcontractorPublicRoutes(req, res, pathname, { pars
 export async function handleNotificationRoutes(req, res, pathname, query) {
   const m = (re) => pathname.match(re);
   const routes = [
-    [/^\/api\/sub-tokens$/, { POST: () => handleCreateToken(req, res) }],
+    [/^\/api\/sub-tokens$/, {
+      GET: async () => {
+        const { data, error } = await getAdminClient()
+          .from("subcontractor_tokens")
+          .select("id, subcontractor_id, subcontractor_name, phone, obra_id, obra_label, task_label, expires_at, revoked_at, last_used_at, use_count, created_at")
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (error) throw new Error(error.message);
+        sendJson(res, 200, data || []);
+      },
+      POST: () => handleCreateToken(req, res)
+    }],
     [new RegExp(`^/api/sub-tokens/(${UUID})/revoke$`), { POST: async (id) => {
       const { error } = await getAdminClient().from("subcontractor_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", id);
       if (error) throw new Error(error.message);
@@ -643,12 +659,19 @@ export async function handleNotificationRoutes(req, res, pathname, query) {
         if (query.get("obra")) q = q.eq("obra_id", query.get("obra"));
         const { data, error } = await q;
         if (error) throw new Error(error.message);
-        sendJson(res, 200, data || []);
+        sendJson(res, 200, await Promise.all((data || []).map(async (n) => ({ ...n, photo_urls: await signPhotos(n.photos) }))));
       },
       POST: () => handleCreateNeed(req, res)
     }],
     [new RegExp(`^/api/needs/(${UUID})$`), { PATCH: (id) => handleUpdateNeed(req, res, id) }],
     [new RegExp(`^/api/needs/(${UUID})/order-draft$`), { POST: (id) => handleOrderDraft(req, res, id) }],
+    [/^\/api\/material-orders$/, { GET: async () => {
+      let q = getAdminClient().from("material_orders").select("*").order("created_at", { ascending: false }).limit(200);
+      if (new RegExp(`^${UUID}$`).test(query.get("need") || "")) q = q.eq("need_id", query.get("need"));
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      sendJson(res, 200, data || []);
+    } }],
     [new RegExp(`^/api/material-orders/(${UUID})$`), { PATCH: (id) => handleUpdateOrder(req, res, id) }],
     [new RegExp(`^/api/material-orders/(${UUID})/send$`), { POST: (id) => handleSendOrder(req, res, id) }],
     [/^\/api\/suppliers$/, {
@@ -670,7 +693,19 @@ export async function handleNotificationRoutes(req, res, pathname, query) {
       if (error) throw httpError(404, "Proveedor no encontrado.");
       sendJson(res, 200, data);
     } }],
-    [/^\/api\/site-reports$/, { GET: () => handleListSiteReports(res, query) }]
+    [/^\/api\/site-reports$/, { GET: () => handleListSiteReports(res, query) }],
+    [new RegExp(`^/api/site-reports/(${UUID})$`), { PATCH: async (id) => {
+      const body = await readJson(req);
+      if (!["aprobado", "rechazado"].includes(body.review_result)) throw httpError(400, "Indica aprobado o rechazado.");
+      const { data, error } = await getAdminClient()
+        .from("site_reports")
+        .update({ review_result: body.review_result, reviewed_at: new Date().toISOString(), reviewed_by: req.user?.id || null })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw httpError(404, "Parte no encontrado.");
+      sendJson(res, 200, data);
+    } }]
   ];
 
   for (const [re, methods] of routes) {

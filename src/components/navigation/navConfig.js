@@ -8,7 +8,8 @@ import {
   Users,
   Percent,
   Smartphone,
-  ShieldCheck
+  ShieldCheck,
+  BellRing
 } from 'lucide-react';
 
 // Menú principal: cada módulo tiene su icono y su color para reconocerlo de un vistazo.
@@ -68,6 +69,12 @@ export const NAV_TONES = {
     bar: 'bg-cyan-500',
     ring: 'ring-cyan-500/30'
   },
+  red: {
+    tile: 'bg-red-500/10 text-red-400 border-red-500/20',
+    tileActive: 'bg-red-500 text-white border-red-500 shadow-red-500/30',
+    bar: 'bg-red-500',
+    ring: 'ring-red-500/30'
+  },
   slate: {
     tile: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
     tileActive: 'bg-slate-600 text-white border-slate-600 shadow-slate-500/30 om-solid',
@@ -82,6 +89,7 @@ export const NAV_SECTIONS = [
     items: [
       { id: 'dashboard', label: 'Panel General', desc: 'KPIs y estado global', icon: Building2, tone: 'sky' },
       { id: 'obras', label: 'Obras y Reformas', desc: 'Fases, costes y partes', icon: HardHat, tone: 'amber' },
+      { id: 'avisos', label: 'Avisos y Pedidos', desc: 'Necesidades, material y subcontratas', icon: BellRing, tone: 'red' },
       { id: 'inbox', label: 'Audio / Email IA', desc: 'Captura y transcripción', icon: Mic, tone: 'violet' }
     ]
   },

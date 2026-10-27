@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { UiPreferencesProvider } from './context/UiPreferencesContext';
+import { NotificationsProvider } from './context/NotificationsContext';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import Dashboard from './components/Dashboard';
@@ -13,6 +14,7 @@ import ObrerosList from './components/Obreros/ObrerosList';
 import SubcontratasList from './components/Subcontratas/SubcontratasList';
 import PortalObreroView from './components/PortalObrero/PortalObreroView';
 import EmpresaConfig from './components/Configuracion/EmpresaConfig';
+import AvisosCenter from './components/Avisos/AvisosCenter';
 import PdfModal from './components/Common/PdfModal';
 import LoginObreroView from './components/Auth/LoginObreroView';
 import LoginAdminModal from './components/Auth/LoginAdminModal';
@@ -216,6 +218,7 @@ function MainLayout() {
         <main key={activeTab} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 om-page-enter">
           {activeTab === 'dashboard' && <Dashboard />}
           {activeTab === 'obras' && <ObrasList />}
+          {activeTab === 'avisos' && <AvisosCenter />}
           {activeTab === 'inbox' && <AudioEmailInbox />}
           {activeTab === 'presupuestos' && <PresupuestosList />}
           {activeTab === 'facturas' && <FacturasList />}
@@ -280,7 +283,9 @@ export default function App() {
   return (
     <AppProvider>
       <UiPreferencesProvider>
-        <MainLayout />
+        <NotificationsProvider>
+          <MainLayout />
+        </NotificationsProvider>
       </UiPreferencesProvider>
     </AppProvider>
   );

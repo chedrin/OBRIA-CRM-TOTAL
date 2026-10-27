@@ -17,6 +17,7 @@ import { handleAuthRoutes, enforceApiAuth } from "./authRoutes.js";
 import { handleMemoryRoutes, buildMemoryContext, saveReferenceLearning } from "./aiMemory.js";
 import { handleUsageRoutes, recordAiUsage } from "./aiUsage.js";
 import { handleSubcontractorPublicRoutes, handleNotificationRoutes } from "./notificaciones.js";
+import { handlePushRoutes } from "./webPush.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1049,6 +1050,7 @@ async function handleRequest(req, res) {
 
   // Avisos, necesidades de obra, pedidos a proveedor y enlaces de subcontratas
   if (await handleNotificationRoutes(req, res, pathname, parsedUrl.searchParams)) return;
+  if (await handlePushRoutes(req, res, pathname)) return;
 
   // Memoria de la IA (instrucciones permanentes y correcciones)
   if (await handleMemoryRoutes(req, res, pathname)) return;
