@@ -5,18 +5,13 @@ import {
   Upload,
   Sparkles,
   CheckCircle2,
-  AlertCircle,
   Trash2,
   Eye,
-  Download,
   Info,
-  Layers,
   Check,
   RefreshCw,
-  Plus,
   BookOpen,
   X,
-  FileCheck2,
   FileUp,
   Brain
 } from 'lucide-react';
@@ -388,7 +383,7 @@ export default function PresupuestosModeloConfig() {
                 <FileText className="w-5 h-5 text-indigo-400" />
                 <span>Registrar Presupuesto Modelo</span>
               </h3>
-              <button onClick={() => setShowUploadModal(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowUploadModal(false)} aria-label="Cerrar" className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -476,7 +471,7 @@ export default function PresupuestosModeloConfig() {
                 </div>
               </div>
 
-              <button onClick={() => setPreviewBudget(null)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setPreviewBudget(null)} aria-label="Cerrar" className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>

@@ -1,25 +1,16 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
-  Users,
   ShieldCheck,
   UserPlus,
   KeyRound,
-  Lock,
-  Unlock,
   Trash2,
-  RefreshCw,
   Copy,
   Check,
-  Eye,
-  EyeOff,
   AlertCircle,
   CheckCircle2,
   Phone,
-  Mail,
   HardHat,
-  Briefcase,
-  Sparkles,
   MessageSquare
 } from 'lucide-react';
 
@@ -647,7 +638,7 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                 </div>
                 <h3 className="font-black text-white text-base">Alta de Operario para App Móvil</h3>
               </div>
-              <button
+              <button aria-label="Cerrar"
                 onClick={() => setShowAddObreroModal(false)}
                 className="text-slate-400 hover:text-white text-sm"
               >
@@ -817,7 +808,7 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                 <KeyRound className="w-4 h-4 text-amber-400" />
                 <span>Restablecer Contraseña</span>
               </h3>
-              <button
+              <button aria-label="Cerrar"
                 onClick={() => setShowResetModal(false)}
                 className="text-slate-400 hover:text-white"
               >
@@ -881,7 +872,7 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
                 <ShieldCheck className="w-4 h-4 text-amber-400" />
                 <span>Nuevo Administrador</span>
               </h3>
-              <button
+              <button aria-label="Cerrar"
                 onClick={() => setShowAddAdminModal(false)}
                 className="text-slate-400 hover:text-white"
               >

@@ -4,29 +4,23 @@ import {
   ArrowLeft,
   Calendar,
   CheckCircle2,
-  Clock,
   AlertTriangle,
   Plus,
   Camera,
-  Mic,
   Package,
   HardHat,
   FileText,
   DollarSign,
-  TrendingUp,
   MapPin,
   Phone,
-  Mail,
   User,
   Star,
   Check,
   Sparkles,
-  ChevronRight,
   FolderOpen,
   Tag,
   Edit2,
   Trash2,
-  Percent,
   PlusCircle,
   Download,
   ChevronDown
@@ -1696,7 +1690,7 @@ export default function ObraDetail({ obraId, onBack }) {
                 <Plus className="w-4 h-4 text-amber-400" />
                 <span>Asignar Tarea a Operario en Tiempo Real</span>
               </h3>
-              <button type="button" onClick={() => setShowNewTaskModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" type="button" onClick={() => setShowNewTaskModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <p className="text-slate-400 text-[11px]">
@@ -1773,7 +1767,7 @@ export default function ObraDetail({ obraId, onBack }) {
                 <AlertTriangle className="w-4 h-4 text-amber-400" />
                 <span>Enviar Instrucción Técnica o Advertencia</span>
               </h3>
-              <button type="button" onClick={() => setShowNewAlertModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" type="button" onClick={() => setShowNewAlertModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <p className="text-slate-400 text-[11px]">

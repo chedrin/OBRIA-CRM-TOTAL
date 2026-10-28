@@ -9,12 +9,9 @@ import {
   CheckCheck,
   Clock,
   X,
-  FileText,
   MapPin,
   User,
-  Filter,
-  Layers,
-  Sparkles
+  Filter
 } from 'lucide-react';
 
 export default function AvisosTecnicosModal({

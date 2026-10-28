@@ -5,18 +5,9 @@ import {
   ShieldCheck,
   QrCode,
   FileText,
-  Key,
-  Database,
-  CheckCircle2,
-  AlertTriangle,
   FileSpreadsheet,
-  Settings,
-  Lock,
   History,
-  Send,
   Sparkles,
-  Download,
-  Info,
   KeyRound,
   Brain,
   Palette
@@ -49,30 +40,21 @@ export default function EmpresaConfig() {
   return (
     <div className="space-y-6">
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div>
-          <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Ajustes Generales · Identidad, Motor IA, Accesos y Fiscalidad</span>
-          </div>
-          <h1 className="text-2xl font-black text-white">Configuración del Sistema y Empresa</h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Perfil del Director de Obra, conexión del Motor de IA por API Key (BYOK), gestión de usuarios y cumplimiento legal VeriFactu.
-          </p>
+      {/* Guardar: solo TicketBAI y SII/Facturae usan este formulario; las demás pestañas tienen su propio botón. */}
+      {['ticketbai', 'sii_facturae'].includes(activeSubTab) && (
+        <div className="flex justify-end">
+          <button
+            onClick={handleSave}
+            className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center gap-2"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Guardar configuración</span>
+          </button>
         </div>
-
-        <button
-          onClick={handleSave}
-          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center gap-2"
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Guardar Configuración General</span>
-        </button>
-      </div>
+      )}
 
       {/* Subtabs Navigation */}
-      <div className="flex flex-wrap gap-1.5 border-b border-slate-800 pb-2 min-w-0">
+      <div role="tablist" aria-label="Secciones de ajustes" className="flex flex-nowrap md:flex-wrap gap-1.5 border-b border-slate-800 pb-2 min-w-0 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {[
           { id: 'perfil_director', label: 'Perfil Director & Empresa', icon: Building2, badge: 'Acreditado' },
           { id: 'motor_ia', label: 'Motor Central IA (BYOK)', icon: Sparkles, badge: 'Multimodal' },
@@ -91,7 +73,9 @@ export default function EmpresaConfig() {
             <button
               key={t.id}
               onClick={() => setActiveSubTab(t.id)}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
+              role="tab"
+              aria-selected={isActive}
+              className={`shrink-0 whitespace-nowrap px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
                 isActive
                   ? 'border-amber-400 text-amber-400 bg-slate-900/80 font-bold'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
@@ -130,148 +114,6 @@ export default function EmpresaConfig() {
       {activeSubTab === 'usuarios' && <GestionUsuarios />}
 
       {activeSubTab === 'apariencia' && <AparienciaConfig />}
-
-      {/* TAB 1: IDENTIFICACIÓN Y DATOS FISCALES */}
-      {activeSubTab === 'fiscal_data' && (
-        <form onSubmit={handleSave} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-amber-400" />
-              <span>Identificación Fiscal de la Empresa o Autónomo</span>
-            </h3>
-            <span className="text-xs text-slate-400">Se usará en la cabecera de presupuestos, certificaciones y facturas PDF</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Razón Social / Nombre Oficial *</label>
-              <input
-                type="text"
-                required
-                value={form.razonSocial || ''}
-                onChange={(e) => handleChange('razonSocial', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400 font-semibold"
-              />
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Nombre Comercial</label>
-              <input
-                type="text"
-                value={form.nombreComercial || ''}
-                onChange={(e) => handleChange('nombreComercial', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
-              />
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">NIF / CIF *</label>
-              <input
-                type="text"
-                required
-                value={form.cifNif || ''}
-                onChange={(e) => handleChange('cifNif', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-amber-400 font-mono font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Régimen Fiscal Ley IVA</label>
-              <select
-                value={form.regimenFiscal || 'Regimen General de Ley 37/1992 del IVA'}
-                onChange={(e) => handleChange('regimenFiscal', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
-              >
-                <option value="Regimen General de Ley 37/1992 del IVA">Régimen General del IVA (10% / 21%)</option>
-                <option value="Régimen de REBU / Bienes Usados">Régimen Especial Bienes Usados (REBU)</option>
-                <option value="Régimen de Criterio de Caja">Régimen Especial del Criterio de Caja</option>
-                <option value="Régimen Simplificado (Módulos)">Régimen Simplificado (Módulos)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Dirección Fiscal *</label>
-              <input
-                type="text"
-                required
-                value={form.direccion || ''}
-                onChange={(e) => handleChange('direccion', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">C.P.</label>
-                <input
-                  type="text"
-                  value={form.codigoPostal || ''}
-                  onChange={(e) => handleChange('codigoPostal', e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Localidad</label>
-                <input
-                  type="text"
-                  value={form.localidad || ''}
-                  onChange={(e) => handleChange('localidad', e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
-                />
-              </div>
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Provincia</label>
-                <input
-                  type="text"
-                  value={form.provincia || ''}
-                  onChange={(e) => handleChange('provincia', e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Teléfono de Contacto</label>
-              <input
-                type="text"
-                value={form.telefono || ''}
-                onChange={(e) => handleChange('telefono', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
-              />
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Email Oficial Facturación</label>
-              <input
-                type="email"
-                value={form.email || ''}
-                onChange={(e) => handleChange('email', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
-              />
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">IBAN Cobros Transferencia</label>
-              <input
-                type="text"
-                value={form.iban || ''}
-                onChange={(e) => handleChange('iban', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1 font-medium">Datos Registro Mercantil (Pie de Factura)</label>
-              <input
-                type="text"
-                value={form.registroMercantil || ''}
-                onChange={(e) => handleChange('registroMercantil', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white text-xs"
-              />
-            </div>
-          </div>
-        </form>
-      )}
 
       {/* TAB 2: FACTURACIÓN LEGAL (VERIFACTU) */}
       {activeSubTab === 'verifactu' && <FacturacionConfig />}

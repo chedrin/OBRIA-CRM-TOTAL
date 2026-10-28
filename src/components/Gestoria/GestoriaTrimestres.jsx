@@ -1,19 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
-  FileSpreadsheet,
   Download,
   Mail,
-  Receipt,
-  Euro,
-  Calendar,
   CheckCircle2,
-  AlertCircle,
   Plus,
   Send,
-  Building2,
-  Percent,
-  FileText,
   PackageCheck
 } from 'lucide-react';
 
@@ -158,19 +150,10 @@ export default function GestoriaTrimestres() {
     <div className="space-y-6">
       
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-            <FileSpreadsheet className="w-7 h-7 text-emerald-400" />
-            <span>Gestoría, Cierres Trimestrales e Impuestos</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Prepara y calcula automáticamente los Modelos 303 (IVA), 130 (IRPF), libros de ventas y compras listos para enviar a tu gestor.
-          </p>
-        </div>
-
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-xs font-semibold text-slate-400">Trimestre</span>
         {/* Quarter Selector Tabs */}
-        <div className="flex items-center gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 self-start sm:self-auto">
+        <div className="flex items-center gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
           {['1T', '2T', '3T', '4T'].map(t => (
             <button
               key={t}
@@ -614,7 +597,7 @@ export default function GestoriaTrimestres() {
                 <Plus className="w-5 h-5 text-amber-400" />
                 <span>Registrar Factura de Proveedor o Subcontrata</span>
               </h3>
-              <button onClick={() => setShowAddGastoModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setShowAddGastoModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <form onSubmit={handleSaveGasto} className="space-y-3 text-xs sm:text-sm">

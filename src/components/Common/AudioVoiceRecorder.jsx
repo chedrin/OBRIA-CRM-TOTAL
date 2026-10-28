@@ -1,23 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic,
-  MicOff,
   Upload,
-  Play,
   Square,
   Sparkles,
   Edit3,
-  CheckCircle2,
   AlertCircle,
   FileAudio,
   Volume2,
-  RotateCcw,
   Clock,
   Key,
   ExternalLink,
-  Info,
-  ShieldAlert,
-  ChevronRight,
   Settings,
   Trash2
 } from 'lucide-react';
@@ -714,7 +707,7 @@ export default function AudioVoiceRecorder({
                 <Sparkles className="w-4 h-4 text-amber-400" />
                 <span>Cómo activar Whisper y la IA en ObraMaster</span>
               </h3>
-              <button
+              <button aria-label="Cerrar"
                 type="button"
                 onClick={() => setShowKeyGuideModal(false)}
                 className="text-slate-400 hover:text-white"

@@ -6,7 +6,6 @@ import {
   User,
   ArrowRight,
   ShieldAlert,
-  HardHat,
   X,
   Eye,
   EyeOff

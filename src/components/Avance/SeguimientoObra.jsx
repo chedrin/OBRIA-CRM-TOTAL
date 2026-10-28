@@ -156,11 +156,7 @@ export default function SeguimientoObra() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div>
-          <h1 className="text-xl font-black text-white">Avance de obra</h1>
-          <p className="text-xs text-slate-400">Asignación por fase o partida, avance reportado y certificación.</p>
-        </div>
+      <div className="flex flex-wrap items-center gap-2 justify-end">
         <div className="flex flex-wrap gap-2">
           <select value={obraId} onChange={(e) => { setObraId(e.target.value); setDetailKey(null); }} className={`${inputCls} !w-auto`}>
             {activas.map((o) => <option key={o.id} value={o.id}>{[o.codigo, o.titulo].filter(Boolean).join(' - ')}</option>)}

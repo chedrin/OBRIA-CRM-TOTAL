@@ -1,33 +1,23 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import EmptyState from '../Common/EmptyState';
 import {
   Smartphone,
   HardHat,
-  CheckCircle2,
   Clock,
   Camera,
   Mic,
-  Send,
   AlertTriangle,
-  Sparkles,
-  User,
   MapPin,
-  Calendar,
   Layers,
-  ChevronRight,
   Maximize2,
   Minimize2,
-  ThumbsUp,
-  Image as ImageIcon,
   LogOut,
-  ArrowLeft,
-  ExternalLink,
   ChevronDown,
   Check,
   FileText,
   Bell,
-  PackagePlus,
-  ShieldAlert
+  PackagePlus
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import PwaInstallPrompt from './PwaInstallPrompt';
@@ -135,13 +125,22 @@ export default function PortalObreroView() {
 
   // Assigned works to this worker
   const assignedObras = obras.filter(o =>
-    (o.operariosIds || []).includes(currentObrero.id) ||
-    (o.fases || []).some(f => f.responsable?.toLowerCase().includes(currentObrero.nombre.split(' ')[0].toLowerCase())) ||
+    (o.operariosIds || []).includes(currentObrero?.id) ||
+    (currentObrero?.nombre && (o.fases || []).some(f => f.responsable?.toLowerCase().includes(currentObrero.nombre.split(' ')[0].toLowerCase()))) ||
     o.estado === 'en_curso'
   );
 
   // Días que el operario calcula que faltan por etapa (borrador antes de enviar).
   const [estimateDrafts, setEstimateDrafts] = useState({});
+
+  // Vista previa sin operarios dados de alta: aviso en lugar de una pantalla en blanco.
+  if (!currentObrero) {
+    return (
+      <EmptyState icon={HardHat} title="Aún no hay operarios para previsualizar">
+        Da de alta un empleado en RRHH &amp; Nóminas para ver aquí su portal móvil.
+      </EmptyState>
+    );
+  }
 
   const handleSendEstimate = (obraId, fase) => {
     const raw = estimateDrafts[fase.id];

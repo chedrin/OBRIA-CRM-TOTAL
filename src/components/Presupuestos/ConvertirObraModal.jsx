@@ -61,10 +61,7 @@ export default function ConvertirObraModal({ presupuesto, onClose, onConfirm }) 
 
   useEffect(() => {
     firstFieldRef.current?.focus();
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 

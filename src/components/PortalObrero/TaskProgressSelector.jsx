@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Clock, Sparkles, AlertCircle } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 const PROGRESS_STAGES = [
