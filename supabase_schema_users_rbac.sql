@@ -458,7 +458,7 @@ ALTER TABLE public.quote_items ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY admin_full_quotes ON public.quotes FOR ALL USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY admin_full_captures ON public.site_visit_captures FOR ALL USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY worker_read_assigned_projects ON public.projects FOR SELECT USING (true);
+-- (Sin política "USING (true)": la lectura de obras la gestiona supabase_migration_seguridad.sql.)
 
 -- =========================================================================
 -- 14. TABLA DE EMPLEADOS Y PERSONAL LABORAL (RRHH & NÓMINAS)

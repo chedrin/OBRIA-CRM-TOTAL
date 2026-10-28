@@ -1,6 +1,9 @@
 -- =========================================================================
 -- ESQUEMA SQL COMPLETO DE BASE DE DATOS Y POLÍTICAS RLS - SUPABASE
 -- PROYECTO: OBRAMASTER AI (CLIENTES, OBRAS, EMPLEADOS, PRESUPUESTOS, IA)
+--
+-- AVISO: esquema antiguo. Después de ejecutarlo hay que ejecutar
+-- supabase_migration_seguridad.sql y supabase_migration_seguridad_2.sql.
 -- =========================================================================
 
 -- 1. Extensión para generación de UUIDs v4
@@ -228,15 +231,7 @@ ALTER TABLE public.quotes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subcontractors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_reference_budgets ENABLE ROW LEVEL SECURITY;
 
--- Políticas de Permisos de Lectura y Escritura por Defecto
-CREATE POLICY "Permitir todo acceso lectura usuarios autenticados y anon" ON public.users FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso lectura employees" ON public.employees FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso company_settings" ON public.company_settings FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso ai_integration_settings" ON public.ai_integration_settings FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso clients" ON public.clients FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso projects" ON public.projects FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso project_phases" ON public.project_phases FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso project_tasks" ON public.project_tasks FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso quotes" ON public.quotes FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso subcontractors" ON public.subcontractors FOR ALL USING (true);
-CREATE POLICY "Permitir todo acceso ai_reference_budgets" ON public.ai_reference_budgets FOR ALL USING (true);
+-- Sin políticas: las tablas quedan cerradas para el navegador hasta ejecutar
+-- supabase_migration_seguridad.sql (que crea las políticas de administrador).
+-- Antes aquí había políticas "Permitir todo acceso ... USING (true)" que dejaban
+-- leer y modificar todo a cualquiera con la clave pública.

@@ -15,9 +15,9 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { passwordProblem } from "./security.js";
 
 const INTERNAL_EMAIL_DOMAIN = "obramaster.local";
-const MIN_PASSWORD_LENGTH = 8;
 const MAX_BODY_BYTES = 64 * 1024;
 
 // Rutas /api que puede usar cualquier usuario activo autenticado (admin u obrero).
@@ -314,6 +314,8 @@ async function handleLogin(req, res) {
   }
 
   failures.delete(accountKey);
+  // La contraseña es correcta pero débil (p. ej. la inicial): la web pide cambiarla.
+  const weakPassword = Boolean(passwordProblem(password, { username: profile.username, email: profile.email }));
   const now = new Date().toISOString();
   await adminClient().from("profiles").update({ last_login: now, updated_at: now }).eq("id", profile.id);
 
@@ -324,7 +326,8 @@ async function handleLogin(req, res) {
       expires_at: data.session.expires_at,
       expires_in: data.session.expires_in
     },
-    profile: toPublicProfile({ ...profile, last_login: now })
+    profile: toPublicProfile({ ...profile, last_login: now }),
+    weakPassword
   });
 }
 
@@ -336,8 +339,10 @@ async function handleChangeOwnPassword(req, res) {
   const currentPassword = String(body.currentPassword || "");
   const newPassword = String(body.newPassword || "");
 
-  if (newPassword.length < MIN_PASSWORD_LENGTH) {
-    return sendJson(res, 400, { error: `La nueva contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` });
+  const weak = passwordProblem(newPassword, { username: profile.username, email: profile.email });
+  if (weak) return sendJson(res, 400, { error: weak });
+  if (newPassword === currentPassword) {
+    return sendJson(res, 400, { error: "La nueva contraseña debe ser distinta de la actual." });
   }
 
   const key = `chg|${profile.id}`;
@@ -373,9 +378,8 @@ async function handleCreateUser(req, res) {
 
   if (!username) return sendJson(res, 400, { error: "El nombre de usuario es obligatorio." });
   if (!fullName) return sendJson(res, 400, { error: "El nombre completo es obligatorio." });
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return sendJson(res, 400, { error: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` });
-  }
+  const weak = passwordProblem(password, { username, email: body.email });
+  if (weak) return sendJson(res, 400, { error: weak });
 
   const admin = adminClient();
   const { data: existing } = await admin.from("profiles").select("id").eq("username", username).maybeSingle();
@@ -468,16 +472,16 @@ async function handleResetPassword(req, res, userId) {
 
   const body = await readJson(req);
   const password = String(body.password || "");
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return sendJson(res, 400, { error: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` });
-  }
 
-  const { data: target } = await adminClient().from("profiles").select("id").eq("id", userId).maybeSingle();
+  const { data: target } = await adminClient().from("profiles").select("id, username, email").eq("id", userId).maybeSingle();
   if (!target) return sendJson(res, 404, { error: "Usuario no encontrado." });
+  const weak = passwordProblem(password, { username: target.username, email: target.email });
+  if (weak) return sendJson(res, 400, { error: weak });
 
   const { error } = await adminClient().auth.admin.updateUserById(userId, { password });
   if (error) return sendJson(res, 400, { error: "No se pudo restablecer la contraseña. Prueba con otra más segura." });
 
+  tokenCache.clear();
   return sendJson(res, 200, { success: true });
 }
 

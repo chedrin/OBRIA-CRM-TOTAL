@@ -26,20 +26,19 @@ CREATE INDEX IF NOT EXISTS idx_reference_budgets_created_at ON public.ai_referen
 -- 3. Políticas de Seguridad por Fila (Row Level Security - RLS)
 ALTER TABLE public.ai_reference_budgets ENABLE ROW LEVEL SECURITY;
 
--- Política de lectura para usuarios de la empresa
-CREATE POLICY "Permitir lectura de presupuestos modelo a usuarios autenticados"
-ON public.ai_reference_budgets
-FOR SELECT
-TO authenticated, anon
-USING (true);
+REVOKE ALL ON public.ai_reference_budgets FROM anon;
 
--- Política de gestión (Insert, Update, Delete) para administradores y directores de obra
-CREATE POLICY "Permitir administración de presupuestos modelo"
+-- Solo administradores (necesita public.is_admin() de supabase_migration_seguridad.sql).
+-- Antes había dos políticas "USING (true)" para anon: cualquiera podía leer y borrar.
+DROP POLICY IF EXISTS "Permitir lectura de presupuestos modelo a usuarios autenticados" ON public.ai_reference_budgets;
+DROP POLICY IF EXISTS "Permitir administración de presupuestos modelo" ON public.ai_reference_budgets;
+DROP POLICY IF EXISTS ai_reference_budgets_solo_admin ON public.ai_reference_budgets;
+CREATE POLICY ai_reference_budgets_solo_admin
 ON public.ai_reference_budgets
 FOR ALL
-TO authenticated, anon
-USING (true)
-WITH CHECK (true);
+TO authenticated
+USING (public.is_admin())
+WITH CHECK (public.is_admin());
 
 -- 4. Inserción de Presupuestos Modelo Iniciales (Few-Shot Training Seed)
 INSERT INTO public.ai_reference_budgets (name, file_url, file_size, is_active, tipo_obra, extracted_text)
