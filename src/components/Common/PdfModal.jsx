@@ -7,7 +7,7 @@ import QRCode from 'qrcode';
 const eur = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function PdfModal() {
-  const { pdfModalData, setPdfModalData, empresaConfig, facturacion, showNotification } = useApp();
+  const { pdfModalData, setPdfModalData, empresaConfig, facturacion, facturas = [], showNotification } = useApp();
   const printRef = useRef(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
 
@@ -35,9 +35,31 @@ export default function PdfModal() {
   const empresaLegal = isFactura && data.legal ? facturacion?.empresa : null;
   const emisorNombre = empresaLegal?.razonSocial || empresaConfig?.razonSocial || '';
   const emisorNif = empresaLegal?.nif || empresaConfig?.cifNif || '';
-  const emisorDireccion = empresaLegal?.domicilio
-    || [empresaConfig?.direccion, empresaConfig?.codigoPostal, empresaConfig?.localidad].filter(Boolean).join(' ');
+  const emisorDireccion = empresaLegal
+    ? [empresaLegal.domicilio, [empresaLegal.codigoPostal, empresaLegal.municipio].filter(Boolean).join(' '), empresaLegal.provincia].filter(Boolean).join(', ')
+    : [empresaConfig?.direccion, empresaConfig?.codigoPostal, empresaConfig?.localidad].filter(Boolean).join(' ');
   const textoIsp = data?.isp ? (facturacion?.empresa?.textoIsp || 'Operación con inversión del sujeto pasivo (art. 84.Uno.2º.f Ley 37/1992 del IVA).') : '';
+
+  // Datos legales de una factura emitida: rectificada, anulación, entorno de pruebas y motivo del IVA.
+  const esLegal = isFactura && data.legal;
+  const original = esRectificativa ? facturas.find(f => f.id === data.rectificaId) : null;
+  const textoRectificativa = esRectificativa
+    ? `Factura rectificativa ${data.tipoAeat} ${data.tipoRectificativa === 'S' ? 'por sustitución' : 'por diferencias'}` +
+      (original ? ` de la factura ${original.numero} de fecha ${original.fechaEmision}` : '') +
+      `. Causa: ${data.rectificacionCausa || ''}` +
+      (data.tipoRectificativa === 'S' && data.baseRectificada !== null && data.baseRectificada !== undefined
+        ? `. Importes de la factura rectificada: base ${eur(data.baseRectificada)} €, IVA ${eur(data.cuotaRectificada)} €.`
+        : '.')
+    : '';
+  const dePrueba = esLegal && data.entorno && data.entorno !== 'produccion';
+  const textoIva = esLegal && !data.isp && data.ivaMotivo && Number(data.tipoIvaPct) !== 21 ? data.ivaMotivo : '';
+  const fechaOperacion = esLegal && data.fechaOperacion && data.fechaOperacion !== data.fechaEmision ? data.fechaOperacion : '';
+  // Líneas propias de la factura solo si suman la base (en una certificación parcial va una sola línea).
+  const lineasFactura = esLegal && Array.isArray(data.lineas) && data.lineas.length
+    && Math.abs(data.lineas.reduce((t, l) => t + Number(l.importe || 0), 0) - Number(data.baseImponible)) < 0.01
+    ? data.lineas.map(l => ({ concepto: l.concepto, cantidad: l.cantidad, unidad: l.unidad, precioVenta: l.precio, total: l.importe }))
+    : null;
+  const partidas = isFactura ? (lineasFactura || (esLegal ? null : data.partidas)) : data.partidas;
 
   const handlePrint = () => {
     window.print();
@@ -56,6 +78,13 @@ export default function PdfModal() {
       doc.setFontSize(18);
       doc.setTextColor(30, 41, 59); // Slate-800
       doc.text(isFactura ? tituloFactura : 'PRESUPUESTO DE OBRA', 20, 25);
+      if (dePrueba || data.anulada) {
+        doc.setFontSize(9);
+        doc.setTextColor(190, 18, 60);
+        doc.text([dePrueba ? 'FACTURA DE PRUEBA - SIN VALIDEZ FISCAL' : '', data.anulada ? `ANULADA: ${data.anulacionMotivo || ''}` : ''].filter(Boolean).join(' · '), 20, 19);
+        doc.setFontSize(18);
+        doc.setTextColor(30, 41, 59);
+      }
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -85,6 +114,7 @@ export default function PdfModal() {
       if (isFactura && data.fechaVencimiento) {
         doc.text(`Vencimiento: ${data.fechaVencimiento}`, 20, 62);
       }
+      if (fechaOperacion) doc.text(`Fecha de la operación: ${fechaOperacion}`, 20, 68);
 
       // Client details box
       doc.setFillColor(248, 250, 252);
@@ -94,6 +124,7 @@ export default function PdfModal() {
       doc.setFont('helvetica', 'normal');
       doc.text(`${data.cliente}`, 115, 58);
       doc.text(`NIF/CIF: ${data.nif || data.cifNif || 'N/A'}`, 115, 64);
+      if (data.direccion) doc.text(doc.splitTextToSize(data.direccion, 72), 115, 69);
 
       // Subject / Obra
       doc.setFont('helvetica', 'bold');
@@ -113,8 +144,8 @@ export default function PdfModal() {
       y += 8;
       doc.setFont('helvetica', 'normal');
 
-      if (data.partidas && data.partidas.length > 0) {
-        data.partidas.forEach((p) => {
+      if (partidas && partidas.length > 0) {
+        partidas.forEach((p) => {
           if (y > 260) {
             doc.addPage();
             y = 25;
@@ -150,7 +181,7 @@ export default function PdfModal() {
       doc.text(`${Number(data.baseImponible || 0).toFixed(2)} €`, 172, y);
       y += 6;
 
-      doc.text(`IVA (${data.tipoIvaPct ?? 10}%):`, 122, y);
+      doc.text(data.isp ? 'IVA (inversión sujeto pasivo):' : `IVA (${data.tipoIvaPct ?? 10}%):`, 122, y);
       doc.text(`${Number(data.cuotaIva || 0).toFixed(2)} €`, 172, y);
       y += 6;
 
@@ -170,8 +201,14 @@ export default function PdfModal() {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(148, 163, 184);
-      if (textoIsp) doc.text(doc.splitTextToSize(textoIsp, 170), 20, 270);
-      if (esRectificativa) doc.text(doc.splitTextToSize(`Rectificativa (${data.tipoAeat}). Causa: ${data.rectificacionCausa || ''}`, 170), 20, 276);
+      const notas = [textoIsp, textoIva, textoRectificativa].filter(Boolean);
+      let yNotas = 262;
+      notas.forEach((nota) => {
+        const lineas = doc.splitTextToSize(nota, 130);
+        doc.text(lineas, 20, yNotas);
+        yNotas += lineas.length * 3.5 + 1;
+      });
+      if (empresaConfig?.iban) doc.text(`IBAN: ${empresaConfig.iban}`, 20, 281);
       doc.text('Garantía de obra según Ley de Ordenación de la Edificación (LOE).', 20, 285);
 
       doc.save(`${data.numero || 'documento'}.pdf`);
@@ -254,7 +291,7 @@ export default function PdfModal() {
                 <p className="text-xs text-slate-500 leading-tight">
                   NIF: {emisorNif}<br />
                   {emisorDireccion}<br />
-                  Tel: {empresaConfig?.telefono || '+34 912 345 678'} · {empresaConfig?.email || 'info@obramaster.es'}
+                  {[empresaConfig?.telefono && `Tel: ${empresaConfig.telefono}`, empresaConfig?.email].filter(Boolean).join(' · ')}
                 </p>
               </div>
 
@@ -264,11 +301,17 @@ export default function PdfModal() {
                 }`}>
                   {isFactura ? tituloFactura : 'PRESUPUESTO'}
                 </span>
+                {(dePrueba || data.anulada) && (
+                  <p className="text-[10px] font-black text-rose-600 uppercase">
+                    {dePrueba ? 'Factura de prueba · sin validez fiscal' : ''}{dePrueba && data.anulada ? ' · ' : ''}{data.anulada ? 'Anulada' : ''}
+                  </p>
+                )}
                 <p className="font-mono font-bold text-slate-800 text-base">{data.numero}</p>
                 <p className="text-xs text-slate-500">Fecha: {isFactura ? data.fechaEmision : data.fecha}</p>
                 {isFactura && (
                   <p className="text-xs text-slate-500">Vencimiento: {data.fechaVencimiento}</p>
                 )}
+                {fechaOperacion && <p className="text-xs text-slate-500">Fecha de la operación: {fechaOperacion}</p>}
               </div>
             </div>
 
@@ -300,8 +343,8 @@ export default function PdfModal() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {data.partidas && data.partidas.length > 0 ? (
-                    data.partidas.map((item, idx) => (
+                  {partidas && partidas.length > 0 ? (
+                    partidas.map((item, idx) => (
                       <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                         <td className="py-2 px-3">
                           <span className="font-mono font-semibold text-slate-500 text-[10px] mr-1.5">{item.codigo}</span>
@@ -339,9 +382,8 @@ export default function PdfModal() {
                 <div className="space-y-1 min-w-0">
                   <p className="font-bold text-slate-900">Factura verificable en la sede electrónica de la AEAT</p>
                   <p className="font-mono text-[9px] text-slate-500 break-all">Huella: {data.huella}</p>
-                  {esRectificativa && (
-                    <p className="text-[10px] text-slate-600">Rectificativa ({data.tipoAeat}). Causa: {data.rectificacionCausa}</p>
-                  )}
+                  {esRectificativa && <p className="text-[10px] text-slate-600">{textoRectificativa}</p>}
+                  {data.anulada && <p className="text-[10px] font-bold text-rose-600">Anulada: {data.anulacionMotivo}</p>}
                 </div>
                 <div className="shrink-0 text-center">
                   <span className="text-[9px] text-slate-500 block">QR tributario:</span>
@@ -359,8 +401,9 @@ export default function PdfModal() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4 border-t border-slate-200">
               <div className="text-[11px] text-slate-500 max-w-sm space-y-1">
                 {textoIsp && <p className="font-semibold text-slate-700">{textoIsp}</p>}
+                {textoIva && <p className="text-slate-600">{textoIva}</p>}
                 <p><strong>Garantía:</strong> 2 años en instalaciones y acabados según LOE.</p>
-                <p><strong>Cuenta Bancaria IBAN:</strong> {empresaConfig?.iban || 'ES91 2100 0418 45 0200051234'}</p>
+                {empresaConfig?.iban && <p><strong>Cuenta Bancaria IBAN:</strong> {empresaConfig.iban}</p>}
                 {empresaConfig?.registroMercantil && (
                   <p className="text-[10px] text-slate-400">{empresaConfig.registroMercantil}</p>
                 )}
@@ -372,7 +415,7 @@ export default function PdfModal() {
                   <span className="font-mono font-semibold">{Number(data.baseImponible || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
-                  <span>IVA ({data.tipoIvaPct ?? 10}%):</span>
+                  <span>{data.isp ? 'IVA (inversión del sujeto pasivo):' : `IVA (${data.tipoIvaPct ?? 10}%):`}</span>
                   <span className="font-mono font-semibold">{eur(data.cuotaIva)} €</span>
                 </div>
                 {Boolean(data.cuotaRetencion) && (
@@ -408,7 +451,7 @@ export default function PdfModal() {
                     </div>
                   )}
                 </div>
-                <p className="font-bold text-slate-900 text-xs">{empresaConfig?.directorNombre || 'Manuel Gómez Castillo'}</p>
+                <p className="font-bold text-slate-900 text-xs">{empresaConfig?.directorNombre || ''}</p>
                 <p className="text-[10px] text-slate-500">{empresaConfig?.directorTitulacion || 'Arquitecto Técnico & Aparejador'} {empresaConfig?.directorColegiado && `· Col. ${empresaConfig.directorColegiado}`}</p>
               </div>
             </div>

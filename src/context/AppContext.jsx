@@ -53,6 +53,8 @@ import {
   listFacturasLegales,
   emitirFactura,
   rectificarFactura as rectificarFacturaApi,
+  anularFactura as anularFacturaApi,
+  subsanarFactura as subsanarFacturaApi,
   cambiarCobroFactura
 } from '../services/facturacionService';
 
@@ -1247,7 +1249,8 @@ export function AppProvider({ children }) {
   };
 
   // Con la facturación activada, toda factura se emite en el servidor (número + VeriFactu).
-  const convertPresupuestoToFactura = async (presupuestoId, tipoFactura = 'Certificación 1 (Anticipo 40%)', porcentaje = 40) => {
+  // `datos` trae lo que confirma el usuario en el modal de emisión: cliente completo e IVA de la obra.
+  const convertPresupuestoToFactura = async (presupuestoId, tipoFactura = 'Certificación 1 (Anticipo 40%)', porcentaje = 40, datos = {}) => {
     const pres = presupuestos.find(p => p.id === presupuestoId);
     if (!pres) return null;
     if (!facturacionActivada) {
@@ -1257,15 +1260,26 @@ export function AppProvider({ children }) {
 
     const factor = (porcentaje || 100) / 100;
     const result = await emitirFactura({
-      clienteNombre: pres.cliente,
-      clienteNif: pres.nif || '',
-      clienteDireccion: pres.direccion || '',
-      descripcion: tipoFactura,
+      clienteNombre: datos.clienteNombre ?? pres.cliente,
+      clienteNif: datos.clienteNif ?? (pres.nif || ''),
+      clienteTipo: datos.clienteTipo,
+      clienteDireccion: datos.clienteDireccion ?? (pres.direccion || ''),
+      clienteCodigoPostal: datos.clienteCodigoPostal,
+      clienteMunicipio: datos.clienteMunicipio,
+      clienteProvincia: datos.clienteProvincia,
+      descripcion: datos.descripcion || `${tipoFactura} · ${pres.obraTitulo || pres.numero}`,
       obraId: pres.obraId || null,
       presupuestoId: pres.id,
       baseImponible: Number(((pres.baseImponible || 0) * factor).toFixed(2)),
-      ivaPct: Number(pres.tipoIvaPct ?? facturacion.empresa?.ivaPorDefectoPct ?? 21),
-      metodoPago: 'Transferencia bancaria'
+      lineas: factor === 1 && Array.isArray(pres.partidas)
+        ? pres.partidas.map(p => ({ concepto: p.concepto, cantidad: p.cantidad, unidad: p.unidad, precio: p.precioVenta, importe: p.total }))
+        : [],
+      ivaPct: Number(datos.ivaPct ?? pres.tipoIvaPct ?? facturacion.empresa?.ivaPorDefectoPct ?? 21),
+      isp: datos.isp === true,
+      ivaMotivo: datos.ivaMotivo || '',
+      ...(datos.irpfPct !== undefined ? { irpfPct: Number(datos.irpfPct) } : {}),
+      fechaOperacion: datos.fechaOperacion || undefined,
+      metodoPago: datos.metodoPago || 'Transferencia bancaria'
     });
     if (!result.ok) {
       showNotification(`No se emitió la factura: ${result.error}`, 'error');
@@ -1288,6 +1302,32 @@ export function AppProvider({ children }) {
     const factura = result.data.factura;
     setFacturasLegales(prev => [factura, ...prev]);
     showNotification(`Factura rectificativa ${factura.numero} emitida.`);
+    return factura;
+  };
+
+  // Anulación: solo para una factura que no debió emitirse (se conserva con la marca "anulada").
+  const anularFactura = async (facturaId, motivo) => {
+    const result = await anularFacturaApi(facturaId, motivo);
+    if (!result.ok) {
+      showNotification(`No se anuló la factura: ${result.error}`, 'error');
+      return null;
+    }
+    const factura = result.data.factura;
+    setFacturasLegales(prev => prev.map(f => (f.id === facturaId ? factura : f)));
+    showNotification(`Factura ${factura.numero} anulada. Se enviará el registro de anulación a la AEAT.`);
+    return factura;
+  };
+
+  // Vuelve a registrar en la AEAT una factura cuyo registro fue rechazado.
+  const subsanarFactura = async (facturaId) => {
+    const result = await subsanarFacturaApi(facturaId);
+    if (!result.ok) {
+      showNotification(`No se pudo volver a enviar: ${result.error}`, 'error');
+      return null;
+    }
+    const factura = result.data.factura;
+    setFacturasLegales(prev => prev.map(f => (f.id === facturaId ? factura : f)));
+    showNotification(`Registro de ${factura.numero} preparado de nuevo; sale en el próximo envío a la AEAT.`);
     return factura;
   };
 
@@ -2136,6 +2176,8 @@ export function AppProvider({ children }) {
       updatePresupuesto,
       convertPresupuestoToFactura,
       rectificarFactura,
+      anularFactura,
+      subsanarFactura,
       // Con la facturación activada, las facturas son las emitidas en el servidor.
       facturas: facturacionActivada ? facturasLegales : facturas,
       facturacion,

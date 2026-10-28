@@ -29,7 +29,7 @@ Pendiente:
 - Desplegar en Render con las variables `VITE_*` y de servidor.
 - Seguridad: `VITE_RESEND_API_KEY` y `VITE_WHATSAPP_ACCESS_TOKEN` siguen expuestos al navegador (moverlos al servidor).
 - Avance de obra por partida y enlace de subcontrata por asignación (doc `docs/avance-obra.md`): Pedro debe ejecutar `supabase_schema_avance_obra.sql` en Supabase. WhatsApp Cloud API opcional (`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`).
-- Facturación legal (plan por fases hasta julio de 2027): fase 1 hecha (`supabase_schema_facturacion.sql`, `backend/facturacionRoutes.js`, `backend/verifactu/`). Pedro debe ejecutar ese SQL en Supabase. Faltan el envío SOAP a la AEAT con certificado, Facturae, la exportación contable y los certificados por cliente. Hasta tenerlo, Factusol sigue emitiendo las facturas reales.
+- Facturación legal (plan por fases hasta julio de 2027): fases 1 y 2 hechas (doc `docs/verifactu.md`: anulación, rectificativas, subsanación, envío SOAP con certificado cifrado, IVA por tipo de obra, Facturae sin firmar, libro registro CSV). Pedro debe ejecutar `supabase_schema_facturacion.sql` en Supabase, poner `CERT_ENCRYPTION_KEY` y `VERIFACTU_*` en `.env`/Render, subir su certificado y probar contra la AEAT en pruebas. Faltan: clientes extranjeros (`IDOtro`), firma de Facturae y asientos contables. Hasta pasar a producción, Factusol sigue emitiendo las facturas reales.
 Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.
 
 ## Diagnóstico sugerido del login, en orden
