@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import {
-  Receipt
-} from 'lucide-react';
 import PresupuestoGeneratorAI from './PresupuestoGeneratorAI';
 import VisitaObraModal from './VisitaObraModal';
 import ConsolaRevisionPresupuesto from './ConsolaRevisionPresupuesto';
@@ -10,6 +7,7 @@ import ConvertirObraModal from './ConvertirObraModal';
 import PresupuestosListado from './PresupuestosListado';
 import ViewModeSwitcher from '../Common/ViewModeSwitcher';
 import SendDocumentModal from '../Common/SendDocumentModal';
+import EmitirFacturaModal from '../Facturas/EmitirFacturaModal';
 import { generateExecutionPlanFromBudget } from '../../services/obraBudgetSyncService';
 
 export default function PresupuestosList() {
@@ -17,7 +15,6 @@ export default function PresupuestosList() {
     presupuestos,
     updatePresupuesto,
     addObra,
-    convertPresupuestoToFactura,
     facturacionActivada,
     setPdfModalData,
     setActiveTab,
@@ -30,8 +27,6 @@ export default function PresupuestosList() {
   const [showConvertModal, setShowConvertModal] = useState(null); // presupuesto object
   const [quoteToSend, setQuoteToSend] = useState(null);
   const [presupuestoAObra, setPresupuestoAObra] = useState(null); // presupuesto pendiente de confirmar como obra
-  const [convertPorcentaje, setConvertPorcentaje] = useState(40);
-  const [convertTipo, setConvertTipo] = useState('Certificación 1 (Anticipo 40% Inicio Obra)');
 
   if (viewMode === 'new_ai') {
     return <PresupuestoGeneratorAI onCancel={() => setViewMode('list')} onCreated={() => setViewMode('list')} />;
@@ -46,19 +41,7 @@ export default function PresupuestosList() {
     );
   }
 
-  const handleOpenConvertModal = (pres) => {
-    setShowConvertModal(pres);
-    setConvertPorcentaje(40);
-    setConvertTipo('Certificación 1 (Anticipo 40% Inicio Obra)');
-  };
-
-  const handleConfirmConvert = async () => {
-    if (!showConvertModal) return;
-    const factura = await convertPresupuestoToFactura(showConvertModal.id, convertTipo, Number(convertPorcentaje));
-    if (!factura) return;
-    setShowConvertModal(null);
-    setActiveTab('facturas');
-  };
+  const handleOpenConvertModal = (pres) => setShowConvertModal(pres);
 
   // El cliente acepta: se crea la obra con los datos confirmados en el modal.
   const handleAceptarPresupuesto = (pres, datosObra) => {
@@ -153,90 +136,17 @@ export default function PresupuestosList() {
         />
       )}
 
-      {/* Modal 1-Click Convert to Invoice */}
+      {/* Emitir factura desde el presupuesto (datos del cliente e IVA de la obra) */}
       {showConvertModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-emerald-400" />
-                <span>Emitir Factura desde Presupuesto</span>
-              </h3>
-              <button aria-label="Cerrar" onClick={() => setShowConvertModal(null)} className="text-slate-400 hover:text-white">✕</button>
-            </div>
-
-            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs space-y-1">
-              <span className="font-mono text-amber-400">{showConvertModal.numero}</span>
-              <h4 className="font-bold text-white text-sm">{showConvertModal.obraTitulo}</h4>
-              <p className="text-slate-400">Cliente: {showConvertModal.cliente} ({showConvertModal.nif})</p>
-              <p className="text-slate-400">Total presupuesto: <strong className="text-white">{showConvertModal.totalConIva?.toLocaleString('es-ES')} €</strong></p>
-            </div>
-
-            <div className="space-y-3 text-xs sm:text-sm">
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Tipo de Factura a Generar</label>
-                <select
-                  value={convertTipo}
-                  onChange={(e) => setConvertTipo(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-400"
-                >
-                  <option value="Certificación 1 (Anticipo 40% Inicio Obra)">Certificación 1: Anticipo 40% (Inicio de obra)</option>
-                  <option value="Certificación 2 (Avance 40% Mitad de Obra)">Certificación 2: Avance 40% (Instalaciones y alicatados)</option>
-                  <option value="Certificación Final 20% (Fin de Obra y Llaves)">Certificación 3: Final 20% (Entrega de llaves)</option>
-                  <option value="Factura Completa Ordinaria 100%">Factura Ordinaria Completa (100%)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Porcentaje a Facturar</label>
-                <div className="flex items-center gap-2">
-                  {[20, 40, 50, 100].map(pct => (
-                    <button
-                      key={pct}
-                      type="button"
-                      onClick={() => {
-                        setConvertPorcentaje(pct);
-                        if (pct === 40) setConvertTipo('Certificación 1 (Anticipo 40% Inicio Obra)');
-                        else if (pct === 20) setConvertTipo('Certificación Final 20% (Fin de Obra y Llaves)');
-                        else if (pct === 100) setConvertTipo('Factura Completa Ordinaria 100%');
-                      }}
-                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition ${
-                        convertPorcentaje === pct ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      {pct}%
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Calculated preview */}
-              <div className="bg-slate-950 p-3 rounded-xl border border-emerald-500/30 flex items-center justify-between text-xs">
-                <span className="text-slate-300">Total a Facturar ({convertPorcentaje}%):</span>
-                <span className="font-extrabold text-emerald-400 text-base">
-                  {((showConvertModal.totalConIva * convertPorcentaje) / 100).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
-                </span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setShowConvertModal(null)}
-                className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 text-xs"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmConvert}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20"
-              >
-                Generar Factura Oficial
-              </button>
-            </div>
-          </div>
-        </div>
+        <EmitirFacturaModal
+          presupuestos={presupuestos}
+          presupuestoInicial={showConvertModal}
+          onClose={() => setShowConvertModal(null)}
+          onEmitida={() => {
+            setShowConvertModal(null);
+            setActiveTab('facturas');
+          }}
+        />
       )}
 
       {/* Modal Enviar Presupuesto por Email / WhatsApp */}

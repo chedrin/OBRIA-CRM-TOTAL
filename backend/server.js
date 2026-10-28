@@ -22,6 +22,7 @@ import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
 import { handleDocumentRoutes } from "./documentRoutes.js";
 import { applySecurityHeaders, applyCors, readBodyLimited } from "./security.js";
+import { iniciarColaVerifactu } from "./verifactu/envio.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1104,7 +1105,7 @@ async function handleRequest(req, res) {
   if (await handleUsageRoutes(req, res, pathname)) return;
 
   // Facturación legal: empresa, numeración y VeriFactu (Ajustes > Facturación)
-  if (await handleFacturacionRoutes(req, res, pathname)) return;
+  if (await handleFacturacionRoutes(req, res, pathname, parsedUrl.searchParams)) return;
 
   // Envío de presupuestos y facturas por correo o WhatsApp (claves solo en el servidor)
   if (await handleDocumentRoutes(req, res, pathname)) return;
@@ -1778,4 +1779,6 @@ server.listen(PORT, () => {
   console.log(`📡 CORS: ${process.env.CORS_ORIGIN || "solo el mismo dominio"}`);
   console.log(`🧠 Motor IA por defecto: ${getSavedAiConfig().provider} (${getSavedAiConfig().model})`);
   console.log(`====================================================`);
+  // Cola de envío de registros VeriFactu a la AEAT (solo empresas con el envío activado).
+  iniciarColaVerifactu();
 });

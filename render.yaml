@@ -44,3 +44,18 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.8-flash
+      # Facturación VERI*FACTU (ver docs/verifactu.md)
+      - key: CERT_ENCRYPTION_KEY
+        sync: false
+      - key: VERIFACTU_PRODUCTOR_NOMBRE
+        sync: false
+      - key: VERIFACTU_PRODUCTOR_NIF
+        sync: false
+      - key: VERIFACTU_PRODUCTOR_DIRECCION
+        sync: false
+      - key: VERIFACTU_PRODUCTOR_EMAIL
+        sync: false
+      - key: VERIFACTU_DECLARACION_FECHA
+        sync: false
+      - key: VERIFACTU_DECLARACION_LUGAR
+        sync: false
