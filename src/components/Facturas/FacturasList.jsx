@@ -4,20 +4,8 @@ import {
   Receipt,
   Plus,
   Search,
-  Filter,
-  CheckCircle2,
-  Clock,
-  Euro,
   FileText,
-  Calendar,
-  Building2,
-  ArrowRight,
-  Download,
-  AlertCircle,
   ShieldCheck,
-  QrCode,
-  Lock,
-  FileCode,
   Send
 } from 'lucide-react';
 import SendDocumentModal from '../Common/SendDocumentModal';
@@ -92,18 +80,8 @@ export default function FacturasList() {
     <div className="space-y-6">
       
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-            <Receipt className="w-7 h-7 text-amber-400" />
-            <span>Facturación y Certificaciones de Obra</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Gestión de facturas emitidas, anticipos, certificaciones periódicas por avance de fases y cobros
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowConvertModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-emerald-600/20 active:scale-95"
@@ -313,7 +291,7 @@ export default function FacturasList() {
                 <Receipt className="w-5 h-5 text-emerald-400" />
                 <span>Emitir Factura de Obra</span>
               </h3>
-              <button onClick={() => setShowConvertModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setShowConvertModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <form onSubmit={handleConvertSubmit} className="space-y-4 text-xs sm:text-sm">
@@ -396,7 +374,7 @@ export default function FacturasList() {
           <form onSubmit={handleRectificarSubmit} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4 text-xs sm:text-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white">Rectificar {facturaARectificar.numero}</h3>
-              <button type="button" onClick={() => setFacturaARectificar(null)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" type="button" onClick={() => setFacturaARectificar(null)} className="text-slate-400 hover:text-white">✕</button>
             </div>
             <p className="text-slate-400">
               La factura original no cambia. Se emite una factura rectificativa por la diferencia, con su propia serie y registro VeriFactu.

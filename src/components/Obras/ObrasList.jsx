@@ -5,22 +5,17 @@ import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import ViewModeSwitcher from '../Common/ViewModeSwitcher';
 import ObrasTabla from './ObrasTabla';
+import EmptyState from '../Common/EmptyState';
 import { useUiPreferences } from '../../context/UiPreferencesContext';
 import {
   HardHat,
   Plus,
   Search,
   Filter,
-  Calendar,
   MapPin,
   User,
   ArrowRight,
-  TrendingUp,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Sparkles,
-  Users
+  Sparkles
 } from 'lucide-react';
 
 export default function ObrasList() {
@@ -165,17 +160,7 @@ export default function ObrasList() {
     <div className="space-y-6">
       
       {/* Top Bar with Search & New Obra */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-            <HardHat className="w-7 h-7 text-amber-400" />
-            <span>Seguimiento de Obras y Reformas</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Control de fases constructivas, bitácora fotográfica diaria, cálculo de materiales y certificaciones
-          </p>
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-2">
         <ViewModeSwitcher />
         <button
@@ -227,6 +212,18 @@ export default function ObrasList() {
 
       {viewMode !== 'tarjetas' && (
         <ObrasTabla obras={filteredObras} compact={viewMode === 'compacta'} onOpen={setSelectedObraId} />
+      )}
+
+      {viewMode === 'tarjetas' && filteredObras.length === 0 && (
+        obras.length === 0 ? (
+          <EmptyState icon={HardHat} title="Todavía no hay obras" actionLabel="Nueva Obra" actionIcon={Plus} onAction={handleOpenNewModal}>
+            Crea tu primera obra o convierte un presupuesto aceptado desde Presupuestos.
+          </EmptyState>
+        ) : (
+          <EmptyState icon={HardHat} title="Ninguna obra coincide con la búsqueda">
+            Prueba con otro texto o cambia el filtro de estado.
+          </EmptyState>
+        )
       )}
 
       {/* Works Cards Grid */}
@@ -369,7 +366,7 @@ export default function ObrasList() {
                   {modalStep === 1 ? 'Paso 1: Selecciona el presupuesto de origen para extraer datos y fases' : 'Paso 2: Revisa y confirma los datos antes de iniciar'}
                 </p>
               </div>
-              <button
+              <button aria-label="Cerrar"
                 onClick={() => setShowNewModal(false)}
                 className="text-slate-400 hover:text-white font-bold text-lg"
               >

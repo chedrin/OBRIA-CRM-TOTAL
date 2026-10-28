@@ -5,27 +5,13 @@ import {
   Mic,
   MicOff,
   Send,
-  FileText,
-  DollarSign,
-  TrendingUp,
-  Percent,
-  Layers,
   ChevronDown,
   ChevronUp,
-  CheckCircle2,
-  AlertCircle,
   ArrowLeft,
   Share2,
   Download,
-  Edit2,
-  Trash2,
-  Plus,
   History,
-  ShieldCheck,
-  Building2,
-  User,
-  MapPin,
-  Phone
+  MapPin
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
 import confetti from 'canvas-confetti';

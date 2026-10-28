@@ -1,21 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Send,
-  CheckCircle2,
   Share2,
   X,
   Phone,
   Mail,
-  ExternalLink,
   ShieldCheck,
-  FileCheck2,
   Copy,
   MessageSquare,
-  Sparkles,
-  AlertCircle,
-  RefreshCw,
-  Eye
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -34,16 +28,6 @@ export default function SendDocumentModal({
 }) {
   const { empresaConfig, showNotification, addAuditLog, updatePresupuesto, updateFactura } = useApp();
   const backdropRef = useRef(null);
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
 
   if (!isOpen || !document) return null;
 
@@ -190,7 +174,7 @@ export default function SendDocumentModal({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={onClose} aria-label="Cerrar"
             className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
           >
             <X className="w-4 h-4" />

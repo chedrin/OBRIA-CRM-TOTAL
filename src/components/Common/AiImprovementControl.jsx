@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { improveTextViaBackend, recordAiCorrection } from '../../services/backendAiService';
-import { Sparkles, Check, X, RefreshCw, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Sparkles, Check, X, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export default function AiImprovementControl({

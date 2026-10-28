@@ -3,19 +3,10 @@ import { useApp } from '../../context/AppContext';
 import {
   Building2,
   HardHat,
-  ShieldCheck,
   Upload,
-  Image as ImageIcon,
   CheckCircle2,
   FileSignature,
-  CreditCard,
-  Phone,
-  Mail,
-  MapPin,
-  Sparkles,
-  Award,
-  RefreshCw,
-  FileText
+  Award
 } from 'lucide-react';
 
 export default function PerfilDirectorConfig() {
@@ -77,14 +68,6 @@ export default function PerfilDirectorConfig() {
             Estos datos, junto con el logotipo y la firma digitalizada, se estamparán automáticamente en la cabecera y pie de tus presupuestos, facturas oficiales y certificaciones técnicas.
           </p>
         </div>
-
-        <button
-          type="submit"
-          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center gap-2 shrink-0"
-        >
-          <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
-          <span>Guardar Cambios</span>
-        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -355,14 +338,14 @@ export default function PerfilDirectorConfig() {
 
       </div>
 
-      {/* Botón flotante o inferior */}
-      <div className="flex justify-end pt-2">
+      {/* Único botón de guardar, siempre visible al desplazarse */}
+      <div className="sticky bottom-4 z-10 flex justify-end pt-2">
         <button
           type="submit"
           className="px-6 py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm rounded-xl transition shadow-lg shadow-amber-500/25 active:scale-95 flex items-center gap-2"
         >
           <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-          <span>Guardar Configuración del Director de Obra</span>
+          <span>Guardar perfil y empresa</span>
         </button>
       </div>
 

@@ -6,10 +6,8 @@ import {
   User,
   ArrowRight,
   ShieldAlert,
-  Smartphone,
   Eye,
-  EyeOff,
-  Sparkles
+  EyeOff
 } from 'lucide-react';
 import PwaInstallPrompt from '../PortalObrero/PwaInstallPrompt';
 

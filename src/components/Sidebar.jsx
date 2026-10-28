@@ -99,6 +99,7 @@ export default function Sidebar({
   };
 
   const initial = currentUser?.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'A';
+  const roleLabel = currentUser?.role === 'admin' ? 'Director de obra' : currentUser?.role || 'Admin';
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-200 select-none">
@@ -132,7 +133,7 @@ export default function Sidebar({
       </div>
 
       {/* Navegación */}
-      <nav className={`flex-1 overflow-y-auto py-4 space-y-5 ${collapsed ? 'px-2' : 'px-3'}`}>
+      <nav aria-label="Menú principal" className={`flex-1 overflow-y-auto py-4 space-y-5 ${collapsed ? 'px-2' : 'px-3'}`}>
         {NAV_SECTIONS.map((section) => (
           <div key={section.title}>
             {!collapsed ? (
@@ -238,6 +239,7 @@ export default function Sidebar({
               <button
                 onClick={handleCopyWorkerLink}
                 title="Copiar enlace directo"
+                aria-label="Copiar enlace del Portal Obrero"
                 className="bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs py-1.5 px-2.5 rounded-lg transition border border-slate-700"
               >
                 {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -249,48 +251,38 @@ export default function Sidebar({
 
       {/* Sesión */}
       <div className={`p-3 border-t border-slate-800 shrink-0 ${collapsed ? 'px-2' : ''}`}>
-        {!collapsed ? (
-          <div className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-800/70 transition">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0">
-              {initial}
-            </div>
+        <div className={`flex items-center gap-2.5 rounded-xl transition ${collapsed ? 'flex-col' : 'p-1.5 hover:bg-slate-800/70'}`}>
+          <div
+            className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0"
+            title={collapsed ? `${currentUser?.fullName || 'Administrador'} (${roleLabel})` : undefined}
+          >
+            {initial}
+          </div>
+          {!collapsed && (
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-white truncate">{currentUser?.fullName || 'Administrador'}</p>
               <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                {currentUser?.role === 'admin' ? 'Director de obra' : currentUser?.role || 'Admin'}
+                {roleLabel}
               </p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition shrink-0"
-              title="Cerrar sesión"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <div
-              className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-600 text-white font-bold flex items-center justify-center text-sm"
-              title={`${currentUser?.fullName || 'Admin'} (${currentUser?.role || 'admin'})`}
-            >
-              {initial}
-            </div>
-            <button
-              onClick={handleLogout}
-              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
-              title="Cerrar sesión"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+          )}
+          <button
+            onClick={handleLogout}
+            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition shrink-0"
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
 
         <button
           onClick={onToggleCollapse}
           className={`hidden lg:flex mt-2 w-full items-center gap-2 text-[11px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-slate-800/70 rounded-lg py-1.5 transition ${collapsed ? 'justify-center' : 'px-2'}`}
           title={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
+          aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
+          aria-expanded={!collapsed}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <><ChevronLeft className="w-4 h-4" /><span>Contraer menú</span></>}
         </button>
@@ -311,7 +303,7 @@ export default function Sidebar({
 
       {/* Móvil: cajón deslizante */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+        <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Menú de navegación">
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in"
             onClick={onCloseMobile}

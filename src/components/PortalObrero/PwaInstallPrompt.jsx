@@ -4,10 +4,7 @@ import {
   Share,
   PlusSquare,
   Smartphone,
-  X,
-  CheckCircle2,
-  Sparkles,
-  ArrowDown
+  X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -141,7 +138,7 @@ export default function PwaInstallPrompt({ onInstalled }) {
                 </div>
               </div>
               <button
-                onClick={() => setShowIOSModal(false)}
+                onClick={() => setShowIOSModal(false)} aria-label="Cerrar"
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />

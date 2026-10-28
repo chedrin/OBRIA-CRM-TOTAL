@@ -19,7 +19,8 @@ import SeguimientoObra from './components/Avance/SeguimientoObra';
 import PdfModal from './components/Common/PdfModal';
 import LoginObreroView from './components/Auth/LoginObreroView';
 import LoginAdminModal from './components/Auth/LoginAdminModal';
-import { CheckCircle2, AlertCircle, HardHat, ArrowLeft, ShieldCheck, ExternalLink } from 'lucide-react';
+import GlobalOverlays from './components/Common/GlobalOverlays';
+import { ArrowLeft, ShieldCheck } from 'lucide-react';
 
 function getInitialRoute() {
   const hash = (window.location.hash || '').toLowerCase();
@@ -31,7 +32,7 @@ function getInitialRoute() {
 }
 
 function MainLayout() {
-  const { activeTab = 'dashboard', setActiveTab = () => {}, notification, currentUser, logout = () => {}, activeRealtimeAlert, authReady = true, facturacionActivada = false } = useApp() || {};
+  const { activeTab = 'dashboard', notification, currentUser, activeRealtimeAlert, authReady = true, facturacionActivada = false } = useApp() || {};
   const [route, setRoute] = useState(getInitialRoute);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -86,6 +87,8 @@ function MainLayout() {
     );
   }
 
+  const overlays = <GlobalOverlays alert={activeRealtimeAlert} notification={notification} />;
+
   // ==========================================
   // CASE 1: WORKER ROUTE (/#empleados)
   // ==========================================
@@ -99,83 +102,38 @@ function MainLayout() {
       );
     }
 
-    // If logged in as admin visiting #empleados, show supervisor banner
-    if (currentUser.role === 'admin') {
-      return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-          {/* Admin Supervisor Top Bar */}
-          <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-bold flex items-center justify-between shadow-md">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
-              <span>Modo Supervisor: Estás visualizando el Portal Móvil con tu cuenta de Administrador ({currentUser.fullName})</span>
+    const isSupervisor = currentUser.role === 'admin';
+
+    // Worker: 100% mobile isolated layout (NO admin navbar). Admin visiting #empleados sees a supervisor bar.
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
+        {isSupervisor && (
+          <div className="om-solid bg-amber-500 text-slate-950 px-4 py-2 text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <ShieldCheck className="w-4 h-4 stroke-[2.5] shrink-0" />
+              <span className="truncate">Modo supervisor: ves el Portal Móvil con tu cuenta de administrador ({currentUser.fullName})</span>
             </div>
             <button
               onClick={() => navigateTo('admin')}
-              className="px-3 py-1 bg-slate-950 hover:bg-slate-900 text-amber-400 font-bold rounded-lg transition flex items-center gap-1.5"
+              className="px-3 py-1 bg-slate-950 hover:bg-slate-900 text-amber-400 font-bold rounded-lg transition flex items-center gap-1.5 shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Volver al Panel Admin</span>
+              <span>Volver al panel</span>
             </button>
           </div>
+        )}
 
-          <main className="flex-1 w-full max-w-xl mx-auto p-4 sm:p-6">
-            <PortalObreroView />
-          </main>
-
-          {/* Realtime Broadcast Banner */}
-          {activeRealtimeAlert && (
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-slate-900/95 backdrop-blur-md border border-amber-500 text-white px-5 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ring-4 ring-amber-500/20 max-w-md">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
-              <span className="text-xs sm:text-sm font-black text-amber-300 truncate">{activeRealtimeAlert.msg}</span>
-            </div>
-          )}
-
-          {/* Toast Notification */}
-          {notification && (
-            <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 bg-slate-900 border border-amber-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in duration-300">
-              {notification.type === 'error' ? (
-                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-              )}
-              <span className="text-xs sm:text-sm font-semibold">{notification.msg}</span>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Worker Logged In: 100% Mobile Isolated Layout (NO admin navbar, NO admin footer)
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans p-3 sm:p-5 selection:bg-amber-500 selection:text-slate-950">
-        <main className="flex-1 w-full max-w-xl mx-auto py-2">
+        <main className="flex-1 w-full max-w-xl mx-auto p-3 sm:p-5">
           <PortalObreroView />
         </main>
 
-        {/* Minimal Worker Footer */}
-        <footer className="text-center py-4 text-[11px] text-slate-600">
-          ObraMaster Móvil v2.4 · Sesión activa como {currentUser.fullName}
-        </footer>
-
-        {/* Realtime Broadcast Banner */}
-        {activeRealtimeAlert && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-slate-900/95 backdrop-blur-md border border-amber-500 text-white px-5 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ring-4 ring-amber-500/20 max-w-md">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
-            <span className="text-xs sm:text-sm font-black text-amber-300 truncate">{activeRealtimeAlert.msg}</span>
-          </div>
+        {!isSupervisor && (
+          <footer className="text-center py-4 text-[11px] text-slate-500">
+            ObraMaster Móvil · Sesión activa como {currentUser.fullName}
+          </footer>
         )}
 
-        {/* Toast Notification */}
-        {notification && (
-          <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 bg-slate-900 border border-amber-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in duration-300">
-            {notification.type === 'error' ? (
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-            ) : (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-            )}
-            <span className="text-xs sm:text-sm font-semibold">{notification.msg}</span>
-          </div>
-        )}
+        {overlays}
       </div>
     );
   }
@@ -183,22 +141,19 @@ function MainLayout() {
   // ==========================================
   // CASE 2: ADMIN ROUTE (/admin o #admin o #dashboard)
   // ==========================================
-  // If not logged in as admin, show login modal or banner
   const isAdminLoggedIn = currentUser && currentUser.role === 'admin';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans selection:bg-amber-500 selection:text-slate-950">
-      
-      {/* If not logged in, prompt admin login modal */}
+
+      {/* Sin sesión de administrador: acceso obligatorio (sin botón de cerrar) */}
       {!isAdminLoggedIn && (
         <LoginAdminModal
           isOpen={true}
-          onClose={() => {}}
           onSwitchToWorker={() => navigateTo('empleados')}
         />
       )}
 
-      {/* Left Vertical Navigation Menu */}
       <Sidebar
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
@@ -206,17 +161,11 @@ function MainLayout() {
         onToggleCollapse={toggleSidebarCollapse}
       />
 
-      {/* Main Content Column (Top Header + Main Content + Footer) */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen bg-slate-950">
-        
-        {/* Top Header Bar */}
-        <TopHeader
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onNavigateToWorker={() => navigateTo('empleados')}
-        />
 
-        {/* Main Content Area */}
-        <main key={activeTab} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 om-page-enter">
+        <TopHeader onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+
+        <main key={activeTab} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 om-page-enter">
           {activeTab === 'dashboard' && <Dashboard />}
           {activeTab === 'obras' && <ObrasList />}
           {activeTab === 'avisos' && <AvisosCenter />}
@@ -231,48 +180,16 @@ function MainLayout() {
           {activeTab === 'empresa_config' && <EmpresaConfig />}
         </main>
 
-        {/* Footer */}
-        <footer className="bg-slate-900 border-t border-slate-800 text-xs text-slate-500 py-6 mt-auto">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded bg-amber-500 flex items-center justify-center text-slate-950 font-bold text-[10px]">
-                OM
-              </div>
-              <span className="font-bold text-slate-300">ObraMaster AI</span>
-              <span>— Software de Gestión Integral para Constructores y Reformas</span>
-            </div>
-
-            <div className="flex items-center gap-4 text-[11px]">
-              <span>Modelos 303/130 AEAT</span>
-              <span>·</span>
-              <span>REBT & LOE Normativa</span>
-              <span>·</span>
-              <span className="text-emerald-400 font-semibold">● Sistema Activo en la Nube</span>
-            </div>
+        <footer className="border-t border-slate-800 text-[11px] text-slate-500 py-4 mt-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-center">
+            <span><strong className="font-bold text-slate-300">ObraMaster</strong> · Gestión integral para constructores y reformas</span>
+            <span>Modelos 303/130 AEAT · REBT y LOE</span>
           </div>
         </footer>
 
       </div>
 
-      {/* Realtime Broadcast Banner */}
-      {activeRealtimeAlert && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-slate-900/95 backdrop-blur-md border border-amber-500 text-white px-5 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 ring-4 ring-amber-500/20 max-w-md">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
-          <span className="text-xs sm:text-sm font-black text-amber-300 truncate">{activeRealtimeAlert.msg}</span>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {notification && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 bg-slate-900 border border-amber-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-300">
-          {notification.type === 'error' ? (
-            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-          ) : (
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          )}
-          <span className="text-xs sm:text-sm font-semibold">{notification.msg}</span>
-        </div>
-      )}
+      {overlays}
 
       {/* Printable / Downloadable PDF Modal */}
       <PdfModal />

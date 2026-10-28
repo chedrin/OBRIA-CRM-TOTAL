@@ -5,23 +5,16 @@ import { processScopeWithAI } from '../../services/aiAudioTextService';
 import {
   Mic,
   Mail,
-  MessageSquare,
   Sparkles,
   FileText,
   Plus,
   ArrowRight,
   CheckCircle2,
-  AlertCircle,
   Copy,
   Check,
-  Send,
   Layers,
   Building,
   BookOpen,
-  User,
-  HardHat,
-  ChevronRight,
-  CheckCheck,
   Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';

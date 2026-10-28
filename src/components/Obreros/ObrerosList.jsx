@@ -7,15 +7,10 @@ import {
   Sparkles,
   CheckCircle2,
   Phone,
-  Briefcase,
-  Award,
-  TrendingUp,
   Plus,
   Filter,
   Search,
   MessageSquare,
-  ThumbsUp,
-  AlertCircle,
   FileText,
   Calendar,
   DollarSign,
@@ -27,13 +22,9 @@ import {
   RefreshCw,
   X,
   UserX,
-  UserCheck,
-  Clock,
   Check,
   Ban,
-  Building,
   CreditCard,
-  HeartHandshake,
   KeyRound,
   Eye,
   EyeOff
@@ -452,26 +443,7 @@ export default function ObrerosList() {
     <div className="space-y-6">
       
       {/* Top Header & Metrics */}
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Users className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                <span>Recursos Humanos & Nóminas</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  Operarios ObraMaster
-                </span>
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-400">
-                Gestión integral de personal de obra: contratos, pre-nóminas (IRPF / Modelo 145), vacaciones, bajas IT y sincronización PWA
-              </p>
-            </div>
-          </div>
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-3">
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -615,7 +587,7 @@ export default function ObrerosList() {
               <select
                 value={filterEstado}
                 onChange={(e) => setFilterEstado(e.target.value)}
-                className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none"
+                className="flex-1 min-w-0 sm:flex-none bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none"
               >
                 <option value="todos">Todos los Estados</option>
                 <option value="activo">🟢 Activo en Obra</option>
@@ -628,7 +600,7 @@ export default function ObrerosList() {
               <select
                 value={filterCategoria}
                 onChange={(e) => setFilterCategoria(e.target.value)}
-                className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none"
+                className="flex-1 min-w-0 sm:flex-none bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none"
               >
                 <option value="todos">Todas las Categorías</option>
                 <option value="Oficial 1ª">Oficial 1ª</option>
@@ -1284,7 +1256,7 @@ export default function ObrerosList() {
                 <Plus className="w-5 h-5 text-amber-400 stroke-[3]" />
                 <span>Alta Integral de Empleado (Ficha Laboral & Acceso PWA)</span>
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowAddModal(false)} aria-label="Cerrar" className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1641,7 +1613,7 @@ export default function ObrerosList() {
                 </div>
               </div>
 
-              <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-white p-1">
+              <button onClick={() => setShowDetailModal(false)} aria-label="Cerrar" className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2003,7 +1975,7 @@ export default function ObrerosList() {
                 <Ban className="w-5 h-5 text-rose-400" />
                 <span>Tramitar Rescisión / Baja Laboral</span>
               </h3>
-              <button onClick={() => setShowTerminationModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setShowTerminationModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <p className="text-xs text-slate-300">
@@ -2077,7 +2049,7 @@ export default function ObrerosList() {
                 <Calendar className="w-5 h-5 text-blue-400" />
                 <span>Registrar Ausencia o Baja IT</span>
               </h3>
-              <button onClick={() => setShowAddAbsenceModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setShowAddAbsenceModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <p className="text-xs text-slate-400">
@@ -2180,7 +2152,7 @@ export default function ObrerosList() {
                   Periodo de Liquidación: <strong className="text-amber-400">{mesNomina}</strong>
                 </p>
               </div>
-              <button onClick={() => setShowGestoriaModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setShowGestoriaModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             {/* Table */}
@@ -2315,7 +2287,7 @@ export default function ObrerosList() {
                     <p className="text-[11px] text-slate-400">Ajusta la calificación técnica y los criterios de desempeño</p>
                   </div>
                 </div>
-                <button onClick={() => setShowRatingModal(false)} className="text-slate-400 hover:text-white text-sm p-1">✕</button>
+                <button aria-label="Cerrar" onClick={() => setShowRatingModal(false)} className="text-slate-400 hover:text-white text-sm p-1">✕</button>
               </div>
 
               {/* Worker selector & preview */}

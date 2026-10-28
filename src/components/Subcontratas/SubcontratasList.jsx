@@ -1,40 +1,24 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
-  Percent,
   FileText,
   Sparkles,
-  ArrowRight,
-  TrendingUp,
-  CheckCircle2,
   AlertCircle,
   Plus,
   Search,
   Filter,
-  DollarSign,
   Upload,
   RefreshCw,
   Sliders,
   Database,
   ShieldCheck,
-  ShieldAlert,
   AlertTriangle,
   Building2,
   Phone,
-  Mail,
   Star,
   Receipt,
   X,
-  Calendar,
-  Check,
-  Ban,
-  Clock,
-  Eye,
-  Lock,
-  Layers,
-  ChevronRight,
-  MessageSquare,
-  HelpCircle
+  ChevronRight
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { extractPricesViaBackend } from '../../services/backendAiService';
@@ -420,26 +404,7 @@ export default function SubcontratasList() {
     <div className="space-y-6">
       
       {/* Top Header */}
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Percent className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                <span>Subcontratas & Base de Precios</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                  Control Integral ERP
-                </span>
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-400">
-                Directorio y scoring de gremios, control PRL (Seguros RC Ley 32/2006), comparador de ofertas, facturas recibidas y tarifas unitarias
-              </p>
-            </div>
-          </div>
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-3">
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -1106,7 +1071,7 @@ export default function SubcontratasList() {
                 <Building2 className="w-5 h-5 text-indigo-400" />
                 <span>Alta de Empresa Subcontratista (PRL & Ficha Técnica)</span>
               </h3>
-              <button onClick={() => setShowAddSubModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setShowAddSubModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <form onSubmit={handleAddSubSubmit} className="space-y-4 text-xs">
@@ -1263,7 +1228,7 @@ export default function SubcontratasList() {
                 <p className="text-xs text-indigo-400 font-semibold">{selectedSubcontractor.gremio}</p>
               </div>
 
-              <button onClick={() => setSelectedSubcontractor(null)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setSelectedSubcontractor(null)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             {/* Sub-tabs */}

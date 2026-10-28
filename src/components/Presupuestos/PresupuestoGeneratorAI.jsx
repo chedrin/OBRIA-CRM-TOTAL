@@ -676,7 +676,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                 <BookOpen className="w-5 h-5 text-amber-400" />
                 <h3 className="font-extrabold text-white text-base">Presupuestos de Referencia para Aprendizaje de la IA</h3>
               </div>
-              <button onClick={() => setShowReferenceModal(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowReferenceModal(false)} aria-label="Cerrar" className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>

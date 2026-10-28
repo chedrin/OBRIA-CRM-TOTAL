@@ -2,23 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Mic,
-  MicOff,
   Mail,
   Sparkles,
-  CheckCircle2,
-  AlertTriangle,
   Play,
   Square,
   Package,
-  Plus,
-  ArrowRight,
-  HardHat,
-  User,
-  Clock,
   DollarSign,
-  Send,
   Volume2,
-  Layers,
   Inbox
 } from 'lucide-react';
 import AudioEmailCaptureView from './AudioEmailCaptureView';
@@ -210,18 +200,8 @@ export default function AudioEmailInbox() {
     <div className="space-y-6">
       
       {/* Top Header & Mode Switcher */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-            <Sparkles className="w-7 h-7 text-amber-400" />
-            <span>Módulo Multimodal de Captura IA & Mensajes de Obra</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Captura voz en directo, procesa audios o hilos de email/WhatsApp y genera partidas técnicas presupuestarias normalizadas con IA.
-          </p>
-        </div>
-
-        <div className="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl shadow-inner self-start lg:self-auto">
+      <div className="flex justify-end">
+        <div className="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl shadow-inner max-w-full overflow-x-auto">
           <button
             onClick={() => setInboxViewMode('multimodal_studio')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition ${

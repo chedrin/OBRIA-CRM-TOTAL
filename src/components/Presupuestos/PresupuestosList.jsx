@@ -1,24 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
-  Calculator,
-  Plus,
-  FileText,
-  Sparkles,
-  ArrowRight,
-  Receipt,
-  CheckCircle2,
-  Clock,
-  Trash2,
-  Edit,
-  Download,
-  Share2,
-  Calendar,
-  User,
-  MapPin,
-  Camera,
-  Mic,
-  Send
+  Receipt
 } from 'lucide-react';
 import PresupuestoGeneratorAI from './PresupuestoGeneratorAI';
 import VisitaObraModal from './VisitaObraModal';
@@ -118,21 +101,6 @@ export default function PresupuestosList() {
 
   return (
     <div className="space-y-6">
-      
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-            <Calculator className="w-7 h-7 text-amber-400" />
-            <span>Presupuestos de Obras y Reformas</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Genera presupuestos detallados por partidas mediante IA a partir de fotos y notas de voz, y pásalos a factura en 1 solo clic.
-          </p>
-        </div>
-
-      </div>
-
       {/* Asistente IA 360° integrado en la página (antes era una ventana emergente) */}
       <VisitaObraModal
         key={asistenteKey}
@@ -194,7 +162,7 @@ export default function PresupuestosList() {
                 <Receipt className="w-5 h-5 text-emerald-400" />
                 <span>Emitir Factura desde Presupuesto</span>
               </h3>
-              <button onClick={() => setShowConvertModal(null)} className="text-slate-400 hover:text-white">✕</button>
+              <button aria-label="Cerrar" onClick={() => setShowConvertModal(null)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
             <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs space-y-1">

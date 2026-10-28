@@ -3,31 +3,15 @@ import { useApp } from '../../context/AppContext';
 import {
   Sparkles,
   Camera,
-  Mic,
-  MicOff,
   Upload,
   FileText,
-  Clock,
-  Layers,
   CheckCircle2,
   AlertCircle,
   X,
-  Play,
-  RotateCcw,
   Sliders,
-  DollarSign,
-  MapPin,
-  User,
-  Phone,
-  Mail,
   ChevronRight,
-  HardHat,
   Trash2,
   Plus,
-  Image as ImageIcon,
-  Volume2,
-  Square,
-  FileAudio,
   Check,
   Lock,
   ShieldCheck
@@ -74,16 +58,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   } = useApp();
 
   const backdropRef = useRef(null);
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen && !inline) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, inline]);
 
   const handleBackdropClick = (e) => {
     if (e.target === backdropRef.current) {
@@ -456,7 +430,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
 
           {!inline && (
             <button
-              onClick={onClose}
+              onClick={onClose} aria-label="Cerrar"
               disabled={isProcessing}
               className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
             >
