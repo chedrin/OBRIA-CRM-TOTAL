@@ -596,10 +596,10 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
               <input
                 type="password"
                 required
-                minLength={4}
+                minLength={10}
                 value={newAdminPassword}
                 onChange={(e) => setNewAdminPassword(e.target.value)}
-                placeholder="Mínimo 4 caracteres"
+                placeholder="Mínimo 10 caracteres, letras y números"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
               />
             </div>
@@ -609,7 +609,7 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
               <input
                 type="password"
                 required
-                minLength={4}
+                minLength={10}
                 value={confirmAdminPassword}
                 onChange={(e) => setConfirmAdminPassword(e.target.value)}
                 placeholder="Repite la nueva clave"

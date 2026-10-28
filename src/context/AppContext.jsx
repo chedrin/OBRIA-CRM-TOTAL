@@ -605,7 +605,7 @@ export function AppProvider({ children }) {
       .finally(() => setAnalyzingReferenceId(null));
   }, [referenceBudgets, currentUser?.role, analyzingReferenceId]);
 
-  const MIN_PASSWORD_LENGTH = 8;
+  const MIN_PASSWORD_LENGTH = 10; // el servidor exige además letras y números (backend/security.js)
 
   // Nombre de usuario válido para el login: minúsculas, sin tildes, solo letras, números y puntos.
   const toUsername = (raw) =>
@@ -634,7 +634,11 @@ export function AppProvider({ children }) {
     if (!result.success) return result;
 
     setCurrentUser(result.user);
-    showNotification(`¡Bienvenido, ${result.user.fullName}!`);
+    if (result.weakPassword) {
+      showNotification('Tu contraseña es débil. Cámbiala en Ajustes > Gestión de Usuarios y Accesos (mínimo 10 caracteres, con letras y números).', 'warning');
+    } else {
+      showNotification(`¡Bienvenido, ${result.user.fullName}!`);
+    }
     return result;
   };
 

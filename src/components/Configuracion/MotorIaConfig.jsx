@@ -98,6 +98,8 @@ export default function MotorIaConfig() {
   const [geminiCheckResult, setGeminiCheckResult] = useState(null);
 
   const [backendInfo, setBackendInfo] = useState({ checking: true, isAvailable: false, details: null });
+  // El servidor ya no devuelve sus claves: solo si tiene una y sus últimas 4 cifras.
+  const [serverKeys, setServerKeys] = useState({ configured: {}, masked: {} });
 
   const storedAiKeys = () => {
     const appAi = empresaConfig?.aiConfig || {};
@@ -117,6 +119,7 @@ export default function MotorIaConfig() {
         const currentActive = saved.provider || 'google';
         setActiveProvider(currentActive);
         setSelectedProvider(currentActive);
+        setServerKeys({ configured: saved.apiKeysConfigured || {}, masked: saved.apiKeysMasked || {} });
 
         const loadedKeys = {
           google: saved.apiKeys?.google || (currentActive === 'google' ? saved.apiKey : '') || '',
@@ -184,6 +187,8 @@ export default function MotorIaConfig() {
   const selectedProviderObj = PROVIDERS.find(p => p.id === selectedProvider) || PROVIDERS[0];
   const activeProviderObj = PROVIDERS.find(p => p.id === activeProvider) || PROVIDERS[0];
   const currentKey = apiKeys[selectedProvider] || '';
+  // Hay clave si está escrita aquí o si el servidor ya tiene una (p. ej. GEMINI_API_KEY en Render).
+  const hasKeyFor = (provId) => Boolean((apiKeys[provId] || '').trim() || serverKeys.configured?.[provId]);
 
   const handleProviderChange = (newProvider) => {
     setSelectedProvider(newProvider);
@@ -233,7 +238,7 @@ export default function MotorIaConfig() {
 
   const handleCheckGeminiApi = async () => {
     const gKey = apiKeys.google?.trim() || '';
-    if (!gKey) {
+    if (!hasKeyFor('google')) {
       showNotification('Introduce una API Key de Google Gemini para realizar la autodetección.', 'error');
       return;
     }
@@ -258,6 +263,7 @@ export default function MotorIaConfig() {
       }
 
       if (!res || !res.success) {
+        if (!gKey) throw new Error('El servidor no pudo validar su clave de Gemini. Escribe una clave aquí para comprobarla.');
         res = await checkAndAutoSelectBestGeminiModel(gKey);
       }
 
@@ -313,7 +319,7 @@ export default function MotorIaConfig() {
 
   const handleTestConnection = async () => {
     const provKey = (apiKeys[selectedProvider] || '').trim();
-    if (!provKey) {
+    if (!hasKeyFor(selectedProvider)) {
       showNotification(`Introduce una API Key para ${selectedProviderObj.name} antes de probar la conexión.`, 'error');
       return;
     }
@@ -363,7 +369,7 @@ export default function MotorIaConfig() {
 
     for (const p of PROVIDERS) {
       const key = (apiKeys[p.id] || '').trim();
-      if (!key) {
+      if (!hasKeyFor(p.id)) {
         results.push({
           id: p.id,
           name: p.name,
@@ -480,11 +486,11 @@ export default function MotorIaConfig() {
 
           <div className="flex items-center gap-2">
             <span className={`px-3 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 ${
-              (apiKeys[activeProvider] || '').trim()
+              hasKeyFor(activeProvider)
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
             }`}>
-              <span>{(apiKeys[activeProvider] || '').trim() ? `🟢 Motor Activo: ${activeProviderObj.name}` : `🔴 Sin Clave en ${activeProviderObj.name}`}</span>
+              <span>{hasKeyFor(activeProvider) ? `🟢 Motor Activo: ${activeProviderObj.name}` : `🔴 Sin Clave en ${activeProviderObj.name}`}</span>
             </span>
           </div>
         </div>
@@ -542,7 +548,7 @@ export default function MotorIaConfig() {
             {PROVIDERS.map((p) => {
               const isSelected = selectedProvider === p.id;
               const isActive = activeProvider === p.id;
-              const hasKey = Boolean((apiKeys[p.id] || '').trim());
+              const hasKey = hasKeyFor(p.id);
 
               return (
                 <div
@@ -635,7 +641,9 @@ export default function MotorIaConfig() {
               type={showKeys[selectedProvider] ? 'text' : 'password'}
               value={currentKey}
               onChange={(e) => handleKeyChange(e.target.value)}
-              placeholder={`Introduce la clave para ${selectedProviderObj.name} (${selectedProviderObj.keyPrefix}...)`}
+              placeholder={serverKeys.configured?.[selectedProvider]
+                ? `Clave guardada en el servidor (${serverKeys.masked?.[selectedProvider] || '…'}). Escribe otra para cambiarla.`
+                : `Introduce la clave para ${selectedProviderObj.name} (${selectedProviderObj.keyPrefix}...)`}
               className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-3 pr-10 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
             />
             <button
@@ -784,7 +792,7 @@ export default function MotorIaConfig() {
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
-              disabled={checkingGemini || !currentKey}
+              disabled={checkingGemini || !hasKeyFor('google')}
               onClick={handleCheckGeminiApi}
               className="px-4 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl transition border border-amber-500/40 flex items-center justify-center gap-2 disabled:opacity-50"
             >
@@ -794,7 +802,7 @@ export default function MotorIaConfig() {
 
             <button
               type="button"
-              disabled={testing || !currentKey}
+              disabled={testing || !hasKeyFor(selectedProvider)}
               onClick={handleTestConnection}
               className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition border border-slate-700 flex items-center justify-center gap-2 disabled:opacity-50"
             >

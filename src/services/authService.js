@@ -112,7 +112,7 @@ export async function signInWithIdentifier(identifier, password) {
   });
   if (error) return { success: false, error: 'No se pudo abrir la sesión. Inténtalo de nuevo.' };
 
-  return { success: true, user: mapProfile(data.profile) };
+  return { success: true, user: mapProfile(data.profile), weakPassword: Boolean(data.weakPassword) };
 }
 
 /** Recupera la sesión guardada (al recargar la página). Devuelve el usuario o null. */

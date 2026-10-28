@@ -20,6 +20,8 @@ import { handleSubcontractorPublicRoutes, handleNotificationRoutes } from "./not
 import { handleAvancePublicRoutes, handleAvanceRoutes } from "./avanceRoutes.js";
 import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
+import { handleDocumentRoutes } from "./documentRoutes.js";
+import { applySecurityHeaders, applyCors, readBodyLimited } from "./security.js";
 import { iniciarColaVerifactu } from "./verifactu/envio.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -78,7 +80,8 @@ function loadEnv() {
 loadEnv();
 
 const PORT = Number(process.env.PORT) || 3000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+// Audios, fotos y PDF de referencia caben de sobra; más que esto es un abuso.
+const MAX_REQUEST_BYTES = 40 * 1024 * 1024;
 
 // Archivos de Persistencia
 const SETTINGS_FILE = path.join(__dirname, "ai_settings.json");
@@ -174,16 +177,24 @@ function saveAiConfig(newConfig) {
   const currentKeys = current.apiKeys || {};
   const newKeys = newConfig.apiKeys || {};
 
+  // Una clave vacía no borra la guardada: la web ya no recibe las claves del servidor
+  // y podría mandar el campo en blanco.
+  const pickKey = (...candidates) => {
+    for (const value of candidates) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return "";
+  };
   const updatedApiKeys = {
-    google: newKeys.google !== undefined ? newKeys.google : (newConfig.googleApiKey !== undefined ? newConfig.googleApiKey : (currentKeys.google || "")),
-    openai: newKeys.openai !== undefined ? newKeys.openai : (newConfig.openaiApiKey !== undefined ? newConfig.openaiApiKey : (currentKeys.openai || "")),
-    anthropic: newKeys.anthropic !== undefined ? newKeys.anthropic : (newConfig.anthropicApiKey !== undefined ? newConfig.anthropicApiKey : (currentKeys.anthropic || "")),
-    openrouter: newKeys.openrouter !== undefined ? newKeys.openrouter : (newConfig.openrouterApiKey !== undefined ? newConfig.openrouterApiKey : (currentKeys.openrouter || ""))
+    google: pickKey(newKeys.google, newConfig.googleApiKey, currentKeys.google),
+    openai: pickKey(newKeys.openai, newConfig.openaiApiKey, currentKeys.openai),
+    anthropic: pickKey(newKeys.anthropic, newConfig.anthropicApiKey, currentKeys.anthropic),
+    openrouter: pickKey(newKeys.openrouter, newConfig.openrouterApiKey, currentKeys.openrouter)
   };
 
-  const provider = newConfig.provider || current.provider || "google";
+  const provider = PROVIDER_IDS.includes(newConfig.provider) ? newConfig.provider : (current.provider || "google");
 
-  if (newConfig.apiKey !== undefined && newConfig.apiKey.trim() !== "") {
+  if (typeof newConfig.apiKey === "string" && newConfig.apiKey.trim() !== "") {
     updatedApiKeys[provider] = newConfig.apiKey.trim();
   }
 
@@ -203,12 +214,30 @@ function saveAiConfig(newConfig) {
   };
 
   try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), "utf-8");
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), { encoding: "utf-8", mode: 0o600 });
   } catch (err) {
     console.warn("[Backend Settings] No se pudo escribir ai_settings.json:", err.message);
   }
 
   return updated;
+}
+
+const PROVIDER_IDS = ["google", "openai", "anthropic", "openrouter"];
+const maskKey = k => k ? `…${String(k).slice(-4)}` : "";
+
+// Lo que ve el navegador: nunca las claves, solo si hay una y sus 4 últimas cifras.
+function publicAiConfig(config) {
+  const apiKeys = config.apiKeys || {};
+  const { apiKey, apiKeys: _keys, fallbackKeys: _fallback, ...rest } = config;
+  const activeKey = apiKeys[config.provider] || apiKey || "";
+  return {
+    ...rest,
+    apiKey: "",
+    apiKeys: {},
+    apiKeyMasked: maskKey(activeKey),
+    apiKeysMasked: Object.fromEntries(PROVIDER_IDS.map(p => [p, maskKey(apiKeys[p])])),
+    apiKeysConfigured: Object.fromEntries(PROVIDER_IDS.map(p => [p, Boolean(apiKeys[p])]))
+  };
 }
 
 function logAiCall({ provider, model, action, latencyMs, success, error, tokensUsed = 0 }) {
@@ -924,21 +953,27 @@ const DIST_DIR = path.resolve(__dirname, "../dist");
 function tryServeStatic(req, res, pathname) {
   if (!fs.existsSync(DIST_DIR)) return false;
 
-  let relativePath = pathname === "/" ? "/index.html" : pathname;
-  let safePath = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, "");
-  let filePath = path.join(DIST_DIR, safePath);
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
 
-  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+  const relativePath = pathname === "/" ? "/index.html" : pathname;
+  const filePath = path.resolve(DIST_DIR, "." + path.posix.normalize(relativePath));
+  // Nada fuera de dist/ ni archivos ocultos (.env, .git...).
+  const insideDist = filePath.startsWith(DIST_DIR + path.sep);
+  const hidden = relativePath.split("/").some(part => part.startsWith("."));
+
+  if (insideDist && !hidden && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
-    res.writeHead(200, { "Content-Type": contentType });
+    // Los archivos de assets/ llevan huella en el nombre: se pueden cachear un año.
+    const cache = relativePath.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache";
+    res.writeHead(200, { "Content-Type": contentType, "Cache-Control": cache });
     fs.createReadStream(filePath).pipe(res);
     return true;
   }
 
   const indexPath = path.join(DIST_DIR, "index.html");
   if (fs.existsSync(indexPath) && !path.extname(pathname)) {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
     fs.createReadStream(indexPath).pipe(res);
     return true;
   }
@@ -1007,11 +1042,8 @@ function parseMultipartBuffer(buffer, boundary) {
 
 // Handler de Peticiones HTTP
 async function handleRequest(req, res) {
-  const originHeader = req.headers.origin || (CORS_ORIGIN === "*" ? "*" : CORS_ORIGIN);
-  res.setHeader("Access-Control-Allow-Origin", originHeader);
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, x-api-key");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
+  applySecurityHeaders(res);
+  applyCors(req, res);
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -1019,8 +1051,16 @@ async function handleRequest(req, res) {
     return;
   }
 
-  const parsedUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(req.url, "http://localhost");
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Petición no válida");
+    return;
+  }
   const pathname = parsedUrl.pathname;
+  if (pathname.startsWith("/api")) res.setHeader("Cache-Control", "no-store");
 
   // Servir estáticos
   if (!pathname.startsWith("/api")) {
@@ -1067,41 +1107,21 @@ async function handleRequest(req, res) {
   // Facturación legal: empresa, numeración y VeriFactu (Ajustes > Facturación)
   if (await handleFacturacionRoutes(req, res, pathname, parsedUrl.searchParams)) return;
 
+  // Envío de presupuestos y facturas por correo o WhatsApp (claves solo en el servidor)
+  if (await handleDocumentRoutes(req, res, pathname)) return;
+
   // Endpoints GET
   if (req.method === "GET") {
+    // Pública: solo dice si el servidor está vivo (sin proveedor, modelo ni puerto).
     if (pathname === "/api/health") {
-      const config = getSavedAiConfig();
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        status: "online",
-        service: "ObraMaster AI SaaS Production Backend",
-        port: PORT,
-        activeProvider: config.provider,
-        activeModel: config.model,
-        hasKeyConfigured: Boolean(config.apiKey && config.apiKey.length > 5),
-        timestamp: new Date().toISOString()
-      }));
+      res.end(JSON.stringify({ status: "online", timestamp: new Date().toISOString() }));
       return;
     }
 
     if (pathname === "/api/settings/ai") {
-      const config = getSavedAiConfig();
-      const apiKeys = config.apiKeys || {};
-      const mask = k => k ? (k.substring(0, 6) + "..." + k.slice(-4)) : "";
-      const maskedKeys = {
-        google: mask(apiKeys.google),
-        openai: mask(apiKeys.openai),
-        anthropic: mask(apiKeys.anthropic),
-        openrouter: mask(apiKeys.openrouter)
-      };
-      const activeKey = apiKeys[config.provider] || config.apiKey || "";
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        ...config,
-        apiKey: activeKey,
-        apiKeyMasked: mask(activeKey),
-        apiKeysMasked: maskedKeys
-      }));
+      res.end(JSON.stringify(publicAiConfig(getSavedAiConfig())));
       return;
     }
 
@@ -1127,11 +1147,18 @@ async function handleRequest(req, res) {
     }
   }
 
-  // Leer cuerpo para POST / PUT
-  const chunks = [];
-  req.on("data", chunk => chunks.push(chunk));
-  req.on("end", async () => {
-    const bodyBuffer = Buffer.concat(chunks);
+  // Leer cuerpo para POST / PUT (con límite de tamaño)
+  let bodyBuffer;
+  try {
+    bodyBuffer = await readBodyLimited(req, MAX_REQUEST_BYTES);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.writeHead(err.status || 400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err.status ? err.message : "No se pudo leer la petición." }));
+    }
+    return;
+  }
+  {
     const contentType = req.headers["content-type"] || "";
 
     let fields = {};
@@ -1153,26 +1180,11 @@ async function handleRequest(req, res) {
     try {
       if (req.method === "PUT" && pathname === "/api/settings/ai") {
         const updated = saveAiConfig(fields);
-        const apiKeys = updated.apiKeys || {};
-        const mask = k => k ? (k.substring(0, 6) + "..." + k.slice(-4)) : "";
-        const maskedKeys = {
-          google: mask(apiKeys.google),
-          openai: mask(apiKeys.openai),
-          anthropic: mask(apiKeys.anthropic),
-          openrouter: mask(apiKeys.openrouter)
-        };
-        const activeKey = apiKeys[updated.provider] || updated.apiKey || "";
-
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           success: true,
           message: "Configuración del motor de IA actualizada correctamente",
-          config: {
-            ...updated,
-            apiKey: activeKey,
-            apiKeyMasked: mask(activeKey),
-            apiKeysMasked: maskedKeys
-          }
+          config: publicAiConfig(updated)
         }));
         return;
       }
@@ -1264,7 +1276,7 @@ ${textToImprove.trim()}
       }
 
       if (req.method === "POST" && pathname === "/api/ai/check-gemini-api") {
-        const apiKey = (fields.apiKey || currentConfig.apiKey || "").trim();
+        const apiKey = String(fields.apiKey || resolveProviderKey(currentConfig, "google") || "").trim();
         const requestedModel = fields.model || currentConfig.model || GEMINI_DEFAULT_MODEL;
         if (!apiKey) {
           res.writeHead(400, { "Content-Type": "application/json" });
@@ -1287,10 +1299,7 @@ ${textToImprove.trim()}
           status: "Operativo",
           statusMessage: `✅ API correcta\n\nProveedor: Google Gemini\nModelo activo: ${selectedModel}\nEstado: Operativo`,
           availableModels,
-          config: {
-            ...updated,
-            apiKeyMasked: updated.apiKey ? (updated.apiKey.substring(0, 6) + "..." + updated.apiKey.slice(-4)) : ""
-          }
+          config: publicAiConfig(updated)
         }));
         return;
       }
@@ -1342,7 +1351,7 @@ ${textToImprove.trim()}
 
       if (req.method === "POST" && (pathname === "/api/ai/test-connection" || pathname === "/api/test-connection")) {
         const provider = fields.provider || currentConfig.provider;
-        const apiKey = fields.apiKey || currentConfig.apiKey;
+        const apiKey = fields.apiKey || resolveProviderKey(currentConfig, provider);
         const model = fields.model || currentConfig.model;
         const startTime = performance.now();
 
@@ -1749,14 +1758,25 @@ ${providedText.trim() ? `TEXTO DISPONIBLE:\n"""\n${providedText.slice(0, 20000)}
         error: err.detail ? `${USER_FRIENDLY_AI_ERROR} Detalle: ${err.detail}` : USER_FRIENDLY_AI_ERROR
       }));
     }
-  });
+  }
 }
 
-const server = http.createServer(handleRequest);
+const server = http.createServer((req, res) => {
+  handleRequest(req, res).catch(err => {
+    console.error("[Backend] Error no controlado:", err?.message || err);
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Error interno del servidor." }));
+    }
+  });
+});
+// Corta peticiones lentas o colgadas (ataques tipo "slowloris").
+server.headersTimeout = 30 * 1000;
+server.requestTimeout = 5 * 60 * 1000;
 server.listen(PORT, () => {
   console.log(`====================================================`);
   console.log(`🚀 ObraMaster AI SaaS Server activo en puerto: ${PORT}`);
-  console.log(`📡 CORS permitido para: ${CORS_ORIGIN}`);
+  console.log(`📡 CORS: ${process.env.CORS_ORIGIN || "solo el mismo dominio"}`);
   console.log(`🧠 Motor IA por defecto: ${getSavedAiConfig().provider} (${getSavedAiConfig().model})`);
   console.log(`====================================================`);
   // Cola de envío de registros VeriFactu a la AEAT (solo empresas con el envío activado).

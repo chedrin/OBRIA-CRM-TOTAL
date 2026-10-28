@@ -2,8 +2,8 @@
  * ObraMaster - Document Dispatch Service (Email & WhatsApp)
  * 
  * Handles:
- * 1. Email dispatch via Resend API (https://api.resend.com/emails)
- * 2. WhatsApp dispatch via Meta WhatsApp Cloud API (Graph API v21.0)
+ * 1. Email dispatch via the server (/api/documents/send-email -> Resend)
+ * 2. WhatsApp dispatch via the server (/api/documents/send-whatsapp -> Meta Cloud API)
  * 3. Instant zero-cost WhatsApp Web / App link generator (wa.me)
  * 4. Professional HTML email templating for Budgets and Invoices
  * 5. Delivery audit tracking
@@ -139,130 +139,76 @@ export function generateDocumentEmailHtml({
 `;
 }
 
+async function postToServer(path, body) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, data };
+}
+
 /**
- * Dispatches an email via Resend API
+ * Envía un correo a través del servidor (Resend). La clave RESEND_API_KEY solo vive
+ * en el servidor: nunca en el navegador ni en variables VITE_.
  */
-export async function sendEmailDocument({
-  to,
-  subject,
-  html,
-  apiKey = null,
-  fromEmail = null
-}) {
+export async function sendEmailDocument({ to, subject, html }) {
   const recipient = (to || '').trim();
   if (!recipient || !recipient.includes('@')) {
     throw new Error('La dirección de correo electrónico del destinatario no es válida.');
   }
 
-  // Read API key from parameter or Vite env
-  const resendKey = (apiKey || import.meta.env?.VITE_RESEND_API_KEY || '').trim();
-  const sender = (fromEmail || import.meta.env?.VITE_RESEND_FROM_EMAIL || 'ObraMaster <presupuestos@obramaster.app>').trim();
-
-  // If a valid Resend key is configured
-  if (resendKey && resendKey.startsWith('re_')) {
-    try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: sender,
-          to: [recipient],
-          subject: subject || 'Documento Oficial de Obra - ObraMaster',
-          html: html
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error en servidor de Resend (${response.status}): ${errorText}`);
-      }
-
-      const result = await response.json();
-      return {
-        success: true,
-        channel: 'email',
-        provider: 'resend',
-        deliveryId: result.id,
-        recipient,
-        message: `Email enviado a ${recipient} a través de Resend API (ID: ${result.id}).`
-      };
-    } catch (apiErr) {
-      console.warn('Fallo en envío de email vía Resend:', apiErr);
-      throw apiErr;
-    }
+  const { ok, status, data } = await postToServer('/api/documents/send-email', { to: recipient, subject, html });
+  if (ok) {
+    return {
+      success: true,
+      channel: 'email',
+      provider: 'resend',
+      deliveryId: data.id,
+      recipient,
+      message: `Email enviado a ${recipient} a través de Resend (ID: ${data.id}).`
+    };
   }
 
-  // Graceful simulation fallback with audit log when no Resend key is yet provided
-  await new Promise(r => setTimeout(r, 600));
-  return {
-    success: true,
-    channel: 'email',
-    provider: 'simulated_smtp',
-    deliveryId: `mock-mail-${Date.now()}`,
-    recipient,
-    message: `Envío simulado correctamente a ${recipient}. Para enviar correos reales, añade VITE_RESEND_API_KEY en tu archivo .env.`
-  };
+  // Sin correo configurado en el servidor: se simula para no bloquear el flujo.
+  if (status === 503 && data.notConfigured) {
+    return {
+      success: true,
+      channel: 'email',
+      provider: 'simulated_smtp',
+      deliveryId: `mock-mail-${Date.now()}`,
+      recipient,
+      message: `Envío simulado a ${recipient}. Para enviar correos reales, añade RESEND_API_KEY en el servidor (Render).`
+    };
+  }
+  throw new Error(data.error || `No se pudo enviar el correo (${status}).`);
 }
 
 /**
- * Dispatches WhatsApp message via Meta WhatsApp Cloud API
+ * Envía un WhatsApp por la Cloud API de Meta a través del servidor
+ * (WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID solo en el servidor).
+ * Si no está configurada, prepara un enlace wa.me.
  */
-export async function sendWhatsAppCloudMessage({
-  phone,
-  messageText,
-  cloudConfig = {}
-}) {
+export async function sendWhatsAppCloudMessage({ phone, messageText }) {
   const cleanPhone = formatPhoneNumberForWhatsApp(phone);
   if (!cleanPhone || cleanPhone.length < 8) {
     throw new Error('El número de teléfono móvil para WhatsApp no es válido.');
   }
 
-  const token = (cloudConfig.accessToken || import.meta.env?.VITE_WHATSAPP_ACCESS_TOKEN || '').trim();
-  const phoneId = (cloudConfig.phoneNumberId || import.meta.env?.VITE_WHATSAPP_PHONE_NUMBER_ID || '').trim();
-
-  // If Meta Cloud API credentials are provided
-  if (token && phoneId) {
-    const url = `https://graph.facebook.com/v21.0/${phoneId}/messages`;
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: cleanPhone,
-          type: 'text',
-          text: {
-            preview_url: true,
-            body: messageText
-          }
-        })
-      });
-
-      if (!response.ok) {
-        const errData = await response.text();
-        throw new Error(`Error en WhatsApp Cloud API (${response.status}): ${errData}`);
-      }
-
-      const result = await response.json();
-      return {
-        success: true,
-        channel: 'whatsapp_cloud',
-        provider: 'meta_cloud_api',
-        messageId: result.messages?.[0]?.id,
-        phone: cleanPhone,
-        message: `Mensaje de WhatsApp entregado vía Meta Cloud API al +${cleanPhone}.`
-      };
-    } catch (metaErr) {
-      console.warn('Error en WhatsApp Cloud API:', metaErr);
-      throw metaErr;
-    }
+  const { ok, status, data } = await postToServer('/api/documents/send-whatsapp', { phone: cleanPhone, message: messageText });
+  if (ok) {
+    return {
+      success: true,
+      channel: 'whatsapp_cloud',
+      provider: 'meta_cloud_api',
+      messageId: data.id,
+      phone: cleanPhone,
+      message: `Mensaje de WhatsApp entregado vía Meta Cloud API al +${cleanPhone}.`
+    };
+  }
+  if (!(status === 503 && data.notConfigured)) {
+    throw new Error(data.error || `No se pudo enviar el WhatsApp (${status}).`);
   }
 
   // Fallback to generating direct WhatsApp web link

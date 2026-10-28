@@ -13,6 +13,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { passwordProblem } from "../backend/security.js";
 
 function arg(name, fallback = "") {
   const index = process.argv.indexOf(`--${name}`);
@@ -34,8 +35,9 @@ if (!email || !password) {
   console.error('Uso: node scripts/crearAdmin.js --usuario admin --email tu@correo.com --password "contraseña"');
   process.exit(1);
 }
-if (password.length < 8) {
-  console.error("La contraseña debe tener al menos 8 caracteres (es la regla de la aplicación).");
+const weak = passwordProblem(password, { username, email });
+if (weak) {
+  console.error(`${weak} (es la regla de la aplicación).`);
   process.exit(1);
 }
 
