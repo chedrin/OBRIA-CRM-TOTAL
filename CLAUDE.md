@@ -27,7 +27,7 @@ Pendiente:
 - Comprobar en Table Editor que `ai_instructions` y `ai_corrections` tienen RLS activado (ambas migraciones ya aplicadas, verificado el 2026-10-21; el PC de Pedro no tiene psql/CLI: migraciones por SQL Editor).
 - Poner `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` en `.env` y en Render; probar IA de extremo a extremo (mejorar texto, generar presupuesto, Memoria de la IA).
 - Desplegar en Render con las variables `VITE_*` y de servidor.
-- Seguridad: `VITE_RESEND_API_KEY` y `VITE_WHATSAPP_ACCESS_TOKEN` siguen expuestos al navegador (moverlos al servidor).
+- Seguridad (refuerzo, doc `docs/seguridad.md`): Pedro debe ejecutar `supabase_migration_seguridad_2.sql`, borrar `VITE_RESEND_API_KEY`/`VITE_WHATSAPP_ACCESS_TOKEN` de `.env` y Render (ahora se usan `RESEND_API_KEY` y `WHATSAPP_ACCESS_TOKEN` en el servidor) y rotar esas claves si llegaron a publicarse. Contraseñas: mínimo 10 caracteres con letras y números (`backend/security.js`).
 - Avance de obra por partida y enlace de subcontrata por asignación (doc `docs/avance-obra.md`): Pedro debe ejecutar `supabase_schema_avance_obra.sql` en Supabase. WhatsApp Cloud API opcional (`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`).
 - Facturación legal (plan por fases hasta julio de 2027): fase 1 hecha (`supabase_schema_facturacion.sql`, `backend/facturacionRoutes.js`, `backend/verifactu/`). Pedro debe ejecutar ese SQL en Supabase. Faltan el envío SOAP a la AEAT con certificado, Facturae, la exportación contable y los certificados por cliente. Hasta tenerlo, Factusol sigue emitiendo las facturas reales.
 Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.

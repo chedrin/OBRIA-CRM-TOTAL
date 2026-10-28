@@ -21,3 +21,7 @@ backend/.env.*
 !backend/.env.example
 dist/
 backend/ai_usage.json
+
+# Ajustes del servidor con claves de IA (nunca al repo)
+backend/ai_settings.json
+backend/db_clientes.json
