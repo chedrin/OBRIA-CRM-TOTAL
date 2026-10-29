@@ -346,7 +346,15 @@ function logAiUsage(provider, model, { input = 0, cached = 0, output = 0 } = {})
   recordAiUsage(provider, { input, cached, output });
 }
 
-async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json" }) {
+// Modo rápido (textos cortos): se limita el "razonamiento" previo de Gemini, que es lo que más tarda.
+function geminiFastThinking(modelId) {
+  if (/^gemini-[3-9]/.test(modelId)) return { thinkingLevel: "low" };
+  if (/^gemini-2\.5-flash/.test(modelId)) return { thinkingBudget: 0 };
+  if (/^gemini-2\.5-pro/.test(modelId)) return { thinkingBudget: 128 };
+  return null;
+}
+
+async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json", fast = false }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!effectiveKey) {
     throw aiError("Falta la clave GEMINI_API_KEY.");
@@ -380,11 +388,20 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
     for (const targetModel of roundModels) {
       const url = `${baseUrl}/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
       try {
-        const response = await fetch(url, {
+        const post = (payload) => fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(bodyPayload)
+          body: JSON.stringify(payload)
         });
+        const thinkingConfig = fast ? geminiFastThinking(targetModel) : null;
+        let response = await post(thinkingConfig
+          ? { ...bodyPayload, generationConfig: { ...bodyPayload.generationConfig, thinkingConfig } }
+          : bodyPayload);
+        // Si el modelo no admite ese ajuste de razonamiento, se repite la llamada sin él.
+        if (thinkingConfig && response.status === 400) {
+          const errBody = await response.clone().text();
+          if (/thinking/i.test(errBody)) response = await post(bodyPayload);
+        }
 
         if (response.ok) {
           const data = await response.json();
@@ -727,7 +744,7 @@ function anthropicContent(text, parts) {
  * `geminiParts` (fotos, PDF, audio) solo se envían cuando responde Gemini.
  * `attachments` (PDF e imágenes, en formato de fileToPart) se envían a cualquier proveedor.
  */
-async function callActiveProvider({ config, systemInstruction, userPrompt, temperature = 0.15, maxTokens = 4096, geminiParts = [], attachments = [] }) {
+async function callActiveProvider({ config, systemInstruction, userPrompt, temperature = 0.15, maxTokens = 4096, geminiParts = [], attachments = [], fast = false }) {
   const preferred = (config.provider || "google").toLowerCase();
   const candidates = [preferred, ...PROVIDER_ORDER].filter((p, i, arr) => arr.indexOf(p) === i && resolveProviderKey(config, p));
   if (!candidates.length) {
@@ -762,7 +779,8 @@ async function callActiveProvider({ config, systemInstruction, userPrompt, tempe
         contents: [{ role: "user", parts: [{ text: userPrompt }, ...attachments, ...geminiParts] }],
         systemInstruction,
         temperature,
-        maxTokens
+        maxTokens,
+        fast
       });
     } catch (err) {
       failures.push(`${provider} (${keyTail(apiKey)}): ${explainAiFailure(provider, err.detail || err.message)}`);
@@ -1239,7 +1257,8 @@ ${textToImprove.trim()}
           systemInstruction,
           userPrompt,
           temperature: 0.2,
-          maxTokens: 8192
+          maxTokens: 8192,
+          fast: true
         });
 
         const elapsedMs = Math.round(performance.now() - startTime);
