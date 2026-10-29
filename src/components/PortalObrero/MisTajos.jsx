@@ -45,9 +45,10 @@ export default function MisTajos({ obraId, obreroId, isAdmin = false, onAvailabl
     );
   }
 
-  const obra = data.obras.find((o) => o.obraId === obraId);
-  const partidas = obra ? obra.fases.flatMap((f) => f.partidas) : [];
-  const otras = data.obras.filter((o) => o.obraId !== obraId);
+  const obras = Array.isArray(data.obras) ? data.obras : [];
+  const obra = obras.find((o) => o.obraId === obraId);
+  const partidas = obra ? (obra.fases || []).flatMap((f) => f.partidas || []) : [];
+  const otras = obras.filter((o) => o.obraId !== obraId);
 
   const submit = async (form) => {
     form.append('obra_id', obra.obraId);
@@ -63,18 +64,18 @@ export default function MisTajos({ obraId, obreroId, isAdmin = false, onAvailabl
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+        <span className="text-sm font-bold text-white flex items-center gap-1.5">
           <ListChecks className="w-4 h-4 text-amber-400" />
           <span>Mis tajos / partidas de hoy</span>
         </span>
-        {partidas.length > 0 && <span className="text-[10px] text-slate-400">Pulsa una para reportar</span>}
+        {partidas.length > 0 && <span className="text-xs text-slate-400">Pulsa una para reportar</span>}
       </div>
 
       {saved && <p className="text-xs font-bold text-emerald-400">{saved}</p>}
-      {error && <p className="text-[11px] text-slate-500">{error}</p>}
+      {error && <p className="text-xs text-slate-500">{error}</p>}
 
       {!error && partidas.length === 0 && (
-        <p className="text-[11px] text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-3">
+        <p className="text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-3">
           No tienes partidas asignadas en esta obra.
           {otras.length > 0 && ` Tienes trabajo en: ${otras.map((o) => o.obra).join(', ')}.`}
         </p>

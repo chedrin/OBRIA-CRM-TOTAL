@@ -45,7 +45,7 @@ export default function LoginObreroView({ onSwitchToAdmin }) {
             <HardHat className="w-9 h-9 stroke-[2.3]" />
           </div>
           <div>
-            <span className="text-[11px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
+            <span className="text-xs font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
               Portal del Operario en Obra
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight mt-2">
@@ -75,7 +75,7 @@ export default function LoginObreroView({ onSwitchToAdmin }) {
                 <label className="text-xs font-bold text-slate-300 block">
                   Usuario, Teléfono o DNI
                 </label>
-                <span className="text-[10px] text-amber-400/80">3 formas de entrar</span>
+                <span className="text-xs text-amber-400/80">3 formas de entrar</span>
               </div>
               <div className="relative">
                 <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -90,7 +90,7 @@ export default function LoginObreroView({ onSwitchToAdmin }) {
                   className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 font-medium"
                 />
               </div>
-              <p className="text-[10px] text-slate-400">
+              <p className="text-xs text-slate-400">
                 Puedes acceder con tu nombre de usuario, tu número de móvil o tu DNI/NIE.
               </p>
             </div>
@@ -143,7 +143,7 @@ export default function LoginObreroView({ onSwitchToAdmin }) {
         >
           ¿Eres el jefe de obra o administrador? Acceder al panel de gestión
         </button>
-        <p className="text-[10px] text-slate-600">
+        <p className="text-xs text-slate-600">
           ObraMaster AI © 2026 · Conexión segura con cifrado
         </p>
       </div>

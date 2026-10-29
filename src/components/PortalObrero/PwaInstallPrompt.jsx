@@ -86,40 +86,33 @@ export default function PwaInstallPrompt({ onInstalled }) {
     <>
       {/* Banner de instalación en pantalla de inicio */}
       <div className="bg-gradient-to-r from-amber-500/20 via-slate-900 to-amber-500/10 border border-amber-500/40 rounded-2xl p-3 sm:p-3.5 shadow-lg relative overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-black shadow-md shadow-amber-500/30">
-              <Smartphone className="w-5 h-5 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-black text-white">Instalar App en tu Móvil</span>
-                <span className="text-[10px] bg-amber-500/30 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-bold">
-                  Acceso Rápido
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-300 leading-tight mt-0.5">
-                Añade el acceso directo para entrar con 1 toque sin abrir el navegador.
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-black shadow-md shadow-amber-500/30">
+            <Smartphone className="w-5 h-5 stroke-[2.5]" />
+          </div>
+          <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-black text-white block">Instala la app en tu móvil</span>
+              <p className="text-xs text-slate-300 leading-snug mt-0.5">
+                Entra con un toque desde la pantalla de inicio, sin abrir el navegador.
               </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={handleInstallClick}
-              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center gap-1.5"
+              className="self-start sm:self-auto shrink-0 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-sm rounded-xl transition shadow-md shadow-amber-500/20 flex items-center gap-1.5"
             >
-              <Download className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Añadir a Inicio</span>
-            </button>
-            <button
-              onClick={() => setDismissed(true)}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
-              title="Cerrar aviso"
-            >
-              <X className="w-4 h-4" />
+              <Download className="w-4 h-4 stroke-[2.5]" />
+              <span>Añadir a inicio</span>
             </button>
           </div>
+          <button
+            onClick={() => setDismissed(true)}
+            aria-label="Cerrar aviso"
+            className="p-1.5 -mt-1 -mr-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition shrink-0"
+            title="Cerrar aviso"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
@@ -134,7 +127,7 @@ export default function PwaInstallPrompt({ onInstalled }) {
                 </div>
                 <div>
                   <h3 className="font-extrabold text-white text-sm">Instalar en tu iPhone o iPad</h3>
-                  <p className="text-[11px] text-slate-400">Pasos guiados de Safari</p>
+                  <p className="text-xs text-slate-400">Pasos guiados de Safari</p>
                 </div>
               </div>
               <button
@@ -156,7 +149,7 @@ export default function PwaInstallPrompt({ onInstalled }) {
                   <p className="text-slate-200 font-semibold">
                     Pulsa el botón <strong className="text-white">Compartir</strong> de Safari:
                   </p>
-                  <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
                     Es el icono <Share className="w-3.5 h-3.5 text-amber-400 inline" /> en la barra inferior del navegador.
                   </p>
                 </div>
@@ -171,7 +164,7 @@ export default function PwaInstallPrompt({ onInstalled }) {
                   <p className="text-slate-200 font-semibold">
                     Desliza hacia abajo y selecciona:
                   </p>
-                  <p className="text-[11px] text-amber-400 font-bold flex items-center gap-1.5 mt-0.5 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
+                  <p className="text-xs text-amber-400 font-bold flex items-center gap-1.5 mt-0.5 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
                     <PlusSquare className="w-4 h-4 text-amber-400" />
                     <span>Añadir a la pantalla de inicio</span>
                   </p>
@@ -187,7 +180,7 @@ export default function PwaInstallPrompt({ onInstalled }) {
                   <p className="text-slate-200 font-semibold">
                     Pulsa en <strong className="text-white">"Añadir"</strong> (esquina superior derecha).
                   </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-400 mt-0.5">
                     ¡Listo! Se creará el icono de <strong>Portal Obrero</strong> en la pantalla de tu móvil.
                   </p>
                 </div>
