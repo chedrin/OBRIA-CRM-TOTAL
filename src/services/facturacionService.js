@@ -48,9 +48,9 @@ export const getResumenTrimestral = (ejercicio, trimestre) =>
   call(`/api/facturacion/resumen?ejercicio=${encodeURIComponent(ejercicio)}&trimestre=${encodeURIComponent(trimestre || '')}`);
 
 /** Descarga un archivo de la API (con la sesión) y lo guarda con su nombre. Devuelve { ok, error }. */
-export async function descargarArchivo(path, nombrePorDefecto) {
+export async function descargarArchivo(path, nombrePorDefecto, init = undefined) {
   try {
-    const response = await fetch(path);
+    const response = await fetch(path, init);
     if (!response.ok) {
       let error = `Error ${response.status}`;
       try { error = (await response.json())?.error || error; } catch { /* sin cuerpo JSON */ }
@@ -77,3 +77,9 @@ export const descargarLibroExpedidas = (ejercicio, trimestre) =>
   descargarArchivo(`/api/facturacion/libro?ejercicio=${encodeURIComponent(ejercicio)}&trimestre=${encodeURIComponent(trimestre || '')}`, 'libro-facturas.csv');
 export const descargarFacturae = (id) => descargarArchivo(`/api/facturas/${encodeURIComponent(id)}/facturae`, 'factura.xml');
 export const descargarEnviosExcel = (filtros) => descargarArchivo(`/api/facturacion/envios/excel?${filtrosQuery(filtros)}`, 'envios-aeat.xlsx');
+/** Excel de las facturas que se ven en pantalla (se mandan sus ids para respetar todos los filtros). */
+export const descargarFacturasExcel = (ids, nombre) => descargarArchivo('/api/facturas/excel', `facturas-${nombre}.xlsx`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ ids })
+});

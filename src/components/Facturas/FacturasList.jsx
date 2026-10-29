@@ -11,11 +11,15 @@ import {
   Ban,
   RefreshCw,
   AlertTriangle,
-  BarChart3
+  BarChart3,
+  LayoutGrid,
+  List,
+  Table2,
+  FileSpreadsheet
 } from 'lucide-react';
 import SendDocumentModal from '../Common/SendDocumentModal';
 import EmitirFacturaModal from './EmitirFacturaModal';
-import { descargarFacturae, descargarLibroExpedidas, getResumenTrimestral } from '../../services/facturacionService';
+import { descargarFacturae, descargarLibroExpedidas, getResumenTrimestral, descargarFacturasExcel } from '../../services/facturacionService';
 
 const eur = (v) => Number(v || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -31,6 +35,21 @@ const ESTADO_AEAT = {
   aceptado: { texto: 'Registrada en la AEAT', clase: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' },
   aceptado_con_errores: { texto: 'Aceptada con errores', clase: 'text-amber-300 bg-amber-500/10 border-amber-500/30' },
   rechazado: { texto: 'Rechazada por la AEAT', clase: 'text-rose-300 bg-rose-500/10 border-rose-500/30' }
+};
+
+const VISTAS = [
+  { id: 'tarjetas', texto: 'Tarjetas', icono: LayoutGrid },
+  { id: 'lista', texto: 'Lista', icono: List },
+  { id: 'detallada', texto: 'Lista detallada', icono: Table2 }
+];
+const CLAVE_VISTA = 'obramaster.facturas.vista';
+const leerVista = () => {
+  try {
+    const v = localStorage.getItem(CLAVE_VISTA);
+    return VISTAS.some(x => x.id === v) ? v : 'tarjetas';
+  } catch {
+    return 'tarjetas';
+  }
 };
 
 /** Importe que cuenta en los totales: anuladas no suman; una sustitución suma la diferencia. */
@@ -57,8 +76,13 @@ export default function FacturasList() {
 
   const hoy = new Date();
   const [filterEstado, setFilterEstado] = useState('todas'); // todas, cobrada, pendiente, problemas
+  const [filterAeat, setFilterAeat] = useState(''); // '', aceptado, aceptado_con_errores, rechazado, pendiente, sin_registro, anulada
   const [filterPeriodo, setFilterPeriodo] = useState('todos'); // todos | 2027-1T ...
   const [searchQuery, setSearchQuery] = useState('');
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
+  const [vista, setVistaState] = useState(leerVista);
+  const [exportando, setExportando] = useState(false);
   const [showEmitir, setShowEmitir] = useState(false);
   const [facturaToSend, setFacturaToSend] = useState(null);
   const [trabajando, setTrabajando] = useState(false);
@@ -88,8 +112,99 @@ export default function FacturasList() {
       || (filterEstado === 'problemas' ? conProblemas.includes(fac) : fac.estadoCobro === filterEstado && !fac.anulada);
     const matchesPeriodo = filterPeriodo === 'todos' || `${fac.ano}-${fac.trimestre}` === filterPeriodo;
     const matchesSearch = [fac.numero, fac.cliente, fac.obraTitulo, fac.cifNif].some(t => String(t || '').toLowerCase().includes(q));
-    return matchesEstado && matchesPeriodo && matchesSearch;
+    const matchesFechas = (!desde || fac.fechaEmision >= desde) && (!hasta || fac.fechaEmision <= hasta);
+    const matchesAeat = !filterAeat
+      || (filterAeat === 'anulada' ? fac.anulada
+        : filterAeat === 'sin_registro' ? !fac.aeat
+          : fac.aeat?.estado === filterAeat);
+    return matchesEstado && matchesPeriodo && matchesSearch && matchesFechas && matchesAeat;
   });
+
+  /** Botones de cada factura; en las vistas de lista van sin texto (con su título al pasar el ratón). */
+  const acciones = (fac, compacto = false) => {
+    const isCobrada = fac.estadoCobro === 'cobrada';
+    const puedeSubsanar = !fac.anulada && fac.aeat?.operacion === 'alta' && ['rechazado', 'aceptado_con_errores'].includes(fac.aeat?.estado);
+    return (
+      <>
+                  {puedeSubsanar && (
+                    <button
+                      onClick={() => handleSubsanar(fac)}
+                      disabled={trabajando}
+                      className="px-2.5 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-xl text-xs font-semibold flex items-center gap-1"
+                      title="Genera un nuevo registro (subsanación) y lo envía en el próximo lote"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      {!compacto && <span>Volver a enviar</span>}
+                    </button>
+                  )}
+                  {!fac.anulada && (
+                    <button
+                      onClick={() => setFacturaARectificar(fac)}
+                      className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition"
+                      title="Una factura emitida no se modifica: se corrige con una rectificativa"
+                    >
+                      {compacto ? 'Rect.' : 'Rectificar'}
+                    </button>
+                  )}
+                  {!fac.anulada && (
+                    <button
+                      onClick={() => setFacturaAAnular(fac)}
+                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1"
+                      title="Solo si la factura no debió emitirse (duplicada, cliente equivocado…)"
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                      {!compacto && <span>Anular</span>}
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setPdfModalData({ type: 'factura', data: fac })}
+                    title="Ver o descargar el PDF"
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    {!compacto && <span>PDF</span>}
+                  </button>
+                  {!fac.anulada && (
+                    <button
+                      onClick={() => handleFacturae(fac)}
+                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1"
+                      title="Factura electrónica Facturae 3.2.2 (XML) para FACe o clientes que la pidan"
+                    >
+                      <FileCode2 className="w-3.5 h-3.5" />
+                      {!compacto && <span>Facturae</span>}
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setFacturaToSend(fac)}
+                    className="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1 transition active:scale-95"
+                    title="Enviar factura por email o WhatsApp"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {!compacto && <span>Enviar al cliente</span>}
+                  </button>
+
+                  {!fac.anulada && (!isCobrada ? (
+                    <button
+                      onClick={() => updateFacturaStatus(fac.id, 'cobrada', 'Transferencia bancaria')}
+                      title="Marcar como cobrada"
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow"
+                    >
+                      {compacto ? '✓' : '✓ Marcar cobrada'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => updateFacturaStatus(fac.id, 'pendiente')}
+                      className="px-2 py-1 text-slate-400 hover:text-slate-200 text-xs"
+                      title="Volver a pendiente"
+                    >
+                      {compacto ? '↺' : 'Desmarcar'}
+                    </button>
+                  ))}
+      </>
+    );
+  };
 
   const periodoSeleccionado = () => {
     const [ano, trimestre] = (filterPeriodo === 'todos' ? periodos[0] : filterPeriodo).split('-');
@@ -110,6 +225,24 @@ export default function FacturasList() {
       return;
     }
     setResumen(r.data);
+  };
+
+  const setVista = (v) => {
+    setVistaState(v);
+    try { localStorage.setItem(CLAVE_VISTA, v); } catch { /* sin almacenamiento local */ }
+  };
+
+  // El Excel lleva exactamente las facturas que se ven con los filtros aplicados.
+  const handleExcel = async () => {
+    if (!filteredFacturas.length) {
+      showNotification('No hay facturas con estos filtros.', 'error');
+      return;
+    }
+    setExportando(true);
+    const nombre = [desde || (filterPeriodo !== 'todos' ? filterPeriodo : ''), hasta].filter(Boolean).join('_a_') || 'todas';
+    const r = await descargarFacturasExcel(filteredFacturas.map(f => f.id), nombre);
+    setExportando(false);
+    if (!r.ok) showNotification(r.error, 'error');
   };
 
   const handleFacturae = async (fac) => {
@@ -295,6 +428,21 @@ export default function FacturasList() {
           </div>
 
           <select
+            value={filterAeat}
+            onChange={(e) => setFilterAeat(e.target.value)}
+            className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-semibold"
+            aria-label="Estado en la AEAT"
+          >
+            <option value="">AEAT: todos</option>
+            <option value="aceptado">AEAT: aceptadas</option>
+            <option value="aceptado_con_errores">AEAT: aceptadas con errores</option>
+            <option value="rechazado">AEAT: rechazadas</option>
+            <option value="pendiente">AEAT: pendientes de envío</option>
+            <option value="sin_registro">AEAT: sin registro</option>
+            <option value="anulada">Anuladas</option>
+          </select>
+
+          <select
             value={filterPeriodo}
             onChange={(e) => setFilterPeriodo(e.target.value)}
             className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-semibold"
@@ -309,15 +457,133 @@ export default function FacturasList() {
         </div>
       </div>
 
+      {/* Fechas, modo de vista y Excel */}
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <label className="flex items-center gap-1.5 text-slate-400">
+          Desde
+          <input type="date" value={desde} max={hasta || undefined} onChange={(e) => setDesde(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded-xl px-2 py-1.5" />
+        </label>
+        <label className="flex items-center gap-1.5 text-slate-400">
+          Hasta
+          <input type="date" value={hasta} min={desde || undefined} onChange={(e) => setHasta(e.target.value)} className="bg-slate-800 border border-slate-700 text-white rounded-xl px-2 py-1.5" />
+        </label>
+        {(desde || hasta) && (
+          <button type="button" onClick={() => { setDesde(''); setHasta(''); }} className="text-slate-400 hover:text-white underline">Quitar fechas</button>
+        )}
+        <span className="text-slate-500">{filteredFacturas.length} factura(s)</span>
+
+        <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800" role="group" aria-label="Modo de vista">
+            {VISTAS.map(v => {
+              const Icono = v.icono;
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setVista(v.id)}
+                  title={v.texto}
+                  aria-pressed={vista === v.id}
+                  className={`px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition ${vista === v.id ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}
+                >
+                  <Icono className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{v.texto}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={handleExcel}
+            disabled={exportando}
+            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold rounded-xl flex items-center gap-1.5"
+            title="Descarga en Excel las facturas que se ven con los filtros aplicados"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>{exportando ? 'Preparando…' : 'Excel'}</span>
+          </button>
+        </div>
+      </div>
+
       {/* Facturas List */}
       <div className="space-y-3">
         {filteredFacturas.length === 0 && (
           <p className="text-center text-xs text-slate-500 py-8">No hay facturas con estos filtros.</p>
         )}
-        {filteredFacturas.map((fac) => {
+        {vista === 'lista' && filteredFacturas.length > 0 && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl divide-y divide-slate-800">
+            {filteredFacturas.map(fac => {
+              const estadoAeat = fac.aeat ? ESTADO_AEAT[fac.aeat.estado] : null;
+              return (
+                <div key={fac.id} className={`flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-4 px-4 py-2.5 text-xs ${fac.anulada ? 'opacity-60' : ''}`}>
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className="font-mono font-bold text-amber-400 whitespace-nowrap">{fac.numero}</span>
+                    <span className="text-slate-500 whitespace-nowrap">{fac.fechaEmision}</span>
+                    <span className="text-slate-200 font-semibold truncate">{fac.cliente}</span>
+                    <span className="text-slate-500 truncate hidden md:inline">{fac.obraTitulo}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <span className={`font-black whitespace-nowrap ${fac.anulada ? 'text-slate-500 line-through' : 'text-white'}`}>{eur(fac.totalFactura)} €</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${fac.anulada ? 'bg-slate-700 text-slate-200' : fac.estadoCobro === 'cobrada' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                      {fac.anulada ? 'Anulada' : fac.estadoCobro}
+                    </span>
+                    {estadoAeat && (
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${estadoAeat.clase}`} title={fac.aeat.error || (fac.aeat.csv ? `CSV: ${fac.aeat.csv}` : undefined)}>
+                        {fac.aeat.operacion === 'anulacion' ? 'Anulación: ' : ''}{estadoAeat.texto}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1">{acciones(fac, true)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {vista === 'detallada' && filteredFacturas.length > 0 && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950 text-slate-400">
+                <tr>
+                  {['Factura', 'Tipo', 'Fecha', 'Trim.', 'Cliente', 'NIF', 'Concepto', 'Base', 'IVA', 'Cuota', 'Retención', 'Total', 'Cobro', 'Vencimiento', 'AEAT', ''].map((h, i) => (
+                    <th key={h || i} className={`p-2 whitespace-nowrap ${['Base', 'Cuota', 'Retención', 'Total'].includes(h) ? 'text-right' : ''}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFacturas.map(fac => {
+                  const estadoAeat = fac.aeat ? ESTADO_AEAT[fac.aeat.estado] : null;
+                  return (
+                    <tr key={fac.id} className={`border-t border-slate-800 align-top ${fac.anulada ? 'opacity-60' : ''}`}>
+                      <td className="p-2 font-mono font-bold text-amber-400 whitespace-nowrap">{fac.numero}</td>
+                      <td className="p-2 text-slate-300 whitespace-nowrap">{fac.tipoAeat}{fac.tipoRectificativa ? ` (${fac.tipoRectificativa === 'S' ? 'sust.' : 'dif.'})` : ''}</td>
+                      <td className="p-2 text-slate-300 whitespace-nowrap">{fac.fechaEmision}</td>
+                      <td className="p-2 text-slate-400">{fac.trimestre}</td>
+                      <td className="p-2 text-slate-200 min-w-[10rem]">{fac.cliente}</td>
+                      <td className="p-2 text-slate-400 font-mono whitespace-nowrap">{fac.cifNif}</td>
+                      <td className="p-2 text-slate-400 min-w-[12rem]">{fac.obraTitulo}</td>
+                      <td className="p-2 text-right text-slate-300 whitespace-nowrap">{eur(fac.baseImponible)}</td>
+                      <td className="p-2 text-slate-300 whitespace-nowrap">{fac.isp ? 'ISP' : `${fac.tipoIvaPct} %`}</td>
+                      <td className="p-2 text-right text-slate-300 whitespace-nowrap">{eur(fac.cuotaIva)}</td>
+                      <td className="p-2 text-right text-slate-300 whitespace-nowrap">{fac.cuotaRetencion ? `-${eur(fac.cuotaRetencion)}` : ''}</td>
+                      <td className={`p-2 text-right font-bold whitespace-nowrap ${fac.anulada ? 'text-slate-500 line-through' : 'text-white'}`}>{eur(fac.totalFactura)}</td>
+                      <td className="p-2 whitespace-nowrap">{fac.anulada ? <span className="text-slate-400">Anulada</span> : fac.estadoCobro === 'cobrada' ? <span className="text-emerald-400">Cobrada{fac.fechaCobro ? ` ${fac.fechaCobro}` : ''}</span> : <span className="text-amber-400">Pendiente</span>}</td>
+                      <td className="p-2 text-slate-400 whitespace-nowrap">{fac.fechaVencimiento}</td>
+                      <td className="p-2 min-w-[9rem]">
+                        {estadoAeat && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${estadoAeat.clase}`} title={fac.aeat.error || undefined}>{estadoAeat.texto}</span>}
+                        {fac.aeat?.csv && <span className="block text-[10px] text-slate-500 font-mono mt-0.5">{fac.aeat.csv}</span>}
+                      </td>
+                      <td className="p-2"><div className="flex items-center gap-1">{acciones(fac, true)}</div></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {vista === 'tarjetas' && filteredFacturas.map((fac) => {
           const isCobrada = fac.estadoCobro === 'cobrada';
           const estadoAeat = fac.aeat ? ESTADO_AEAT[fac.aeat.estado] : null;
-          const puedeSubsanar = !fac.anulada && fac.aeat?.operacion === 'alta' && ['rechazado', 'aceptado_con_errores'].includes(fac.aeat?.estado);
 
           return (
             <div
@@ -392,80 +658,7 @@ export default function FacturasList() {
                 </div>
 
                 <div className="flex flex-wrap items-center md:justify-end gap-2">
-                  {puedeSubsanar && (
-                    <button
-                      onClick={() => handleSubsanar(fac)}
-                      disabled={trabajando}
-                      className="px-2.5 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-xl text-xs font-semibold flex items-center gap-1"
-                      title="Genera un nuevo registro (subsanación) y lo envía en el próximo lote"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Volver a enviar</span>
-                    </button>
-                  )}
-                  {!fac.anulada && (
-                    <button
-                      onClick={() => setFacturaARectificar(fac)}
-                      className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition"
-                      title="Una factura emitida no se modifica: se corrige con una rectificativa"
-                    >
-                      Rectificar
-                    </button>
-                  )}
-                  {!fac.anulada && (
-                    <button
-                      onClick={() => setFacturaAAnular(fac)}
-                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1"
-                      title="Solo si la factura no debió emitirse (duplicada, cliente equivocado…)"
-                    >
-                      <Ban className="w-3.5 h-3.5" />
-                      <span>Anular</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => setPdfModalData({ type: 'factura', data: fac })}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>PDF</span>
-                  </button>
-                  {!fac.anulada && (
-                    <button
-                      onClick={() => handleFacturae(fac)}
-                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1"
-                      title="Factura electrónica Facturae 3.2.2 (XML) para FACe o clientes que la pidan"
-                    >
-                      <FileCode2 className="w-3.5 h-3.5" />
-                      <span>Facturae</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => setFacturaToSend(fac)}
-                    className="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1 transition active:scale-95"
-                    title="Enviar factura por email o WhatsApp"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Enviar al cliente</span>
-                  </button>
-
-                  {!fac.anulada && (!isCobrada ? (
-                    <button
-                      onClick={() => updateFacturaStatus(fac.id, 'cobrada', 'Transferencia bancaria')}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow"
-                    >
-                      ✓ Marcar cobrada
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => updateFacturaStatus(fac.id, 'pendiente')}
-                      className="px-2 py-1 text-slate-400 hover:text-slate-200 text-xs"
-                      title="Volver a pendiente"
-                    >
-                      Desmarcar
-                    </button>
-                  ))}
+                  {acciones(fac)}
                 </div>
               </div>
             </div>

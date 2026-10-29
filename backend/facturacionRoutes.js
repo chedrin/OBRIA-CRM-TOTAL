@@ -27,6 +27,7 @@
  *   GET    /api/facturacion/resumen            resumen trimestral del IVA repercutido
  *   GET    /api/facturas                       facturas de la empresa (entorno actual)
  *   POST   /api/facturas                       crear y emitir una factura
+ *   POST   /api/facturas/excel                 Excel de las facturas indicadas (las que se ven con los filtros)
  *   POST   /api/facturas/:id/rectificar        rectificativa por diferencias o por sustitución
  *   POST   /api/facturas/:id/anular            anular una factura que no debió emitirse
  *   POST   /api/facturas/:id/subsanar          volver a registrar en la AEAT un registro rechazado
@@ -441,6 +442,7 @@ const ROUTES = [
   ["GET", /^\/api\/facturacion\/resumen$/, "resumen"],
   ["GET", /^\/api\/facturas$/, "listar"],
   ["POST", /^\/api\/facturas$/, "crear"],
+  ["POST", /^\/api\/facturas\/excel$/, "facturasExcel"],
   ["POST", /^\/api\/facturas\/([0-9a-f-]{36})\/rectificar$/, "rectificar"],
   ["POST", /^\/api\/facturas\/([0-9a-f-]{36})\/anular$/, "anular"],
   ["POST", /^\/api\/facturas\/([0-9a-f-]{36})\/subsanar$/, "subsanar"],
@@ -699,6 +701,34 @@ const handlers = {
       .order("issued_at", { ascending: false }));
     const registros = rows.length ? await ultimosRegistros(company.id) : new Map();
     return { facturas: rows.map((r) => toAppInvoice(r, registros.get(r.id))) };
+  },
+
+  async facturasExcel({ req, res, user }) {
+    const company = await requireCompany(user);
+    const body = await readJsonBody(req);
+    const ids = new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 5000).map(String));
+    if (!ids.size) throw httpError(400, "No hay facturas que exportar.");
+    const rows = (await run(getAdminClient().from("invoices").select("*")
+      .eq("company_id", company.id).eq("entorno", company.verifactu_entorno).eq("status", "ISSUED")
+      .order("issued_at", { ascending: true }))).filter((r) => ids.has(r.id));
+    const registros = await ultimosRegistros(company.id);
+    const numeros = new Map(rows.map((r) => [r.id, r.num_serie]));
+    const facturas = rows.map((r) => toAppInvoice(r, registros.get(r.id)));
+    const f = (iso) => (iso ? new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid" }) : "");
+    const libro = crearXlsx([{
+      nombre: "Facturas",
+      columnas: ["Nº factura", "Tipo", "Rectifica a", "Fecha expedición", "Fecha operación", "Trimestre", "Cliente", "NIF", "Tipo cliente",
+        "Dirección", "Concepto", "Base imponible", "IVA %", "Cuota IVA", "Inversión sujeto pasivo", "IRPF %", "Retención", "Importe total",
+        "Líquido a cobrar", "Estado cobro", "Fecha cobro", "Vencimiento", "Estado AEAT", "CSV AEAT", "Error AEAT", "Anulada", "Motivo anulación", "Huella"],
+      filas: facturas.map((x) => [x.numero, x.tipoAeat, numeros.get(x.rectificaId) || "", x.fechaEmision, x.fechaOperacion, `${x.trimestre} ${x.ano || ""}`.trim(),
+        x.cliente, x.cifNif, x.clienteTipo, x.direccion, x.obraTitulo, x.baseImponible, x.tipoIvaPct, x.cuotaIva, x.isp ? "Sí" : "",
+        x.retencionIrpfPct, x.cuotaRetencion, x.importeTotal, x.totalFactura, x.estadoCobro, x.fechaCobro, x.fechaVencimiento,
+        x.aeat ? ESTADOS_REGISTRO[x.aeat.estado] || x.aeat.estado : "Sin registro", x.aeat?.csv, x.aeat?.codigoError ? `(${x.aeat.codigoError}) ${x.aeat.error || ""}` : "",
+        x.anulada ? `Sí (${f(x.anuladaEl)})` : "", x.anulacionMotivo, x.huella])
+    }]);
+    await audit(company.id, user?.id, "FACTURAS_EXPORTADAS", { facturas: facturas.length });
+    sendFile(res, { contentType: XLSX_CONTENT_TYPE, filename: `facturas-${company.nif}-${new Date().toISOString().slice(0, 10)}.xlsx`, body: libro });
+    return undefined;
   },
 
   async crear({ req, user }) {
