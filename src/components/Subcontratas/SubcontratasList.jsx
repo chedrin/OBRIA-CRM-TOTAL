@@ -18,11 +18,15 @@ import {
   Star,
   Receipt,
   X,
-  ChevronRight
+  ChevronRight,
+  Edit2,
+  Copy,
+  Trash2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { extractPricesViaBackend } from '../../services/backendAiService';
 import { buildGremioQuote } from '../../services/priceBaseService';
+import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 
 export default function SubcontratasList() {
   const {
@@ -120,16 +124,9 @@ export default function SubcontratasList() {
   // Base de Precios State (Existing Feature)
   const [searchPrecios, setSearchPrecios] = useState('');
   const [filterGremio, setFilterGremio] = useState('todos');
-  const [showAddMasterModal, setShowAddMasterModal] = useState(false);
-  const [newMasterItem, setNewMasterItem] = useState({
-    codigo: '',
-    capitulo: 'Albañilería',
-    gremio: 'Albañilería',
-    concepto: '',
-    unidad: 'm²',
-    costeSubcontrata: 15.00,
-    margenPct: 30
-  });
+  // null: cerrado; { item, isEditing }: modal abierto para alta, duplicado o edición
+  const [masterModal, setMasterModal] = useState(null);
+
 
   // Helper for PRL Traffic Light Status
   const getPRLTrafficLight = (sub) => {
@@ -164,14 +161,15 @@ export default function SubcontratasList() {
   });
 
   // Base Precios Filtering
+  const gremiosBase = [...new Set(basePrecios.map(bp => bp.gremio || bp.capitulo).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
   const filteredBasePrecios = basePrecios.filter(bp => {
     const matchesGremio = filterGremio === 'todos' || bp.gremio === filterGremio || bp.capitulo === filterGremio;
-    const matchesSearch =
-      bp.codigo.toLowerCase().includes(searchPrecios.toLowerCase()) ||
-      bp.concepto.toLowerCase().includes(searchPrecios.toLowerCase()) ||
-      bp.capitulo.toLowerCase().includes(searchPrecios.toLowerCase());
+    const q = searchPrecios.trim().toLowerCase();
+    const matchesSearch = !q || [bp.codigo, bp.concepto, bp.capitulo, bp.gremio, bp.unidad]
+      .some(v => String(v || '').toLowerCase().includes(q));
     return matchesGremio && matchesSearch;
   });
+
 
   // Handle Add Subcontractor Submit
   const handleAddSubSubmit = (e) => {
@@ -369,34 +367,24 @@ export default function SubcontratasList() {
     confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
   };
 
-  const handleAddMasterItem = (e) => {
-    e.preventDefault();
-    if (!newMasterItem.codigo || !newMasterItem.concepto) return;
-    const coste = Number(newMasterItem.costeSubcontrata || 0);
-    const margen = Number(newMasterItem.margenPct || 30);
-    const pvp = Number((coste * (1 + margen / 100)).toFixed(2));
-
-    const newItem = {
-      id: `bp-master-${Date.now()}`,
-      ...newMasterItem,
-      costeSubcontrata: coste,
-      margenPct: margen,
-      precioVenta: pvp
-    };
-
-    setBasePrecios(prev => [newItem, ...prev]);
-    setShowAddMasterModal(false);
-    setNewMasterItem({
-      codigo: '',
-      capitulo: 'Albañilería',
-      gremio: 'Albañilería',
-      concepto: '',
-      unidad: 'm²',
-      costeSubcontrata: 15.00,
-      margenPct: 30
-    });
-    showNotification('Nueva partida añadida a la Base de Precios Oficial de la Empresa');
+  const handleSaveMasterItem = (partida) => {
+    if (masterModal?.isEditing) {
+      setBasePrecios(prev => prev.map(bp => bp.id === masterModal.item.id ? { ...bp, ...partida, id: bp.id } : bp));
+      showNotification(`Partida ${partida.codigo} actualizada en la base de precios`);
+    } else {
+      const { id: _id, fuente: _fuente, ...datos } = partida;
+      setBasePrecios(prev => [{ ...datos, id: `bp-master-${Date.now()}` }, ...prev]);
+      showNotification(`Partida ${partida.codigo} añadida a la base de precios`);
+    }
+    setMasterModal(null);
   };
+
+  const handleDeleteMasterItem = (item) => {
+    if (!window.confirm(`¿Eliminar la partida ${item.codigo} de la base de precios? La IA dejará de usarla en los presupuestos nuevos.`)) return;
+    setBasePrecios(prev => prev.filter(bp => bp.id !== item.id));
+    showNotification(`Partida ${item.codigo} eliminada de la base de precios`);
+  };
+
 
   const selectedSubPres = subcontratasPresupuestos.find(sp => sp.id === selectedSubPresId);
 
@@ -994,12 +982,12 @@ export default function SubcontratasList() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="relative w-64">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative w-full sm:w-64">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Buscar partida, código..."
+                  placeholder="Buscar partida, código, gremio..."
                   value={searchPrecios}
                   onChange={(e) => setSearchPrecios(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white"
@@ -1011,16 +999,12 @@ export default function SubcontratasList() {
                 onChange={(e) => setFilterGremio(e.target.value)}
                 className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-semibold"
               >
-                <option value="todos">Todos los Gremios</option>
-                <option value="Albañilería">Albañilería</option>
-                <option value="Fontanería">Fontanería</option>
-                <option value="Electricidad">Electricidad</option>
-                <option value="Pintura">Pintura</option>
-                <option value="Carpintería">Carpintería</option>
+                <option value="todos">Todos los gremios</option>
+                {gremiosBase.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
 
               <button
-                onClick={() => setShowAddMasterModal(true)}
+                onClick={() => setMasterModal({ item: null, isEditing: false })}
                 className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -1029,8 +1013,38 @@ export default function SubcontratasList() {
             </div>
           </div>
 
-          <div className="overflow-x-auto border border-slate-800 rounded-xl">
-            <table className="w-full text-left text-xs border-collapse">
+          <p className="text-[11px] text-slate-500">
+            {filteredBasePrecios.length} de {basePrecios.length} partidas. Pulsa una partida para editar cualquier campo; la IA de presupuestos usa siempre la versión guardada.
+          </p>
+
+          {/* Móvil: tarjetas con la partida completa */}
+          <div className="sm:hidden space-y-2">
+            {filteredBasePrecios.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setMasterModal({ item, isEditing: true })}
+                className="w-full text-left bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-mono font-bold text-amber-400 text-xs">{item.codigo}</span>
+                  <span className="text-[11px] text-slate-400 text-right">{[item.capitulo, item.gremio !== item.capitulo ? item.gremio : null].filter(Boolean).join(' · ')}</span>
+                </div>
+                <p className="text-xs text-white whitespace-pre-line break-words">{item.concepto}</p>
+                <div className="grid grid-cols-3 gap-2 text-[11px] font-mono">
+                  <span className="text-slate-300">{Number(item.costeSubcontrata || 0).toFixed(2)} €/{item.unidad}</span>
+                  <span className="text-amber-400 text-center">+{Number(item.margenPct || 0)}%</span>
+                  <span className="text-emerald-400 font-bold text-right">{Number(item.precioVenta || 0).toFixed(2)} €</span>
+                </div>
+              </button>
+            ))}
+            {filteredBasePrecios.length === 0 && (
+              <p className="py-6 text-center text-xs text-slate-500">No hay partidas que coincidan con la búsqueda.</p>
+            )}
+          </div>
+
+          <div className="hidden sm:block overflow-x-auto border border-slate-800 rounded-xl">
+            <table className="w-full min-w-[900px] text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 font-semibold text-[11px]">
                   <th className="py-2.5 px-3">Código</th>
@@ -1040,18 +1054,62 @@ export default function SubcontratasList() {
                   <th className="py-2.5 px-3 text-right">Coste Subcontrata</th>
                   <th className="py-2.5 px-3 text-center">Margen (%)</th>
                   <th className="py-2.5 px-3 text-right">PVP Cliente</th>
+                  <th className="py-2.5 px-3 text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono">
+                {filteredBasePrecios.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-6 px-3 text-center font-sans text-slate-500">No hay partidas que coincidan con la búsqueda.</td>
+                  </tr>
+                )}
                 {filteredBasePrecios.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-800/30">
-                    <td className="py-2 px-3 font-bold text-amber-400">{item.codigo}</td>
-                    <td className="py-2 px-3 font-sans text-slate-400 text-[11px]">{item.gremio || item.capitulo}</td>
-                    <td className="py-2 px-3 font-sans font-medium text-white max-w-sm">{item.concepto}</td>
-                    <td className="py-2 px-3 text-center text-slate-300">{item.unidad}</td>
-                    <td className="py-2 px-3 text-right font-bold text-white">{Number(item.costeSubcontrata).toFixed(2)} €</td>
-                    <td className="py-2 px-3 text-center font-bold text-amber-400">+{item.margenPct}%</td>
-                    <td className="py-2 px-3 text-right font-black text-emerald-400">{Number(item.precioVenta).toFixed(2)} €</td>
+                  <tr
+                    key={item.id}
+                    onClick={() => setMasterModal({ item, isEditing: true })}
+                    className="hover:bg-slate-800/30 cursor-pointer align-top"
+                  >
+                    <td className="py-2 px-3 font-bold text-amber-400 whitespace-nowrap">{item.codigo}</td>
+                    <td className="py-2 px-3 font-sans text-[11px]">
+                      <span className="text-slate-300 block">{item.capitulo || '—'}</span>
+                      {item.gremio && item.gremio !== item.capitulo && <span className="text-slate-500 block">{item.gremio}</span>}
+                    </td>
+                    <td className="py-2 px-3 font-sans font-medium text-white min-w-[280px] whitespace-pre-line break-words">{item.concepto}</td>
+                    <td className="py-2 px-3 text-center text-slate-300 whitespace-nowrap">{item.unidad}</td>
+                    <td className="py-2 px-3 text-right font-bold text-white whitespace-nowrap">{Number(item.costeSubcontrata || 0).toFixed(2)} €</td>
+                    <td className="py-2 px-3 text-center font-bold text-amber-400 whitespace-nowrap">+{Number(item.margenPct || 0)}%</td>
+                    <td className="py-2 px-3 text-right font-black text-emerald-400 whitespace-nowrap">{Number(item.precioVenta || 0).toFixed(2)} €</td>
+                    <td className="py-2 px-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setMasterModal({ item, isEditing: true })}
+                          title="Editar partida"
+                          aria-label={`Editar partida ${item.codigo}`}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMasterModal({ item: { ...item, id: undefined, fuente: undefined, codigo: `${item.codigo}-B` }, isEditing: false })}
+                          title="Duplicar partida"
+                          aria-label={`Duplicar partida ${item.codigo}`}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 rounded-lg transition"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMasterItem(item)}
+                          title="Eliminar partida"
+                          aria-label={`Eliminar partida ${item.codigo}`}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-900/40 text-rose-400 rounded-lg transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1649,95 +1707,15 @@ export default function SubcontratasList() {
       {/* ========================================================================= */}
       {/* MODAL: AÑADIR PARTIDA A BASE DE PRECIOS                                   */}
       {/* ========================================================================= */}
-      {showAddMasterModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-bold text-white">Nueva Partida en Base de Precios Oficial</h3>
-            <form onSubmit={handleAddMasterItem} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 block mb-1">Código</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="ALB-05"
-                    value={newMasterItem.codigo}
-                    onChange={(e) => setNewMasterItem({ ...newMasterItem, codigo: e.target.value.toUpperCase() })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Unidad</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="m², ud, ml..."
-                    value={newMasterItem.unidad}
-                    onChange={(e) => setNewMasterItem({ ...newMasterItem, unidad: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1">Gremio</label>
-                <select
-                  value={newMasterItem.gremio}
-                  onChange={(e) => setNewMasterItem({ ...newMasterItem, gremio: e.target.value, capitulo: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                >
-                  <option value="Albañilería">Albañilería</option>
-                  <option value="Fontanería">Fontanería</option>
-                  <option value="Electricidad">Electricidad</option>
-                  <option value="Pintura">Pintura</option>
-                  <option value="Carpintería">Carpintería</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1">Descripción de la Partida</label>
-                <textarea
-                  rows="2"
-                  required
-                  placeholder="Descripción detallada de la ejecución..."
-                  value={newMasterItem.concepto}
-                  onChange={(e) => setNewMasterItem({ ...newMasterItem, concepto: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                ></textarea>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 block mb-1">Coste Subcontrata (€)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    required
-                    value={newMasterItem.costeSubcontrata}
-                    onChange={(e) => setNewMasterItem({ ...newMasterItem, costeSubcontrata: Number(e.target.value) })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Margen Comercial (%)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    required
-                    value={newMasterItem.margenPct}
-                    onChange={(e) => setNewMasterItem({ ...newMasterItem, margenPct: Number(e.target.value) })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-                <button type="button" onClick={() => setShowAddMasterModal(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl">Añadir al Catálogo</button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {masterModal && (
+        <PartidaPrecioModal
+          initial={masterModal.item}
+          isEditing={masterModal.isEditing}
+          title={masterModal.isEditing ? `Editar partida ${masterModal.item.codigo}` : 'Nueva partida en la base de precios'}
+          catalogo={basePrecios}
+          onSave={handleSaveMasterItem}
+          onClose={() => setMasterModal(null)}
+        />
       )}
 
     </div>

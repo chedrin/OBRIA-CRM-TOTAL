@@ -933,7 +933,7 @@ export function AppProvider({ children }) {
           : JSON.parse(JSON.stringify(basePrecios));
 
         const coste = Number(newItem.costeSubcontrata || 0);
-        const margen = Number(newItem.margenPct || 30);
+        const margen = Number(newItem.margenPct ?? 30);
         const pvpCalculado = Number((coste * (1 + margen / 100)).toFixed(2));
 
         const itemToAdd = {
