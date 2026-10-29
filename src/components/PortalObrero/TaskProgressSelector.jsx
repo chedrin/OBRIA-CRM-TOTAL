@@ -61,9 +61,9 @@ export default function TaskProgressSelector({
   };
 
   return (
-    <div className={`space-y-1.5 ${compact ? 'text-[11px]' : 'text-xs'}`}>
+    <div className={`space-y-1.5 text-xs`}>
       {/* Barra de progreso visual con feedback de estado */}
-      <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+      <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
         <span className="flex items-center gap-1">
           {optimisticProgress === 100 ? (
             <span className="text-emerald-400 font-bold flex items-center gap-1">
@@ -79,7 +79,7 @@ export default function TaskProgressSelector({
             <span className="text-slate-500">Sin iniciar</span>
           )}
         </span>
-        <span className="font-mono font-bold text-white text-[11px]">
+        <span className="font-mono font-bold text-white text-xs">
           {optimisticProgress}%
         </span>
       </div>
@@ -111,7 +111,7 @@ export default function TaskProgressSelector({
               type="button"
               disabled={disabled || isUpdating}
               onClick={() => handleSelectProgress(stage.value)}
-              className={`py-1.5 px-1 rounded-lg font-bold text-[10px] transition-all duration-200 flex flex-col items-center justify-center border active:scale-95 touch-manipulation ${
+              className={`min-h-11 py-2 px-1 rounded-lg font-bold text-sm transition-all duration-200 flex flex-col items-center justify-center border active:scale-95 touch-manipulation ${
                 isSelected
                   ? stage.value === 100
                     ? 'bg-emerald-600 text-white border-emerald-400 shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500/20'
@@ -122,11 +122,6 @@ export default function TaskProgressSelector({
               }`}
             >
               <span>{stage.label}</span>
-              {!compact && (
-                <span className="text-[8px] opacity-75 font-normal truncate max-w-full">
-                  {stage.value === 100 ? 'Fin' : stage.value === 0 ? 'Ini' : `${stage.value}%`}
-                </span>
-              )}
             </button>
           );
         })}

@@ -27,6 +27,27 @@ import AvisosTecnicosModal from './AvisosTecnicosModal';
 import PedirMaterialModal from './PedirMaterialModal';
 import MisTajos from './MisTajos';
 
+// Foto del operario; si no hay o no carga (sin conexión), sus iniciales.
+function FotoObrero({ obrero }) {
+  const [fallo, setFallo] = useState(false);
+  const iniciales = (obrero.nombre || '?').split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+  if (!obrero.foto || fallo) {
+    return (
+      <div className="w-12 h-12 rounded-xl shrink-0 bg-amber-500/15 text-amber-400 border border-amber-500/40 flex items-center justify-center font-black text-base">
+        {iniciales}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={obrero.foto}
+      alt=""
+      onError={() => setFallo(true)}
+      className="w-12 h-12 rounded-xl object-cover border border-amber-500/40 shrink-0"
+    />
+  );
+}
+
 export default function PortalObreroView() {
   const {
     obreros,
@@ -271,11 +292,11 @@ export default function PortalObreroView() {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-white text-sm">ObraMaster Móvil</span>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 rounded font-bold">
+                <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 rounded font-bold">
                   Operario
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
+              <p className="text-xs text-slate-400 leading-tight">
                 {currentObrero.nombre} · {currentObrero.puesto.split('/')[0]}
               </p>
             </div>
@@ -290,7 +311,7 @@ export default function PortalObreroView() {
               <Bell className="w-4 h-4" />
               <span className="hidden sm:inline">Avisos</span>
               {unreadAvisosCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-rose-500 text-white rounded-full text-[10px] font-black flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-rose-500 text-white rounded-full text-xs font-black flex items-center justify-center animate-pulse">
                   {unreadAvisosCount}
                 </span>
               )}
@@ -346,7 +367,7 @@ export default function PortalObreroView() {
               <Bell className="w-3.5 h-3.5" />
               <span>Avisos</span>
               {unreadAvisosCount > 0 && (
-                <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black">
+                <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center font-black">
                   {unreadAvisosCount}
                 </span>
               )}
@@ -368,13 +389,11 @@ export default function PortalObreroView() {
       <div className={`mx-auto transition-all duration-300 ${isPhoneFrame ? 'max-w-sm' : 'max-w-2xl w-full'}`}>
         
         {/* Smartphone Shell */}
-        <div className={`bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden ${
-          isPhoneFrame ? 'p-3 ring-8 ring-slate-900 rounded-[2.5rem]' : 'p-3 sm:p-5 rounded-2xl'
-        }`}>
+        <div className={isPhoneFrame ? 'bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden p-3 ring-8 ring-slate-900 rounded-[2.5rem]' : ''}>
           
           {/* Phone Top Notch & Status Bar (if phone frame) */}
           {isPhoneFrame && (
-            <div className="flex items-center justify-between px-6 pt-2 pb-3 text-[11px] font-mono text-slate-400">
+            <div className="flex items-center justify-between px-6 pt-2 pb-3 text-xs font-mono text-slate-400">
               <span>08:42</span>
               <div className="w-20 h-4 bg-slate-900 rounded-full mx-auto"></div>
               <div className="flex items-center gap-1">
@@ -385,47 +404,29 @@ export default function PortalObreroView() {
           )}
 
           {/* Phone Screen Canvas */}
-          <div className="bg-slate-900 rounded-[2rem] p-4 sm:p-5 border border-slate-800/80 space-y-4">
+          <div className={isPhoneFrame ? 'bg-slate-900 rounded-[2rem] p-4 border border-slate-800/80 space-y-4' : 'space-y-4'}>
             
             {/* Worker Top Profile Card */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950/30 p-3.5 rounded-2xl border border-slate-700/80 flex items-center justify-between gap-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <img
-                  src={currentObrero.foto}
-                  alt={currentObrero.nombre}
-                  className="w-12 h-12 rounded-xl object-cover border border-amber-500/40"
-                />
-                <div>
-                  <h3 className="font-extrabold text-white text-sm leading-tight">{currentObrero.nombre}</h3>
-                  <p className="text-[11px] text-amber-400 font-medium">{currentObrero.puesto}</p>
-                  <span className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Jornada en Curso · Turno Activo
+              <div className="flex items-center gap-3 min-w-0">
+                <FotoObrero obrero={currentObrero} />
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-white text-base leading-tight break-words">{currentObrero.nombre}</h3>
+                  <p className="text-xs text-amber-400 font-medium break-words">{currentObrero.puesto}</p>
+                  <span className={`text-xs flex items-center gap-1.5 mt-0.5 ${fichadoEntrada ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${fichadoEntrada ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`}></span>
+                    {fichadoEntrada ? 'Turno activo' : 'Fuera de turno'}
                   </span>
                 </div>
               </div>
 
-              {/* Actions: Avisos & Fichar */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  onClick={() => setShowAvisosModal(true)}
-                  className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 transition"
-                  title="Avisos e Instrucciones Técnicas"
-                >
-                  <Bell className="w-4 h-4" />
-                  {unreadAvisosCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
-                      {unreadAvisosCount}
-                    </span>
-                  )}
-                </button>
-
+              <div className="shrink-0">
                 <button
                   onClick={() => {
                     setFichadoEntrada(!fichadoEntrada);
                     showNotification(fichadoEntrada ? 'Jornada finalizada y fichaje registrado.' : 'Jornada iniciada. ¡Buen día de trabajo!');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shadow ${
+                  className={`px-3.5 py-2.5 rounded-xl text-sm font-bold transition shadow ${
                     fichadoEntrada ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
                   }`}
                 >
@@ -435,7 +436,7 @@ export default function PortalObreroView() {
             </div>
 
             {/* Realtime Connectivity Status Banner */}
-            <div className="flex items-center justify-between px-1 text-[11px]">
+            <div className="flex items-center justify-between px-1 text-xs">
               {isOnline ? (
                 <span className="flex items-center gap-1.5 text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -447,76 +448,76 @@ export default function PortalObreroView() {
                   Modo Offline ({offlineQueueLength} pendientes)
                 </span>
               )}
-              <span className="text-[10px] text-slate-500 font-mono">Central Conectada</span>
+              <span className="hidden sm:inline text-xs text-slate-500">Central conectada</span>
             </div>
 
             {/* Quick Actions in Jobsite */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 gap-2.5">
               <button
                 onClick={() => setShowPedirModal(true)}
-                className="col-span-2 sm:col-span-1 p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/30 rounded-xl text-left transition space-y-1 group"
+                className="col-span-2 p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/30 rounded-xl text-left transition space-y-1.5 group min-h-[5.5rem]"
               >
-                <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center group-hover:scale-110 transition">
-                  <PackagePlus className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center group-hover:scale-110 transition">
+                  <PackagePlus className="w-5 h-5" />
                 </div>
-                <span className="font-bold text-white text-[11px] block truncate">Pedir Material</span>
-                <span className="text-[9px] text-slate-400 block truncate">Falta algo / avería</span>
+                <span className="font-bold text-white text-sm block leading-tight">Pedir Material</span>
+                <span className="text-xs text-slate-400 block leading-tight">Falta algo / avería</span>
               </button>
 
               <button
                 onClick={() => setShowPhotoModal(true)}
-                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 rounded-xl text-left transition space-y-1 group"
+                className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 rounded-xl text-left transition space-y-1.5 group min-h-[5.5rem]"
               >
-                <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition">
-                  <Camera className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition">
+                  <Camera className="w-5 h-5" />
                 </div>
-                <span className="font-bold text-white text-[11px] block truncate">Foto Avance</span>
-                <span className="text-[9px] text-slate-400 block truncate">Evidencia</span>
+                <span className="font-bold text-white text-sm block leading-tight">Foto Avance</span>
+                <span className="text-xs text-slate-400 block leading-tight">Evidencia</span>
               </button>
 
               <button
                 onClick={() => setShowVoiceModal(true)}
-                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/30 rounded-xl text-left transition space-y-1 group"
+                className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/30 rounded-xl text-left transition space-y-1.5 group min-h-[5.5rem]"
               >
-                <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition">
-                  <Mic className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition">
+                  <Mic className="w-5 h-5" />
                 </div>
-                <span className="font-bold text-white text-[11px] block truncate">Nota de Voz</span>
-                <span className="text-[9px] text-slate-400 block truncate">Audio IA</span>
+                <span className="font-bold text-white text-sm block leading-tight">Nota de Voz</span>
+                <span className="text-xs text-slate-400 block leading-tight">Audio IA</span>
               </button>
 
               <button
                 onClick={() => setShowHorasModal(true)}
-                className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/30 rounded-xl text-left transition space-y-1 group"
+                className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/30 rounded-xl text-left transition space-y-1.5 group min-h-[5.5rem]"
               >
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition">
-                  <Clock className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition">
+                  <Clock className="w-5 h-5" />
                 </div>
-                <span className="font-bold text-white text-[11px] block truncate">Horas & Stock</span>
-                <span className="text-[9px] text-slate-400 block truncate">Imputar turno</span>
+                <span className="font-bold text-white text-sm block leading-tight">Horas & Stock</span>
+                <span className="text-xs text-slate-400 block leading-tight">Imputar turno</span>
               </button>
 
               <button
                 onClick={() => setShowAvisosModal(true)}
-                className={`p-2.5 bg-slate-950 hover:bg-slate-800 border rounded-xl text-left transition space-y-1 group relative ${
+                className={`p-3 bg-slate-950 hover:bg-slate-800 border rounded-xl text-left transition space-y-1.5 group min-h-[5.5rem] relative ${
                   unreadAvisosCount > 0 ? 'border-amber-500/50 bg-amber-500/5 shadow-md' : 'border-slate-800'
                 }`}
               >
-                <div className="w-7 h-7 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-110 transition relative">
-                  <Bell className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-110 transition relative">
+                  <Bell className="w-5 h-5" />
                   {unreadAvisosCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
                   )}
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-white text-[11px] block truncate">Avisos</span>
+                  <span className="font-bold text-white text-sm block leading-tight">Avisos</span>
                   {unreadAvisosCount > 0 && (
-                    <span className="text-[9px] font-black bg-rose-500 text-white px-1.5 rounded-full">
+                    <span className="text-xs font-black bg-rose-500 text-white px-1.5 rounded-full">
                       {unreadAvisosCount}
                     </span>
                   )}
                 </div>
-                <span className="text-[9px] text-slate-400 block truncate">Técnicos & PRL</span>
+                <span className="text-xs text-slate-400 block leading-tight">Técnicos & PRL</span>
               </button>
             </div>
 
@@ -535,16 +536,16 @@ export default function PortalObreroView() {
                       <span className="text-xs font-black text-amber-300">
                         {unreadAvisosObraCount} {unreadAvisosObraCount === 1 ? 'Aviso Técnico' : 'Avisos'} en esta obra
                       </span>
-                      <span className="text-[9px] bg-rose-500 text-white font-bold px-1.5 py-0.2 rounded-full">
+                      <span className="text-xs bg-rose-500 text-white font-bold px-1.5 py-0.2 rounded-full">
                         Atención
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-300 truncate">
+                    <p className="text-xs text-slate-300 truncate">
                       {unreadAvisosObra[0]?.titulo}
                     </p>
                   </div>
                 </div>
-                <button className="text-[11px] font-bold text-amber-300 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-amber-500/40 shrink-0">
+                <button className="text-xs font-bold text-amber-300 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-amber-500/40 shrink-0">
                   Ver
                 </button>
               </div>
@@ -552,7 +553,7 @@ export default function PortalObreroView() {
 
             {/* Work Selector */}
             <div className="space-y-1.5">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
                 Obra en la que estás hoy:
               </span>
               <select
@@ -571,18 +572,18 @@ export default function PortalObreroView() {
               <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded">
+                    <span className="text-xs font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded">
                       {currentObra.codigo}
                     </span>
                     <h4 className="font-bold text-white text-sm mt-1">{currentObra.titulo}</h4>
-                    <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                       <MapPin className="w-3 h-3 text-slate-500" />
                       <span className="truncate">{currentObra.direccion}</span>
                     </p>
                   </div>
                   <div className="text-right">
                     <span className="text-xs font-black text-amber-400">{currentObra.progreso}%</span>
-                    <span className="text-[9px] text-slate-500 block">avance obra</span>
+                    <span className="text-xs text-slate-500 block">avance obra</span>
                   </div>
                 </div>
 
@@ -602,11 +603,11 @@ export default function PortalObreroView() {
             {/* Phases / Tasks List for this Worker */}
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span className="text-sm font-bold text-white flex items-center gap-1.5">
                   <Layers className="w-4 h-4 text-amber-400" />
                   <span>Fases del Presupuesto Firmado</span>
                 </span>
-                <span className="text-[10px] text-slate-400">{lockLegacyProgress ? 'Avance certificado' : 'Pulsa para avanzar'}</span>
+                <span className="text-xs text-slate-400">{lockLegacyProgress ? 'Avance certificado' : 'Pulsa para avanzar'}</span>
               </div>
 
               <div className="space-y-3">
@@ -639,10 +640,10 @@ export default function PortalObreroView() {
                               {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : idx + 1}
                             </div>
                             <div className="min-w-0">
-                              <h5 className={`text-xs font-bold truncate ${isCompleted ? 'text-emerald-400 line-through' : 'text-white'}`}>
+                              <h5 className={`text-sm font-bold leading-snug break-words ${isCompleted ? 'text-emerald-400 line-through' : 'text-white'}`}>
                                 {fase.nombre}
                               </h5>
-                              <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                              <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-slate-400">
                                 <span>
                                   Asignado: <strong className={isResponsible ? 'text-amber-400' : 'text-slate-300'}>{fase.responsable}</strong>
                                 </span>
@@ -681,7 +682,7 @@ export default function PortalObreroView() {
 
                         {/* Indicación de plazo del operario: alimenta el fin de obra previsto */}
                         {!isCompleted && (
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
                             <Clock className="w-3 h-3 text-amber-400 shrink-0" />
                             <span className="shrink-0">Me faltan</span>
                             <input
@@ -714,12 +715,12 @@ export default function PortalObreroView() {
                       {/* Tasks List (Partidas del Presupuesto Firmado) */}
                       {hasTasks && isExpanded && (
                         <div className="bg-slate-900/50 border-t border-slate-800/80 p-3 space-y-3">
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
+                          <div className="flex items-center justify-between gap-2 text-xs text-slate-400 px-1">
                             <span className="font-semibold uppercase tracking-wider flex items-center gap-1">
                               <FileText className="w-3 h-3 text-amber-400" />
                               <span>Partidas del Presupuesto ({fase.tareas.length})</span>
                             </span>
-                            <span>Selector de avance táctil</span>
+                            <span className="hidden sm:inline">Pulsa un % para avanzar</span>
                           </div>
 
                           <div className="space-y-2.5">
@@ -737,20 +738,20 @@ export default function PortalObreroView() {
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-1.5">
-                                        <span className="text-[9px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded">
+                                        <span className="text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded">
                                           {tarea.codigo}
                                         </span>
                                         {tarea.unidad && (
-                                          <span className="text-[9px] text-slate-400 font-mono">
+                                          <span className="text-xs text-slate-400 font-mono">
                                             {tarea.cantidad} {tarea.unidad}
                                           </span>
                                         )}
                                       </div>
-                                      <h6 className={`text-[11px] font-semibold mt-1 leading-snug ${isTaskDone ? 'text-slate-300 line-through' : 'text-white'}`}>
+                                      <h6 className={`text-xs font-semibold mt-1 leading-snug ${isTaskDone ? 'text-slate-300 line-through' : 'text-white'}`}>
                                         {tarea.titulo}
                                       </h6>
                                     </div>
-                                    <span className="text-[10px] font-mono font-bold text-slate-400 shrink-0">
+                                    <span className="text-xs font-mono font-bold text-slate-400 shrink-0">
                                       {tarea.importeTotal ? `${tarea.importeTotal.toLocaleString('es-ES')} €` : ''}
                                     </span>
                                   </div>
@@ -794,7 +795,7 @@ export default function PortalObreroView() {
       {/* Modal Subir Foto del Avance */}
       {showPhotoModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Camera className="w-4 h-4 text-amber-400" />
               <span>Subir Foto de Avance a la Obra</span>
@@ -852,7 +853,7 @@ export default function PortalObreroView() {
       {/* Modal Nota de Voz desde el Móvil */}
       {showVoiceModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Mic className="w-4 h-4 text-amber-400" />
               <span>Nota de Voz de WhatsApp al Encargado</span>
@@ -897,7 +898,7 @@ export default function PortalObreroView() {
       {/* Modal Imputar Horas & Consumo de Stock */}
       {showHorasModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-400" />
               <span>Imputar Horas y Consumo de Stock</span>

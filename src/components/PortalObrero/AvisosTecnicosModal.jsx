@@ -119,7 +119,7 @@ export default function AvisosTecnicosModal({
                   Avisos Técnicos e Instrucciones
                 </h3>
                 {unreadCount > 0 && (
-                  <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-rose-500 text-white rounded-full">
+                  <span className="px-2 py-0.5 text-xs font-black uppercase bg-rose-500 text-white rounded-full whitespace-nowrap shrink-0">
                     {unreadCount} {unreadCount === 1 ? 'nuevo' : 'nuevos'}
                   </span>
                 )}
@@ -162,7 +162,7 @@ export default function AvisosTecnicosModal({
             >
               <span>Pendientes</span>
               {unreadCount > 0 && (
-                <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black">
+                <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center font-black">
                   {unreadCount}
                 </span>
               )}
@@ -184,7 +184,7 @@ export default function AvisosTecnicosModal({
           {unreadCount > 0 && (
             <button
               onClick={() => marcarTodosAvisosLeidos(obreroIdentifier)}
-              className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-xl transition ml-auto"
+              className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-xl transition ml-auto"
             >
               <CheckCheck className="w-3.5 h-3.5" />
               <span>Marcar todos leídos</span>
@@ -222,19 +222,19 @@ export default function AvisosTecnicosModal({
                   {/* Top Bar of Notice */}
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${style.badgeBg}`}>
+                      <span className={`inline-flex items-center gap-1 text-xs font-extrabold uppercase px-2 py-0.5 rounded-full border ${style.badgeBg}`}>
                         <Icon className="w-3 h-3" />
                         <span>{style.label}</span>
                       </span>
 
                       {aviso.obraCodigo && (
-                        <span className="text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full">
+                        <span className="text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full">
                           {aviso.obraCodigo}
                         </span>
                       )}
                     </div>
 
-                    <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1 shrink-0">
+                    <span className="text-xs text-slate-400 font-mono flex items-center gap-1 shrink-0">
                       <Clock className="w-3 h-3 text-slate-500" />
                       <span>{formatFecha(aviso.fecha)}</span>
                     </span>
@@ -246,7 +246,7 @@ export default function AvisosTecnicosModal({
                   </h4>
 
                   {aviso.obraTitulo && (
-                    <p className="text-[11px] text-amber-400/90 font-medium flex items-center gap-1 mb-2.5">
+                    <p className="text-xs text-amber-400/90 font-medium flex items-center gap-1 mb-2.5">
                       <MapPin className="w-3 h-3 text-amber-500 shrink-0" />
                       <span className="truncate">{aviso.obraTitulo}</span>
                     </p>
@@ -258,7 +258,7 @@ export default function AvisosTecnicosModal({
                   </div>
 
                   {/* Footer & Acknowledgment Action */}
-                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800/80 text-[11px]">
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800/80 text-xs">
                     <div className="text-slate-400 flex items-center gap-1.5 min-w-0">
                       <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                       <span className="truncate font-medium">{aviso.emisor || 'Dirección de Obra'}</span>
@@ -289,7 +289,7 @@ export default function AvisosTecnicosModal({
 
         {/* Modal Footer */}
         <div className="p-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500 shrink-0">
-          <span className="text-[11px]">
+          <span className="text-xs">
             Sesión activa como: <strong className="text-slate-300">{currentObrero.nombre}</strong>
           </span>
           <button
