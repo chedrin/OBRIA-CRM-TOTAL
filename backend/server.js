@@ -363,7 +363,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
 
   // En modo rápido solo se prueban 2 modelos, una vuelta y con tiempo máximo: si Gemini no contesta pronto,
   // se pasa al siguiente proveedor en vez de encadenar esperas.
-  const allModels = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL);
+  const allModels = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL, { fast });
   const modelsToTry = fast ? allModels.slice(0, 2) : allModels;
   const signalFor = () => (fast ? AbortSignal.timeout(FAST_AI_TIMEOUT_MS) : undefined);
 
@@ -467,11 +467,20 @@ function rankGeminiModels(ids) {
   return usable.sort((a, b) => score(a) - score(b) || version(b) - version(a) || a.length - b.length);
 }
 
+// Modelos "flash-lite": los más rápidos y menos saturados, ideales para textos cortos. Estable y más nuevo primero.
+function rankGeminiLiteModels(ids) {
+  const version = id => parseFloat((id.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || "0");
+  return ids
+    .filter(id => /^gemini-.*flash-lite/.test(id) && !/image|tts|live|audio/i.test(id))
+    .sort((a, b) => (/preview|exp/.test(a) ? 1 : 0) - (/preview|exp/.test(b) ? 1 : 0) || version(b) - version(a) || a.length - b.length);
+}
+
 async function listGeminiModelsCached(apiKey) {
   const cached = geminiModelsCache.get(apiKey);
   if (cached && Date.now() - cached.at < GEMINI_MODELS_CACHE_MS) return cached;
   try {
-    const entry = { at: Date.now(), models: rankGeminiModels(await fetchAvailableGeminiModelsFromGoogle(apiKey)), unavailable: new Set() };
+    const ids = await fetchAvailableGeminiModelsFromGoogle(apiKey);
+    const entry = { at: Date.now(), models: rankGeminiModels(ids), lite: rankGeminiLiteModels(ids), unavailable: new Set() };
     geminiModelsCache.set(apiKey, entry);
     return entry;
   } catch (err) {
@@ -497,8 +506,13 @@ function replaceSavedGeminiModel(oldModel, newModel) {
   }
 }
 
-async function geminiModelsToTry(apiKey, preferredModel) {
-  const { models, unavailable } = await listGeminiModelsCached(apiKey);
+async function geminiModelsToTry(apiKey, preferredModel, { fast = false } = {}) {
+  const { models, lite = [], unavailable } = await listGeminiModelsCached(apiKey);
+  if (fast && lite.length) {
+    // Texto corto: primero el modelo ligero (responde en 1-3 s); si falla, el modelo elegido en Ajustes.
+    const quick = [lite[0], preferredModel, ...models.slice(0, 1)].filter(m => m && !unavailable.has(m));
+    if (quick.length) return [...new Set(quick)];
+  }
   const candidates = models.length
     ? [...(models.includes(preferredModel) ? [preferredModel] : []), ...models.slice(0, 4)]
     : [preferredModel, ...GEMINI_FALLBACK_CASCADE];
