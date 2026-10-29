@@ -274,7 +274,10 @@ async function registrosAbiertos(companyId, entorno) {
 async function contarRegistros(companyId, entorno) {
   const abiertos = await registrosAbiertos(companyId, entorno);
   const contar = (estado) => abiertos.filter((r) => r.estado_envio === estado).length;
-  return { pendientes: contar("pendiente"), rechazados: contar("rechazado"), conErrores: contar("aceptado_con_errores") };
+  const { count: aceptados, error } = await getAdminClient().from("verifactu_records").select("id", { count: "exact", head: true })
+    .eq("company_id", companyId).eq("entorno", entorno).eq("estado_envio", "aceptado");
+  if (error) throw dbError(error);
+  return { aceptados: aceptados || 0, pendientes: contar("pendiente"), rechazados: contar("rechazado"), conErrores: contar("aceptado_con_errores") };
 }
 
 async function empresaCompleta(company) {
