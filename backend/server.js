@@ -24,6 +24,8 @@ import { handleDocumentRoutes } from "./documentRoutes.js";
 import { handleEmailRoutes } from "./emailRoutes.js";
 import { applySecurityHeaders, applyCors, readBodyLimited } from "./security.js";
 import { iniciarColaVerifactu } from "./verifactu/envio.js";
+import { CROQUIS_SYSTEM_PROMPT, buildCroquisUserPrompt } from "./croquisPrompt.js";
+import { normalizarCroquis } from "../src/utils/croquisPlano.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1663,6 +1665,48 @@ ${catalogText ? `BASE DE PRECIOS DE LA EMPRESA (coste de gremio, margen de la em
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(parsed));
+        return;
+      }
+
+      // Croquis 2D de la vivienda: mediciones por estancia (mandan en las cotas) + fotos (huecos y fachada).
+      // Las fotos van como adjuntos para que también las vean Claude u OpenAI si Gemini falla.
+      if (req.method === "POST" && pathname === "/api/ai/croquis") {
+        const startTime = performance.now();
+        const mediciones = String(fields.mediciones || "").slice(0, 8000);
+        const notas = String(fields.notas || "").slice(0, 8000);
+        const fotos = (files.fotos || []).filter(f => /^image\//i.test(fileToPart(f).inlineData.mimeType)).slice(0, 8);
+        if (!mediciones.trim() && !notas.trim() && !fotos.length) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Añade las mediciones por estancia, alguna nota o fotos de la vivienda." }));
+          return;
+        }
+        let partidas = [];
+        try { partidas = typeof fields.partidas === "string" ? JSON.parse(fields.partidas) : (fields.partidas || []); } catch {}
+
+        const userPrompt = buildCroquisUserPrompt({ mediciones, notas, obra: String(fields.obra || "").slice(0, 200), partidas, numFotos: fotos.length });
+        const config = configWithRequestKey(currentConfig, fields);
+        const rawOutput = await callActiveProvider({
+          config,
+          systemInstruction: CROQUIS_SYSTEM_PROMPT,
+          userPrompt,
+          temperature: 0.1,
+          maxTokens: 16384,
+          attachments: fotos.map(fileToPart)
+        });
+        const plan = normalizarCroquis(parseAiJson(rawOutput));
+        if (!plan.rooms.length) throw aiError("La IA no devolvió ninguna estancia. Revisa las mediciones (estancia: largo x ancho).");
+
+        const elapsedMs = Math.round(performance.now() - startTime);
+        logAiCall({
+          provider: config.provider,
+          model: config.model,
+          action: "croquis",
+          latencyMs: elapsedMs,
+          success: true,
+          tokensUsed: Math.ceil((userPrompt.length + rawOutput.length) / 4)
+        });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, plan, latencyMs: elapsedMs }));
         return;
       }
 
