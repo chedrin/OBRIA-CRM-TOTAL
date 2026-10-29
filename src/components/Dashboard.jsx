@@ -4,12 +4,10 @@ import EmptyState from './Common/EmptyState';
 import {
   HardHat,
   Mic,
-  Calculator,
   FileSpreadsheet,
   TrendingUp,
   Clock,
   ArrowRight,
-  Sparkles,
   Percent,
   Calendar,
   Euro,
@@ -26,13 +24,6 @@ const clickable = (fn) => ({
 });
 
 const eur = (n) => `${(n || 0).toLocaleString('es-ES')} €`;
-
-function saludo() {
-  const h = new Date().getHours();
-  if (h < 14) return 'Buenos días';
-  if (h < 21) return 'Buenas tardes';
-  return 'Buenas noches';
-}
 
 // Tarjeta de indicador: título, icono, cifra principal y una línea de detalle.
 function KpiCard({ label, icon: Icon, iconClass, value, valueClass = 'text-white', hint, hintClass = 'text-slate-400', footer }) {
@@ -84,8 +75,7 @@ export default function Dashboard() {
     mensajesInbox,
     subcontratasPresupuestos,
     setActiveTab,
-    setSelectedObraId,
-    currentUser
+    setSelectedObraId
   } = useApp();
 
   // Financial Calculations
@@ -120,42 +110,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-
-      {/* Bienvenida y accesos rápidos */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950/40 p-5 sm:p-6 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
-          <div>
-            <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs tracking-wider uppercase mb-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Panel Operativo del Constructor</span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
-              {saludo()}, {currentUser ? currentUser.fullName : 'Manuel'}
-            </h2>
-            <p className="text-sm text-slate-300 mt-1 max-w-2xl">
-              Tienes <strong className="text-amber-400">{obrasActivas.length} obras en ejecución</strong>, {mensajesPendientes.length} audios/mensajes de obra pendientes de procesar y la facturación del 4T lista para la gestoría.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 md:flex md:flex-col lg:flex-row gap-2.5 shrink-0">
-            <button
-              onClick={() => setActiveTab('inbox')}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
-            >
-              <Mic className="w-4 h-4 shrink-0" />
-              <span>Grabar audio IA</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('presupuestos')}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold text-xs sm:text-sm rounded-xl border border-amber-500/30 transition active:scale-95"
-            >
-              <Calculator className="w-4 h-4 shrink-0" />
-              <span>Presupuesto IA</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Indicadores */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
