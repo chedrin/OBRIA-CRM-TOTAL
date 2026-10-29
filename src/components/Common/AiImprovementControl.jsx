@@ -20,7 +20,16 @@ export default function AiImprovementControl({
   const [errorMsg, setErrorMsg] = useState(null);
   const [showComparison, setShowComparison] = useState(false);
 
-  const activeRefs = (referenceBudgets || []).filter(b => b.is_active !== false);
+  // El servidor solo usa el texto de hasta 3 referencias aún no analizadas (las analizadas ya están en la memoria de la IA):
+  // se envían solo esas y recortadas, para no subir PDFs enteros en cada mejora.
+  const activeRefsCount = (referenceBudgets || []).filter(b => b.is_active !== false).length;
+  const activeRefs = (referenceBudgets || [])
+    .filter(b => b.is_active !== false && !b.ai_reviewed_at)
+    .slice(0, 3)
+    .map(({ id, name, tipo_obra, is_active, extracted_text, text_content }) => ({
+      id, name, tipo_obra, is_active,
+      extracted_text: String(extracted_text || text_content || '').slice(0, 2500)
+    }));
 
   const handleRunImprovement = async () => {
     if (!value || !value.trim()) {
@@ -127,10 +136,10 @@ export default function AiImprovementControl({
             )}
           </button>
 
-          {activeRefs.length > 0 && (
+          {activeRefsCount > 0 && (
             <span className="text-[10px] text-amber-400/90 font-mono flex items-center gap-1">
               <ShieldCheck className="w-3 h-3 text-amber-400" />
-              <span>{activeRefs.length} modelo(s) de estilo activo(s)</span>
+              <span>{activeRefsCount} modelo(s) de estilo activo(s)</span>
             </span>
           )}
         </div>
