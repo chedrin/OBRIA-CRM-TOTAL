@@ -10,7 +10,8 @@ import {
   ArrowDown,
   HardHat,
   Filter,
-  X
+  X,
+  BadgeCheck
 } from 'lucide-react';
 import { useUiPreferences } from '../../context/UiPreferencesContext';
 
@@ -45,6 +46,19 @@ function EstadoBadge({ estado }) {
   );
 }
 
+// Presupuesto modificado después de aprobarlo.
+export function RevisionBadge({ pres }) {
+  if (!pres.revisado) return null;
+  return (
+    <span
+      title={pres.pendienteNuevaAceptacion ? `Revisado el ${pres.fechaRevision}. Falta la nueva aceptación del cliente.` : `Revisado el ${pres.fechaRevision}. Aceptado de nuevo el ${pres.fechaNuevaAceptacion}.`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${pres.pendienteNuevaAceptacion ? 'bg-violet-500/10 text-violet-400 border-violet-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}
+    >
+      Rev. {pres.revisionNumero || 1}{pres.pendienteNuevaAceptacion ? ' · falta aceptación' : ''}
+    </span>
+  );
+}
+
 // Acciones de un presupuesto. "icon" = solo iconos (tablas); "full" = con texto (tarjetas).
 function Acciones({ pres, size = 'full', handlers, nowrap = false }) {
   const aceptable = !['aceptado', 'firmado', 'facturado'].includes(pres.estado);
@@ -52,6 +66,16 @@ function Acciones({ pres, size = 'full', handlers, nowrap = false }) {
   const base = `inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition active:scale-95 ${iconOnly ? 'w-8 h-8' : 'px-2.5 py-1.5'}`;
   return (
     <div className={`flex items-center gap-1.5 ${nowrap ? 'flex-nowrap' : 'flex-wrap'}`} onClick={(e) => e.stopPropagation()}>
+      {!aceptable && pres.pendienteNuevaAceptacion && handlers.onNuevaAceptacion && (
+        <button
+          onClick={() => handlers.onNuevaAceptacion(pres)}
+          title={`Revisado el ${pres.fechaRevision}: registrar la nueva aceptación del cliente`}
+          className={`${base} bg-violet-500 hover:bg-violet-400 text-white font-bold shadow-sm`}
+        >
+          <BadgeCheck className="w-3.5 h-3.5" />
+          {!iconOnly && <span>Nueva aceptación</span>}
+        </button>
+      )}
       {aceptable && (
         <button
           onClick={() => handlers.onAceptar(pres)}
@@ -116,6 +140,7 @@ function VistaKanban({ items, handlers }) {
                   </div>
                   <h4 className="mt-1 text-sm font-bold text-white leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">{pres.obraTitulo}</h4>
                   <p className="text-[11px] text-slate-400 truncate">{pres.cliente}</p>
+                  {pres.revisado && <div className="mt-1.5"><RevisionBadge pres={pres} /></div>}
                   <div className="flex items-end justify-between mt-2.5">
                     <span className="text-[10px] text-slate-500">{pres.partidas?.length || 0} partidas</span>
                     <span className="text-sm font-black text-white tabular-nums">{eur(pres.totalConIva)}</span>
@@ -174,7 +199,7 @@ function VistaTabla({ items, handlers, compact, sort, onSort }) {
                   if (col.id === 'fecha') return <td key={col.id} className="px-3 py-3 text-slate-400 whitespace-nowrap">{pres.fecha}</td>;
                   if (col.id === 'obraTitulo') return <td key={col.id} className="px-3 py-3 font-semibold text-white max-w-[16rem] truncate">{pres.obraTitulo}</td>;
                   if (col.id === 'cliente') return <td key={col.id} className="px-3 py-3 text-slate-300 max-w-[12rem] truncate">{pres.cliente}</td>;
-                  if (col.id === 'estado') return <td key={col.id} className="px-3 py-3"><EstadoBadge estado={pres.estado} /></td>;
+                  if (col.id === 'estado') return <td key={col.id} className="px-3 py-3"><div className="flex flex-wrap items-center gap-1"><EstadoBadge estado={pres.estado} /><RevisionBadge pres={pres} /></div></td>;
                   if (col.id === 'baseImponible') return <td key={col.id} className="px-3 py-3 text-right text-slate-300 tabular-nums whitespace-nowrap">{eur(pres.baseImponible)}</td>;
                   return <td key={col.id} className="px-3 py-3 text-right font-bold text-white tabular-nums whitespace-nowrap">{eur(pres.totalConIva)}</td>;
                 })}

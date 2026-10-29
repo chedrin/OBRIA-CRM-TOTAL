@@ -11,18 +11,41 @@ import {
   Share2,
   Download,
   History,
-  MapPin
+  MapPin,
+  Plus,
+  Trash2,
+  Pencil,
+  BadgeCheck,
+  AlertTriangle
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
 import confetti from 'canvas-confetti';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import { recordAiCorrection, recordBudgetEditDebounced } from '../../services/backendAiService';
+import { capitulosDe, estaAprobado, recalcularPartida, recalcularTotales } from '../../utils/presupuestoRevision';
+
+const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400';
+
+// Datos de cabecera editables del presupuesto.
+const CAMPOS_CABECERA = [
+  { id: 'obraTitulo', label: 'Nombre de la obra', span: 2 },
+  { id: 'cliente', label: 'Cliente' },
+  { id: 'nif', label: 'NIF / CIF' },
+  { id: 'telefono', label: 'Teléfono' },
+  { id: 'email', label: 'Email', type: 'email' },
+  { id: 'direccion', label: 'Dirección de la obra', span: 2 },
+  { id: 'fecha', label: 'Fecha', type: 'date' },
+  { id: 'validezDias', label: 'Validez (días)', type: 'number' },
+  { id: 'tipoIvaPct', label: 'IVA (%)', type: 'number' },
+  { id: 'notasLegales', label: 'Condiciones y notas', span: 4, multiline: true }
+];
 
 export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
   const {
     presupuestos,
     refineQuoteWithVoiceCommand,
-    updatePresupuesto,
+    editarPresupuesto,
+    registrarNuevaAceptacion,
     setPdfModalData,
     showNotification,
     empresaConfig
@@ -37,6 +60,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
   const [showHistory, setShowHistory] = useState(false);
   const [showEnvioModal, setShowEnvioModal] = useState(false);
   const [collapsedChapters, setCollapsedChapters] = useState({});
+  const [showDatos, setShowDatos] = useState(false);
 
   if (!quote) {
     return (
@@ -60,69 +84,89 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
     setCollapsedChapters(prev => ({ ...prev, [capId]: !prev[capId] }));
   };
 
-  // Inline manual edits
+  const capitulos = capitulosDe(quote);
+  const aprobado = estaAprobado(quote);
+
+  // Guarda capítulos y totales. Si ya estaba aprobado, queda "Revisado" (lo marca el contexto).
+  const guardarCapitulos = (nuevos, extra = {}) => {
+    const tipoIva = extra.tipoIvaPct ?? quote.tipoIvaPct;
+    editarPresupuesto(quote.id, { ...extra, ...recalcularTotales(nuevos, tipoIva, quote.margenGlobalPct) });
+  };
+
+  const cambiarPartida = (capId, itemId, cambio) => {
+    guardarCapitulos(capitulos.map(c => (c.id !== capId ? c : {
+      ...c,
+      partidas: c.partidas.map(p => (p.id === itemId ? cambio(p) : p))
+    })));
+  };
+
+  const recordarCambio = (cap, item, field, antes, despues) => {
+    if (antes === despues) return;
+    recordBudgetEditDebounced(`${quote.id}:${item.id}:${field}`, {
+      context: `${cap.nombre || 'Capítulo'} · ${item.concepto || item.codigo || 'Partida'}`,
+      original: `${field}: ${antes}`,
+      finalText: `${field}: ${despues}`,
+      note: `El usuario cambió ${field} de la partida "${item.concepto || item.codigo}" (${item.unidad || 'ud'})`
+    });
+  };
+
+  // Campos numéricos: recalculan PVP y total de la partida. La IA aprende de los cambios manuales.
   const handleItemChange = (capId, itemId, field, value) => {
     const numVal = Math.max(0, Number(value) || 0);
+    const cap = capitulos.find(c => c.id === capId);
+    const item = cap?.partidas.find(p => p.id === itemId);
+    if (item) recordarCambio(cap, item, field, item[field], numVal);
+    cambiarPartida(capId, itemId, p => recalcularPartida({ ...p, [field]: numVal }));
+  };
 
-    // La IA aprende de los cambios manuales: guarda "antes → después" de cada partida.
-    const editedChapter = (quote.capitulos || []).find(c => c.id === capId);
-    const editedItem = editedChapter?.partidas?.find(p => p.id === itemId);
-    if (editedItem && editedItem[field] !== numVal) {
-      recordBudgetEditDebounced(`${quote.id}:${itemId}:${field}`, {
-        context: `${editedChapter.nombre || 'Capítulo'} · ${editedItem.concepto || editedItem.codigo || 'Partida'}`,
-        original: `${field}: ${editedItem[field]}`,
-        finalText: `${field}: ${numVal}`,
-        note: `El usuario cambió ${field} de la partida "${editedItem.concepto || editedItem.codigo}" (${editedItem.unidad || 'ud'})`
-      });
+  // Campos de texto de la partida: código, concepto y unidad.
+  const handleItemText = (capId, itemId, field, value) => {
+    const cap = capitulos.find(c => c.id === capId);
+    const item = cap?.partidas.find(p => p.id === itemId);
+    if (item && field === 'concepto') recordarCambio(cap, item, field, item[field], value);
+    cambiarPartida(capId, itemId, p => ({ ...p, [field]: value }));
+  };
+
+  const handleAddPartida = (capId) => {
+    const cap = capitulos.find(c => c.id === capId);
+    const nueva = recalcularPartida({
+      id: `p-${Date.now()}`,
+      codigo: `${cap?.codigo || '00'}.${String((cap?.partidas.length || 0) + 1).padStart(2, '0')}`,
+      concepto: '',
+      unidad: 'ud',
+      cantidad: 1,
+      costeUnitario: 0,
+      margenPct: Number(quote.margenGlobalPct) || 30
+    });
+    guardarCapitulos(capitulos.map(c => (c.id === capId ? { ...c, partidas: [...c.partidas, nueva] } : c)));
+    setCollapsedChapters(prev => ({ ...prev, [capId]: false }));
+  };
+
+  const handleDeletePartida = (capId, item) => {
+    if (!window.confirm(`¿Eliminar la partida "${item.concepto || item.codigo}"?`)) return;
+    guardarCapitulos(capitulos.map(c => (c.id === capId ? { ...c, partidas: c.partidas.filter(p => p.id !== item.id) } : c)));
+  };
+
+  const handleChapterField = (capId, field, value) => {
+    guardarCapitulos(capitulos.map(c => (c.id === capId ? { ...c, [field]: value } : c)));
+  };
+
+  const handleAddChapter = () => {
+    const codigo = String(capitulos.length + 1).padStart(2, '0');
+    guardarCapitulos([...capitulos, { id: `cap-${Date.now()}`, codigo, nombre: 'Nuevo capítulo', partidas: [] }]);
+  };
+
+  const handleDeleteChapter = (cap) => {
+    if (!window.confirm(`¿Eliminar el capítulo "${cap.nombre}" y sus ${cap.partidas.length} partidas?`)) return;
+    guardarCapitulos(capitulos.filter(c => c.id !== cap.id));
+  };
+
+  const handleCabecera = (field, value) => {
+    if (field === 'tipoIvaPct') {
+      guardarCapitulos(capitulos, { tipoIvaPct: Math.max(0, Number(value) || 0) });
+      return;
     }
-
-    const updatedCapitulos = (quote.capitulos || []).map(c => {
-      if (c.id === capId) {
-        const updatedPartidas = c.partidas.map(p => {
-          if (p.id === itemId) {
-            const updated = { ...p, [field]: numVal };
-            const coste = field === 'costeUnitario' ? numVal : p.costeUnitario;
-            const margen = field === 'margenPct' ? numVal : p.margenPct;
-            const cant = field === 'cantidad' ? numVal : p.cantidad;
-
-            const pvp = Number((coste * (1 + margen / 100)).toFixed(2));
-            const tot = Number((pvp * cant).toFixed(2));
-
-            return {
-              ...updated,
-              costeUnitario: coste,
-              margenPct: margen,
-              cantidad: cant,
-              precioVenta: pvp,
-              total: tot
-            };
-          }
-          return p;
-        });
-
-        const subtotal = Number(updatedPartidas.reduce((s, p) => s + p.total, 0).toFixed(2));
-        const costeTotal = Number(updatedPartidas.reduce((s, p) => s + (p.costeUnitario * p.cantidad), 0).toFixed(2));
-        return { ...c, partidas: updatedPartidas, subtotal, costeTotal };
-      }
-      return c;
-    });
-
-    const flat = updatedCapitulos.flatMap(c => c.partidas.map(p => ({ ...p, capitulo: c.nombre })));
-    const base = Number(flat.reduce((s, p) => s + p.total, 0).toFixed(2));
-    const iva = Number((base * (quote.tipoIvaPct / 100)).toFixed(2));
-    const total = Number((base + iva).toFixed(2));
-    const coste = Number(flat.reduce((s, p) => s + (p.costeUnitario * p.cantidad), 0).toFixed(2));
-    const margen = base > 0 ? Number((((base - coste) / base) * 100).toFixed(1)) : quote.margenGlobalPct;
-
-    updatePresupuesto(quote.id, {
-      capitulos: updatedCapitulos,
-      partidas: flat,
-      baseImponible: base,
-      cuotaIva: iva,
-      totalConIva: total,
-      costeTotal: coste,
-      margenGlobalPct: margen
-    });
+    editarPresupuesto(quote.id, { [field]: field === 'validezDias' ? Math.max(0, Number(value) || 0) : value });
   };
 
   // Run Voice / Conversational Command
@@ -226,6 +270,11 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
               }`}>
                 {quote.estado === 'enviado_cliente' ? 'Enviado al Cliente' : quote.estado === 'aceptado' ? 'Aceptado' : 'Borrador IA en Revisión'}
               </span>
+              {quote.revisado && (
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-violet-500/20 text-violet-400 border border-violet-500/30">
+                  Revisado · Rev. {quote.revisionNumero || 1}
+                </span>
+              )}
             </div>
             <h1 className="text-lg sm:text-xl font-black text-white mt-1">{quote.obraTitulo}</h1>
             <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
@@ -266,6 +315,81 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
             <span>Aprobar y Enviar</span>
           </button>
         </div>
+      </div>
+
+      {/* Revisión tras la aprobación: fecha y nueva aceptación del cliente */}
+      {quote.pendienteNuevaAceptacion ? (
+        <div className="bg-violet-500/10 border border-violet-500/40 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <p className="font-bold text-white">Revisado el {quote.fechaRevision} · pendiente de nueva aceptación</p>
+              <p className="text-slate-300 mt-0.5">
+                Este presupuesto ya estaba aprobado. Los cambios forman la revisión {quote.revisionNumero || 1}
+                {quote.versionAceptada?.totalConIva !== undefined && <> (antes {quote.versionAceptada.totalConIva.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })})</>}.
+                {' '}La obra sigue con la versión aceptada hasta que el cliente la acepte de nuevo.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              if (window.confirm(`¿El cliente ha aceptado la revisión ${quote.revisionNumero || 1} de ${quote.numero}?`)) registrarNuevaAceptacion(quote.id);
+            }}
+            className="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shrink-0 active:scale-95"
+          >
+            <BadgeCheck className="w-4 h-4" />
+            <span>Nueva aceptación</span>
+          </button>
+        </div>
+      ) : quote.revisado ? (
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-xs text-slate-300 flex items-center gap-2">
+          <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>Revisado el {quote.fechaRevision} (Rev. {quote.revisionNumero || 1}) · nueva aceptación del cliente el {quote.fechaNuevaAceptacion}.</span>
+        </div>
+      ) : aprobado && (
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-xs text-slate-400 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Presupuesto aprobado. Si lo modificas quedará marcado como <strong className="text-violet-400">Revisado</strong> y necesitará una nueva aceptación del cliente.</span>
+        </div>
+      )}
+
+      {/* Datos del presupuesto: obra, cliente y condiciones */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowDatos(v => !v)}
+          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-950/50 transition"
+        >
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-200 uppercase tracking-wider">
+            <Pencil className="w-3.5 h-3.5 text-amber-400" />
+            Datos de la obra y del cliente
+          </span>
+          {showDatos ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+        {showDatos && (
+          <div className="p-4 pt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {CAMPOS_CABECERA.map(campo => (
+              <label key={campo.id} className={`text-[11px] text-slate-400 font-semibold space-y-1 ${campo.span === 4 ? 'sm:col-span-2 lg:col-span-4' : campo.span === 2 ? 'sm:col-span-2' : ''}`}>
+                <span className="block">{campo.label}</span>
+                {campo.multiline ? (
+                  <textarea
+                    rows={3}
+                    value={quote[campo.id] ?? ''}
+                    onChange={(e) => handleCabecera(campo.id, e.target.value)}
+                    className={inputCls}
+                  />
+                ) : (
+                  <input
+                    type={campo.type || 'text'}
+                    value={quote[campo.id] ?? ''}
+                    onChange={(e) => handleCabecera(campo.id, e.target.value)}
+                    className={inputCls}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Alert Banner: Presupuesto Listo para Revisión */}
@@ -319,7 +443,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
 
       {/* Hierarchical Chapters & Items Breakdown */}
       <div className="space-y-4">
-        {(quote.capitulos || []).map((cap) => {
+        {capitulos.map((cap) => {
           const isCollapsed = collapsedChapters[cap.id];
 
           return (
@@ -330,11 +454,20 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
                 onClick={() => toggleChapter(cap.id)}
                 className="p-4 bg-slate-950/70 hover:bg-slate-950 border-b border-slate-800 flex items-center justify-between cursor-pointer transition select-none"
               >
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xs font-mono font-bold bg-slate-800 text-amber-400 px-2 py-0.5 rounded">
-                    Cap. {cap.codigo}
-                  </span>
-                  <h3 className="font-extrabold text-white text-sm">{cap.nombre}</h3>
+                <div className="flex items-center gap-2.5 min-w-0 flex-1" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-xs font-mono font-bold text-amber-400 shrink-0">Cap.</span>
+                  <input
+                    value={cap.codigo ?? ''}
+                    onChange={(e) => handleChapterField(cap.id, 'codigo', e.target.value)}
+                    aria-label="Código del capítulo"
+                    className="w-12 bg-slate-800 border border-transparent hover:border-slate-700 focus:border-amber-400 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-amber-400 focus:outline-none"
+                  />
+                  <input
+                    value={cap.nombre ?? ''}
+                    onChange={(e) => handleChapterField(cap.id, 'nombre', e.target.value)}
+                    aria-label="Nombre del capítulo"
+                    className="min-w-0 flex-1 max-w-md bg-transparent border border-transparent hover:border-slate-700 focus:border-amber-400 rounded px-1.5 py-0.5 font-extrabold text-white text-sm focus:outline-none"
+                  />
                   <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
                     ({cap.partidas.length} partidas)
                   </span>
@@ -347,6 +480,14 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
                       {cap.subtotal?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
                     </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteChapter(cap); }}
+                    title="Eliminar capítulo"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                   {isCollapsed ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronUp className="w-4 h-4 text-slate-400" />}
                 </div>
               </div>
@@ -365,6 +506,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
                         <th className="py-2.5 px-3 w-20 text-center">Margen</th>
                         <th className="py-2.5 px-3 w-24 text-right">PVP Unit.</th>
                         <th className="py-2.5 px-4 w-28 text-right">Total</th>
+                        <th className="py-2.5 px-2 w-10"><span className="sr-only">Acciones</span></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 font-sans">
@@ -376,16 +518,33 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
                           }`}
                         >
                           <td className="py-3 px-4 font-mono font-bold text-[11px] text-amber-400">
-                            {item.codigo}
+                            <input
+                              value={item.codigo ?? ''}
+                              onChange={(e) => handleItemText(cap.id, item.id, 'codigo', e.target.value)}
+                              aria-label="Código de la partida"
+                              className="w-16 bg-transparent border border-transparent hover:border-slate-700 focus:border-amber-400 rounded px-1 py-0.5 font-mono font-bold text-[11px] text-amber-400 focus:outline-none"
+                            />
                             {item._modificadoIa && (
                               <span className="block text-[8px] text-emerald-400 font-sans">✨ Mod. IA</span>
                             )}
                           </td>
-                          <td className="py-3 px-4 font-medium text-slate-200 text-xs">
-                            {item.concepto}
+                          <td className="py-3 px-4 font-medium text-slate-200 text-xs min-w-[16rem]">
+                            <textarea
+                              rows={2}
+                              value={item.concepto ?? ''}
+                              onChange={(e) => handleItemText(cap.id, item.id, 'concepto', e.target.value)}
+                              placeholder="Descripción de la partida"
+                              aria-label="Concepto de la partida"
+                              className="w-full bg-transparent border border-transparent hover:border-slate-700 focus:border-amber-400 focus:bg-slate-950 rounded-lg px-2 py-1 text-xs text-slate-200 leading-snug resize-y focus:outline-none"
+                            />
                           </td>
                           <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
-                            {item.unidad}
+                            <input
+                              value={item.unidad ?? ''}
+                              onChange={(e) => handleItemText(cap.id, item.id, 'unidad', e.target.value)}
+                              aria-label="Unidad"
+                              className="w-12 bg-transparent border border-transparent hover:border-slate-700 focus:border-amber-400 rounded px-1 py-0.5 text-center font-mono text-[11px] text-slate-300 focus:outline-none"
+                            />
                           </td>
                           <td className="py-3 px-3 text-center">
                             <input
@@ -422,16 +581,45 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
                           <td className="py-3 px-4 text-right font-mono font-bold text-white text-xs">
                             {item.total?.toFixed(2)} €
                           </td>
+                          <td className="py-3 px-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePartida(cap.id, item)}
+                              title="Eliminar partida"
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  <div className="p-3 border-t border-slate-800/60">
+                    <button
+                      type="button"
+                      onClick={() => handleAddPartida(cap.id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-400 hover:bg-amber-500/10 border border-dashed border-amber-500/30 transition flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Añadir partida
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           );
         })}
       </div>
+
+      <button
+        type="button"
+        onClick={handleAddChapter}
+        className="w-full p-3 rounded-2xl text-xs font-bold text-slate-300 hover:text-white border border-dashed border-slate-700 hover:border-amber-500/40 hover:bg-slate-900 transition flex items-center justify-center gap-1.5"
+      >
+        <Plus className="w-4 h-4 text-amber-400" />
+        Añadir capítulo
+      </button>
 
       {/* Summary Recap Card */}
       <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">

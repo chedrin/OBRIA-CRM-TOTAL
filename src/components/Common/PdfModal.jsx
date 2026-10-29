@@ -111,6 +111,7 @@ export default function PdfModal() {
       doc.text(`Número: ${data.numero}`, 20, 50);
       doc.setFont('helvetica', 'normal');
       doc.text(`Fecha: ${isFactura ? data.fechaEmision : data.fecha}`, 20, 56);
+      if (!isFactura && data.revisado) doc.text(`Revisión ${data.revisionNumero || 1}: ${data.fechaRevision}${data.pendienteNuevaAceptacion ? ' · Nueva aceptación' : ''}`, 20, 62);
       if (isFactura && data.fechaVencimiento) {
         doc.text(`Vencimiento: ${data.fechaVencimiento}`, 20, 62);
       }
@@ -308,6 +309,12 @@ export default function PdfModal() {
                 )}
                 <p className="font-mono font-bold text-slate-800 text-base">{data.numero}</p>
                 <p className="text-xs text-slate-500">Fecha: {isFactura ? data.fechaEmision : data.fecha}</p>
+                {!isFactura && data.revisado && (
+                  <p className="text-xs font-bold text-violet-700">
+                    Revisado (Rev. {data.revisionNumero || 1}): {data.fechaRevision}
+                    {data.pendienteNuevaAceptacion ? ' · Nueva aceptación' : data.fechaNuevaAceptacion ? ` · Aceptado de nuevo: ${data.fechaNuevaAceptacion}` : ''}
+                  </p>
+                )}
                 {isFactura && (
                   <p className="text-xs text-slate-500">Vencimiento: {data.fechaVencimiento}</p>
                 )}

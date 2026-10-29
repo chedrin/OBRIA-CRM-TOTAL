@@ -14,6 +14,7 @@ export default function PresupuestosList() {
   const {
     presupuestos,
     updatePresupuesto,
+    registrarNuevaAceptacion,
     addObra,
     facturacionActivada,
     setPdfModalData,
@@ -113,6 +114,9 @@ export default function PresupuestosList() {
         presupuestos={presupuestos}
         handlers={{
           onAceptar: (pres) => setPresupuestoAObra(pres),
+          onNuevaAceptacion: (pres) => {
+            if (window.confirm(`¿El cliente ha aceptado la revisión ${pres.revisionNumero || 1} de ${pres.numero} (${pres.fechaRevision})?`)) registrarNuevaAceptacion(pres.id);
+          },
           onRevisar: (pres) => {
             setSelectedQuoteId(pres.id);
             setViewMode('revision_consola');
