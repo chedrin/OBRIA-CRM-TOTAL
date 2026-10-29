@@ -37,7 +37,8 @@ export const anularFactura = (id, motivo) => call(`/api/facturas/${encodeURIComp
 export const subsanarFactura = (id) => call(`/api/facturas/${encodeURIComponent(id)}/subsanar`, { method: 'POST', body: {} });
 export const subirCertificado = (pfxBase64, password) => call('/api/facturacion/certificado', { method: 'PUT', body: { pfxBase64, password } });
 export const quitarCertificado = () => call('/api/facturacion/certificado', { method: 'DELETE' });
-export const listarEnvios = () => call('/api/facturacion/envios');
+const filtrosQuery = (f = {}) => new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+export const listarEnvios = (filtros) => call(`/api/facturacion/envios${filtros ? `?${filtrosQuery(filtros)}` : ''}`);
 export const enviarAhora = () => call('/api/facturacion/enviar', { method: 'POST', body: {} });
 export const getDeclaracionResponsable = () => call('/api/facturacion/declaracion');
 export const calcularIvaObra = (datos) => call('/api/facturacion/iva-obra', { method: 'POST', body: datos });
@@ -75,3 +76,4 @@ export async function descargarArchivo(path, nombrePorDefecto) {
 export const descargarLibroExpedidas = (ejercicio, trimestre) =>
   descargarArchivo(`/api/facturacion/libro?ejercicio=${encodeURIComponent(ejercicio)}&trimestre=${encodeURIComponent(trimestre || '')}`, 'libro-facturas.csv');
 export const descargarFacturae = (id) => descargarArchivo(`/api/facturas/${encodeURIComponent(id)}/facturae`, 'factura.xml');
+export const descargarEnviosExcel = (filtros) => descargarArchivo(`/api/facturacion/envios/excel?${filtrosQuery(filtros)}`, 'envios-aeat.xlsx');

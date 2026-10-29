@@ -43,6 +43,7 @@ import { enviarPendientesEmpresa } from "./verifactu/envio.js";
 import { calcularFiscalidadObra } from "./verifactu/fiscalidadObra.js";
 import { generarFacturae } from "./verifactu/facturae.js";
 import { libroExpedidasCsv, resumenTrimestral } from "./verifactu/libros.js";
+import { crearXlsx, XLSX_CONTENT_TYPE } from "./verifactu/xlsx.js";
 
 const IVA_VALIDOS = new Set([0, 4, 5, 10, 21]);
 const TIPOS_RECTIFICATIVA = new Set(["R1", "R2", "R3", "R4"]);
@@ -366,6 +367,63 @@ async function facturasDelPeriodo(company, searchParams) {
   return { periodo: p, rows };
 }
 
+const ESTADOS_REGISTRO = { pendiente: "Pendiente de envío", aceptado: "Aceptado", aceptado_con_errores: "Aceptado con errores", rechazado: "Rechazado" };
+
+// Un filtro de estado sirve para las dos listas: el resultado del envío y el de cada registro.
+const FILTRO_ESTADO = {
+  correcto: { envios: ["Correcto"], registros: ["aceptado"] },
+  con_errores: { envios: ["ParcialmenteCorrecto"], registros: ["aceptado_con_errores"] },
+  rechazado: { envios: ["Incorrecto", "error"], registros: ["rechazado"] },
+  pendiente: { envios: [], registros: ["pendiente"] }
+};
+
+/** Medianoche de un día (AAAA-MM-DD) en hora de Madrid, como instante ISO. */
+function inicioDiaMadrid(dia) {
+  const utc = new Date(`${dia}T00:00:00Z`);
+  const partes = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Madrid", timeZoneName: "longOffset" }).formatToParts(utc);
+  const m = /GMT([+-])(\d{2}):(\d{2})/.exec(partes.find((p) => p.type === "timeZoneName")?.value || "");
+  const minutos = m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+  return new Date(utc.getTime() - minutos * 60000).toISOString();
+}
+
+function filtrosHistorial(searchParams, maximo = 500) {
+  const dia = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") && !Number.isNaN(Date.parse(v)) ? v : null);
+  const estado = searchParams?.get("estado");
+  return {
+    desde: dia(searchParams?.get("desde")),
+    hasta: dia(searchParams?.get("hasta")),
+    estado: FILTRO_ESTADO[estado] ? estado : null,
+    limite: maximo
+  };
+}
+
+/** Envíos y registros de la empresa en el entorno actual, filtrados por día (hora de Madrid) y estado. */
+async function historialAeat(company, { desde, hasta, estado, limite }) {
+  const db = getAdminClient();
+  const finDia = (d) => inicioDiaMadrid(new Date(Date.parse(`${d}T12:00:00Z`) + 86400000).toISOString().slice(0, 10));
+  const rango = (q, campo) => {
+    let r = q;
+    if (desde) r = r.gte(campo, inicioDiaMadrid(desde));
+    if (hasta) r = r.lt(campo, finDia(hasta));
+    return r;
+  };
+  const filtro = estado ? FILTRO_ESTADO[estado] : null;
+
+  let envios = [];
+  if (!filtro || filtro.envios.length) {
+    let q = db.from("verifactu_envios").select("*").eq("company_id", company.id).eq("entorno", company.verifactu_entorno);
+    if (filtro) q = q.in("estado_envio", filtro.envios);
+    envios = await run(rango(q, "created_at").order("id", { ascending: false }).limit(limite));
+  }
+
+  let q = db.from("verifactu_records")
+    .select("id, invoice_id, tipo_registro, num_serie, fecha_expedicion, tipo_factura, cuota_total, importe_total, huella, estado_envio, codigo_error, descripcion_error, csv_aeat, intentos, ultimo_intento_at, enviado_at, subsanacion, entorno, created_at")
+    .eq("company_id", company.id).eq("entorno", company.verifactu_entorno);
+  if (filtro) q = q.in("estado_envio", filtro.registros);
+  const registros = await run(rango(q, "created_at").order("id", { ascending: false }).limit(limite));
+  return { envios, registros };
+}
+
 const ROUTES = [
   ["GET", /^\/api\/facturacion$/, "estado"],
   ["PUT", /^\/api\/facturacion\/empresa$/, "empresa"],
@@ -373,6 +431,7 @@ const ROUTES = [
   ["DELETE", /^\/api\/facturacion\/certificado$/, "quitarCertificado"],
   ["GET", /^\/api\/facturacion\/verificar$/, "verificar"],
   ["GET", /^\/api\/facturacion\/envios$/, "envios"],
+  ["GET", /^\/api\/facturacion\/envios\/excel$/, "enviosExcel"],
   ["POST", /^\/api\/facturacion\/enviar$/, "enviar"],
   ["GET", /^\/api\/facturacion\/declaracion$/, "declaracion"],
   ["POST", /^\/api\/facturacion\/iva-obra$/, "ivaObra"],
@@ -511,12 +570,39 @@ const handlers = {
     return { entorno: company.verifactu_entorno, registros: registros.length, ...verificarCadena(registros) };
   },
 
-  async envios({ user }) {
+  async envios({ user, searchParams }) {
     const company = await requireCompany(user);
-    const db = getAdminClient();
-    const envios = await run(db.from("verifactu_envios").select("*").eq("company_id", company.id).order("id", { ascending: false }).limit(20));
+    const filtros = filtrosHistorial(searchParams);
+    const { envios, registros } = await historialAeat(company, filtros);
     const problemas = await registrosAbiertos(company.id, company.verifactu_entorno);
-    return { envios, registros: problemas.slice(0, 100) };
+    return { filtros, envios, historial: registros, registros: problemas.slice(0, 100) };
+  },
+
+  async enviosExcel({ res, user, searchParams }) {
+    const company = await requireCompany(user);
+    const filtros = filtrosHistorial(searchParams, 5000);
+    const { envios, registros } = await historialAeat(company, filtros);
+    const f = (iso) => (iso ? new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid" }) : "");
+    const num = (v) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? v : Number(v));
+    const body = crearXlsx([
+      {
+        nombre: "Envíos",
+        columnas: ["Fecha y hora", "Entorno", "Registros", "Estado del envío", "CSV AEAT", "Espera pedida (s)", "Error"],
+        filas: envios.map((e) => [f(e.created_at), e.entorno, e.registros, e.estado_envio, e.csv_aeat, e.tiempo_espera, e.error])
+      },
+      {
+        nombre: "Registros",
+        columnas: ["Nº factura", "Operación", "Fecha expedición", "Tipo factura", "Cuota total", "Importe total", "Estado en la AEAT",
+          "Código error", "Descripción error", "CSV AEAT", "Intentos", "Último intento", "Aceptado el", "Subsanación", "Entorno", "Huella"],
+        filas: registros.map((r) => [r.num_serie, r.tipo_registro === "anulacion" ? "Anulación" : "Alta", r.fecha_expedicion, r.tipo_factura,
+          num(r.cuota_total), num(r.importe_total), ESTADOS_REGISTRO[r.estado_envio] || r.estado_envio, r.codigo_error, r.descripcion_error,
+          r.csv_aeat, r.intentos, f(r.ultimo_intento_at), f(r.enviado_at), r.subsanacion === "S" ? "Sí" : "", r.entorno, r.huella])
+      }
+    ]);
+    await audit(company.id, user?.id, "ENVIOS_EXPORTADOS", { ...filtros, envios: envios.length, registros: registros.length });
+    const rango = [filtros.desde, filtros.hasta].filter(Boolean).join("_a_") || "todo";
+    sendFile(res, { contentType: XLSX_CONTENT_TYPE, filename: `envios-aeat-${company.nif}-${rango}.xlsx`, body });
+    return undefined;
   },
 
   async enviar({ user }) {
