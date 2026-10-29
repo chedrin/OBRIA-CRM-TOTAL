@@ -41,24 +41,29 @@ export function normalizeItems(items, fallbackDescription = "") {
  * @param {object} p
  * @param {object} p.need       Fila de worksite_needs.
  * @param {object} [p.obra]     Registro de la obra (app_records, colección "obras").
+ * @param {object[]} [p.obras]  Varias obras, si el pedido es para más de una (la primera manda en la dirección).
+ * @param {string} [p.notes]    Observaciones para el proveedor.
  * @param {object} [p.supplier] Fila de suppliers.
  * @param {object} [p.empresa]  Configuración de la empresa (app_records, "empresa_config").
  * @param {"pedido"|"solicitud_presupuesto"} [p.kind]
  */
-export function buildSupplierOrderEmail({ need, obra = {}, supplier = {}, empresa = {}, kind = "pedido" }) {
+export function buildSupplierOrderEmail({ need, obra = {}, obras = [], supplier = {}, empresa = {}, kind = "pedido", notes = "" }) {
   const items = normalizeItems(need.items, need.description);
-  const obraCode = obra.codigo || need.obra_id || "";
-  const obraTitle = obra.titulo || need.obra_label || "";
-  const address = obra.direccion || need.delivery_address || "";
+  const list = (obras.length ? obras : [obra]).filter(Boolean);
+  const several = list.length > 1;
+  const obraCode = list.map((o) => o.codigo).filter(Boolean).join(", ") || (several ? "" : need.obra_id || "");
+  const obraLine = list.map((o) => [o.codigo, o.titulo].filter(Boolean).join(" - ")).filter(Boolean).join(" / ") || need.obra_label || obraCode;
+  const address = need.delivery_address || list[0]?.direccion || "";
+  const observations = String(notes || "").trim();
   const neededBy = formatDate(need.needed_by);
-  const contactName = need.site_contact_name || obra.encargado || obra.responsable || empresa.personaContacto || "";
-  const contactPhone = need.site_contact_phone || obra.telefonoEncargado || empresa.telefono || "";
+  const contactName = need.site_contact_name || list[0]?.encargado || list[0]?.responsable || empresa.personaContacto || "";
+  const contactPhone = need.site_contact_phone || list[0]?.telefonoEncargado || empresa.telefono || "";
   const companyName = empresa.nombreComercial || empresa.razonSocial || "ObraMaster";
   const isQuote = kind === "solicitud_presupuesto";
 
   const subjectParts = [
     isQuote ? "Solicitud de presupuesto" : "Pedido de material",
-    obraCode && `Obra ${obraCode}`,
+    obraCode && `${several ? "Obras" : "Obra"} ${obraCode}`,
     address && `Entrega: ${address}`,
     need.urgency === "urgente" && "URGENTE"
   ].filter(Boolean);
@@ -80,11 +85,12 @@ export function buildSupplierOrderEmail({ need, obra = {}, supplier = {}, empres
     "",
     rowsText,
     "",
-    `Obra: ${[obraCode, obraTitle].filter(Boolean).join(" - ")}`,
+    obraLine && `${several ? "Obras" : "Obra"}: ${obraLine}`,
     address && `Dirección de entrega: ${address}`,
     need.tajo && `Tajo / zona: ${need.tajo}`,
     neededBy && `Fecha límite de entrega en obra: ${neededBy}`,
     contactName && `Contacto en obra para la descarga: ${contactName}${contactPhone ? ` (${contactPhone})` : ""}`,
+    observations && `Observaciones: ${observations}`,
     "",
     isQuote
       ? "Por favor, respondan a este correo con su oferta."
@@ -116,7 +122,7 @@ export function buildSupplierOrderEmail({ need, obra = {}, supplier = {}, empres
 <html lang="es"><body style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
 <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;">
   <h2 style="margin:0 0 4px;font-size:18px;">${escapeHtml(isQuote ? "Solicitud de presupuesto" : "Pedido de material")}${need.urgency === "urgente" ? ' <span style="color:#dc2626;">· URGENTE</span>' : ""}</h2>
-  <p style="margin:0 0 16px;color:#64748b;font-size:13px;">${escapeHtml([obraCode, obraTitle].filter(Boolean).join(" - "))}</p>
+  <p style="margin:0 0 16px;color:#64748b;font-size:13px;">${escapeHtml(obraLine)}</p>
   <p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>
   <p style="margin:0 0 16px;">${escapeHtml(intro)}</p>
   <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
@@ -130,6 +136,7 @@ export function buildSupplierOrderEmail({ need, obra = {}, supplier = {}, empres
     ${infoRow("Tajo / zona", need.tajo)}
     ${infoRow("Entregar antes de", neededBy)}
     ${infoRow("Contacto para la descarga", [contactName, contactPhone].filter(Boolean).join(" · "))}
+    ${infoRow("Observaciones", observations)}
   </table>
   <p style="margin:0 0 16px;">${escapeHtml(isQuote ? "Por favor, respondan a este correo con su oferta." : "Por favor, confirmen disponibilidad y fecha de entrega respondiendo a este correo.")}</p>
   <p style="margin:0;">Un saludo,<br><strong>${escapeHtml(companyName)}</strong><br><span style="color:#64748b;font-size:13px;">${escapeHtml([empresa.telefono, empresa.email].filter(Boolean).join(" · "))}</span></p>

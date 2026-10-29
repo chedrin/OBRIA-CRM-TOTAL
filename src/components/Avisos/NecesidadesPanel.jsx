@@ -7,9 +7,9 @@ import { api, NEED_CATEGORIES, NEED_STATUS, fmtDate, fmtDateTime, inputCls, btnP
 import PedidoBorrador from './PedidoBorrador';
 
 const categoryLabel = (value) => NEED_CATEGORIES.find((c) => c.value === value)?.label || value;
-const emptyItem = () => ({ material: '', cantidad: '', unidad: '' });
+export const emptyItem = () => ({ material: '', cantidad: '', unidad: '' });
 
-function ItemsEditor({ items, setItems }) {
+export function ItemsEditor({ items, setItems }) {
   const update = (i, key, value) => setItems(items.map((it, j) => (j === i ? { ...it, [key]: value } : it)));
   return (
     <div className="space-y-2">

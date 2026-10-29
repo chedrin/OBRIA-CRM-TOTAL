@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Send, Save, XCircle, Loader2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
+import RespuestaProveedor from './RespuestaProveedor';
 import { api, ORDER_STATUS, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 
 /**
@@ -14,6 +15,7 @@ export default function PedidoBorrador({ order, supplierName, onChange }) {
   const [cc, setCc] = useState(order.cc_email || '');
   const [subject, setSubject] = useState(order.subject);
   const [busy, setBusy] = useState('');
+  const [showMail, setShowMail] = useState(order.status === 'borrador' || order.status === 'error');
   const frameRef = useRef(null);
   const editable = order.status === 'borrador' || order.status === 'error';
   const status = ORDER_STATUS[order.status] || ORDER_STATUS.borrador;
@@ -30,7 +32,7 @@ export default function PedidoBorrador({ order, supplierName, onChange }) {
     };
     frame.addEventListener('load', onLoad);
     return () => frame.removeEventListener('load', onLoad);
-  }, [editable, order.id]);
+  }, [editable, order.id, showMail]);
 
   const readBody = () => {
     const doc = frameRef.current?.contentDocument;
@@ -95,11 +97,19 @@ export default function PedidoBorrador({ order, supplierName, onChange }) {
         <input value={subject} onChange={(e) => setSubject(e.target.value)} disabled={!editable} className={inputCls} />
       </label>
 
-      <div>
-        <p className="text-xs text-slate-400 mb-1">{editable ? 'Vista previa (puedes escribir directamente en ella)' : 'Correo enviado'}</p>
-        <iframe ref={frameRef} title={`Pedido ${order.id}`} srcDoc={order.body_html} sandbox="allow-same-origin"
-          className="w-full rounded-xl border border-slate-700" style={{ height: 420, background: "#ffffff" }} />
-      </div>
+      {['enviado', 'confirmado', 'entregado'].includes(order.status) && (
+        <RespuestaProveedor order={order} onChange={onChange} />
+      )}
+
+      {showMail ? (
+        <div>
+          <p className="text-xs text-slate-400 mb-1">{editable ? 'Vista previa (puedes escribir directamente en ella)' : 'Correo enviado'}</p>
+          <iframe ref={frameRef} title={`Pedido ${order.id}`} srcDoc={order.body_html} sandbox="allow-same-origin"
+            className="w-full rounded-xl border border-slate-700" style={{ height: 420, background: "#ffffff" }} />
+        </div>
+      ) : (
+        <button onClick={() => setShowMail(true)} className="text-xs font-bold text-amber-400">Ver el correo enviado</button>
+      )}
 
       {editable && (
         <div className="flex flex-wrap gap-2 justify-end">

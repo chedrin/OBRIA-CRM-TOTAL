@@ -20,6 +20,8 @@
  *   POST  /api/needs/:id/order-draft    { supplier_ids: [...], kind } -> borradores de correo.
  *   PATCH /api/material-orders/:id      Editar el borrador (asunto, cuerpo, destinatario).
  *   POST  /api/material-orders/:id/send "Aprobar y enviar pedido" (Resend).
+ *   POST  /api/material-orders/manual   "Nuevo pedido": obras, proveedores y materiales; send=true lo envía ya.
+ *   PATCH /api/material-orders/:id/response  Respuesta del proveedor (fecha, importe, notas, correo pegado).
  *   GET   /api/suppliers  ·  POST /api/suppliers  ·  PATCH /api/suppliers/:id
  *   GET   /api/sub-tokens               Enlaces creados (sin el token).
  *   GET   /api/material-orders          ?need=<id>
@@ -618,7 +620,7 @@ async function handleUpdateNeed(req, res, id) {
  * después). No envía nada. Lo usan el botón "Generar borrador" y la petición de
  * material desde el enlace de la subcontrata.
  */
-export async function createOrderDrafts(need, supplierIds = [], kind = "pedido") {
+export async function createOrderDrafts(need, supplierIds = [], kind = "pedido", { notes = "" } = {}) {
   const admin = getAdminClient();
   let suppliers = [];
   if (supplierIds.length) {
@@ -628,13 +630,17 @@ export async function createOrderDrafts(need, supplierIds = [], kind = "pedido")
   }
   if (suppliers.length === 0) suppliers = [{}]; // borrador sin proveedor: se elige después
 
-  const [obra, empresa] = await Promise.all([getObra(need.obra_id), getEmpresa()]);
+  // obra_ids existe tras supabase_migration_pedidos_respuesta.sql; sin ella, una sola obra.
+  const hasObraIds = Array.isArray(need.obra_ids);
+  const obraIds = hasObraIds && need.obra_ids.length ? need.obra_ids : [need.obra_id].filter(Boolean);
+  const [obras, empresa] = await Promise.all([Promise.all(obraIds.map(getObra)), getEmpresa()]);
   const rows = suppliers.map((supplier) => {
-    const email = buildSupplierOrderEmail({ need, obra: obra || {}, supplier, empresa, kind });
+    const email = buildSupplierOrderEmail({ need, obras: obras.filter(Boolean), supplier, empresa, kind, notes });
     return {
       need_id: need.id,
       supplier_id: supplier.id || null,
       obra_id: need.obra_id,
+      ...(hasObraIds ? { obra_ids: obraIds } : {}),
       kind,
       status: "borrador",
       to_email: supplier.email || null,
@@ -686,11 +692,16 @@ const EMAIL_LIST = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+(\s*[,;]\s*[^\s@,;]+@[^\s@,;]
 const splitEmails = (value) => String(value || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
 
 async function handleSendOrder(req, res, id) {
+  const { data: order } = await getAdminClient().from("material_orders").select("*").eq("id", id).maybeSingle();
+  if (!order) throw httpError(404, "Pedido no encontrado.");
+  sendJson(res, 200, await sendOrder(order, req.user?.id || null));
+}
+
+/** Envía un pedido en borrador por correo (Resend) y lo marca como enviado. */
+async function sendOrder(order, userId) {
   const apiKey = process.env.RESEND_API_KEY || "";
   if (!apiKey) throw httpError(503, "Falta RESEND_API_KEY en el servidor: no se puede enviar el correo.");
   const admin = getAdminClient();
-  const { data: order } = await admin.from("material_orders").select("*").eq("id", id).maybeSingle();
-  if (!order) throw httpError(404, "Pedido no encontrado.");
   if (order.status !== "borrador" && order.status !== "error") throw httpError(409, "Este pedido ya se envió.");
   if (!EMAIL_LIST.test(order.to_email || "")) throw httpError(400, "Falta el correo del proveedor o no es válido.");
 
@@ -720,14 +731,120 @@ async function handleSendOrder(req, res, id) {
 
   const { data: sent } = await admin
     .from("material_orders")
-    .update({ status: "enviado", sent_at: new Date().toISOString(), sent_by: req.user?.id || null, provider_message_id: result.id || null, error: null })
+    .update({ status: "enviado", sent_at: new Date().toISOString(), sent_by: userId, provider_message_id: result.id || null, error: null })
     .eq("id", order.id)
     .select()
     .single();
   if (order.need_id) {
     await admin.from("worksite_needs").update({ status: "pedido_tramitado" }).eq("id", order.need_id);
   }
-  sendJson(res, 200, sent);
+  return sent;
+}
+
+/**
+ * "Nuevo pedido" desde el panel: crea la necesidad (una o varias obras), un borrador
+ * por proveedor y, si se pide, los envía en el acto. No genera aviso: lo hace la oficina.
+ */
+async function handleManualOrder(req, res) {
+  const body = await readJson(req);
+  const obraIds = [...new Set((Array.isArray(body.obra_ids) ? body.obra_ids : []).map((id) => clip(id, 100)).filter(Boolean))].slice(0, 10);
+  const items = normalizeItems(body.items);
+  if (items.length === 0) throw httpError(400, "Añade al menos un material.");
+  const supplierIds = (Array.isArray(body.supplier_ids) ? body.supplier_ids : [])
+    .filter((id) => new RegExp(`^${UUID}$`).test(id || ""))
+    .slice(0, 5);
+  if (body.send && supplierIds.length === 0) throw httpError(400, "Elige al menos un proveedor para enviar el pedido.");
+  const kind = body.kind === "solicitud_presupuesto" ? "solicitud_presupuesto" : "pedido";
+  const notes = clip(body.notes, 2000);
+
+  const obras = (await Promise.all(obraIds.map(getObra))).filter(Boolean);
+  const label = obras.map((o) => obraLabel(o)).filter(Boolean).join(" / ").slice(0, 400) || null;
+  const summary = items.map((it) => [it.cantidad, it.unidad, it.material].filter(Boolean).join(" ")).join(", ");
+  const { data: need, error } = await getAdminClient()
+    .from("worksite_needs")
+    .insert({
+      obra_id: obraIds[0] || null,
+      obra_ids: obraIds,
+      obra_label: label,
+      category: "material",
+      urgency: body.urgency === "urgente" ? "urgente" : "normal",
+      description: clip(notes || summary, 2000),
+      items,
+      needed_by: /^\d{4}-\d{2}-\d{2}$/.test(body.needed_by || "") ? body.needed_by : null,
+      delivery_address: clip(body.delivery_address, 300) || null,
+      site_contact_name: clip(body.site_contact_name, 200) || null,
+      site_contact_phone: clip(body.site_contact_phone, 40) || null,
+      reported_by_type: "admin",
+      reported_by_name: clip(req.user?.full_name, 200) || null,
+      reported_by_user: req.user?.id || null,
+      status: "en_revision"
+    })
+    .select()
+    .single();
+  if (error) {
+    if (/obra_ids|delivery_address/.test(error.message)) {
+      throw httpError(503, "Falta ejecutar supabase_migration_pedidos_respuesta.sql en Supabase (SQL Editor).");
+    }
+    throw new Error(error.message);
+  }
+
+  const drafts = await createOrderDrafts(need, supplierIds, kind, { notes });
+  if (!body.send) return sendJson(res, 201, { need, orders: drafts, errors: [] });
+
+  const orders = [];
+  const errors = [];
+  for (const draft of drafts) {
+    try {
+      orders.push(await sendOrder(draft, req.user?.id || null));
+    } catch (err) {
+      errors.push(err.message);
+      const { data: failed } = await getAdminClient().from("material_orders").select("*").eq("id", draft.id).maybeSingle();
+      orders.push(failed || draft);
+    }
+  }
+  sendJson(res, 201, { need: { ...need, status: errors.length === drafts.length ? need.status : "pedido_tramitado" }, orders, errors });
+}
+
+const RESPONSE_STATUSES = new Set(["pendiente", "confirmado", "parcial", "rechazado"]);
+
+/** Respuesta del proveedor: cuándo lo sirven, a qué precio, notas y el correo pegado. */
+async function handleOrderResponse(req, res, id) {
+  const body = await readJson(req);
+  const admin = getAdminClient();
+  const { data: order } = await admin.from("material_orders").select("*").eq("id", id).maybeSingle();
+  if (!order) throw httpError(404, "Pedido no encontrado.");
+  if (["borrador", "cancelado"].includes(order.status)) throw httpError(409, "Primero hay que enviar el pedido.");
+
+  const patch = { responded_at: new Date().toISOString() };
+  if (body.response_status !== undefined) {
+    if (!RESPONSE_STATUSES.has(body.response_status)) throw httpError(400, "Estado de respuesta no válido.");
+    patch.response_status = body.response_status;
+  }
+  if (body.delivery_date !== undefined) patch.delivery_date = /^\d{4}-\d{2}-\d{2}$/.test(body.delivery_date || "") ? body.delivery_date : null;
+  if (body.quoted_amount !== undefined) {
+    const amount = body.quoted_amount === "" || body.quoted_amount === null ? null : Number(String(body.quoted_amount).replace(",", "."));
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0 || amount > 1e9)) throw httpError(400, "Importe no válido.");
+    patch.quoted_amount = amount === null ? null : Math.round(amount * 100) / 100;
+  }
+  if (body.response_notes !== undefined) patch.response_notes = clip(body.response_notes, 2000) || null;
+  if (body.supplier_reply !== undefined) patch.supplier_reply = String(body.supplier_reply || "").slice(0, 30000) || null;
+
+  const nextResponse = patch.response_status ?? order.response_status;
+  if (body.delivered === true) patch.status = "entregado";
+  else if (order.status !== "entregado" && ["confirmado", "parcial"].includes(nextResponse)) patch.status = "confirmado";
+  else if (order.status === "confirmado" && ["pendiente", "rechazado"].includes(nextResponse)) patch.status = "enviado";
+
+  const { data, error } = await admin.from("material_orders").update(patch).eq("id", id).select().single();
+  if (error) {
+    if (/response_status|delivery_date|quoted_amount|supplier_reply/.test(error.message)) {
+      throw httpError(503, "Falta ejecutar supabase_migration_pedidos_respuesta.sql en Supabase (SQL Editor).");
+    }
+    throw new Error(error.message);
+  }
+  if (body.delivered === true && order.need_id) {
+    await admin.from("worksite_needs").update({ status: "entregado" }).eq("id", order.need_id);
+  }
+  sendJson(res, 200, data);
 }
 
 // ---------------------------------------------------------------------------
@@ -860,11 +977,15 @@ export async function handleNotificationRoutes(req, res, pathname, query) {
     [/^\/api\/material-orders$/, { GET: async () => {
       let q = getAdminClient().from("material_orders").select("*").order("created_at", { ascending: false }).limit(200);
       if (new RegExp(`^${UUID}$`).test(query.get("need") || "")) q = q.eq("need_id", query.get("need"));
+      if (query.get("obra")) q = q.contains("obra_ids", [query.get("obra")]);
+      if (query.get("status")) q = q.eq("status", query.get("status"));
       const { data, error } = await q;
       if (error) throw new Error(error.message);
       sendJson(res, 200, data || []);
     } }],
+    [/^\/api\/material-orders\/manual$/, { POST: () => handleManualOrder(req, res) }],
     [new RegExp(`^/api/material-orders/(${UUID})$`), { PATCH: (id) => handleUpdateOrder(req, res, id) }],
+    [new RegExp(`^/api/material-orders/(${UUID})/response$`), { PATCH: (id) => handleOrderResponse(req, res, id) }],
     [new RegExp(`^/api/material-orders/(${UUID})/send$`), { POST: (id) => handleSendOrder(req, res, id) }],
     [/^\/api\/suppliers$/, {
       GET: async () => {
