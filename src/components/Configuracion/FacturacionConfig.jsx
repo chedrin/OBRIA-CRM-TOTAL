@@ -405,7 +405,8 @@ export default function FacturacionConfig() {
               <button type="button" onClick={handleEnviarAhora} disabled={!empresa.envioAeatActivo} className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs">Enviar ahora</button>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Aceptados por la AEAT</span><strong className={`text-lg ${registros?.aceptados ? 'text-emerald-400' : 'text-white'}`}>{registros?.aceptados ?? '-'}</strong></div>
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Pendientes</span><strong className="text-white text-lg">{registros?.pendientes ?? '-'}</strong></div>
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Rechazados</span><strong className={`text-lg ${registros?.rechazados ? 'text-rose-400' : 'text-white'}`}>{registros?.rechazados ?? '-'}</strong></div>
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Con errores</span><strong className={`text-lg ${registros?.conErrores ? 'text-amber-400' : 'text-white'}`}>{registros?.conErrores ?? '-'}</strong></div>

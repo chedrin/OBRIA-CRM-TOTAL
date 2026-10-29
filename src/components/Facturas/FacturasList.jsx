@@ -79,6 +79,8 @@ export default function FacturasList() {
   const totalCobrado = vivas.filter(f => f.estadoCobro === 'cobrada').reduce((s, f) => s + totalEfectivo(f), 0);
   const totalPendiente = vivas.filter(f => f.estadoCobro === 'pendiente').reduce((s, f) => s + totalEfectivo(f), 0);
   const conProblemas = facturas.filter(f => ['rechazado', 'aceptado_con_errores'].includes(f.aeat?.estado));
+  const registradas = facturas.filter(f => f.aeat?.estado === 'aceptado').length;
+  const sinEnviar = facturas.filter(f => f.aeat?.estado === 'pendiente').length;
 
   const q = searchQuery.toLowerCase();
   const filteredFacturas = facturas.filter(fac => {
@@ -224,7 +226,10 @@ export default function FacturasList() {
           <span className={`text-2xl font-black ${conProblemas.length ? 'text-rose-400' : 'text-emerald-400'}`}>
             {conProblemas.length ? `${conProblemas.length} con problemas` : 'Todo correcto'}
           </span>
-          <div className="mt-2 text-[11px] text-slate-500">
+          <div className="mt-1 text-xs text-slate-300">
+            {registradas} registradas{sinEnviar ? ` · ${sinEnviar} sin enviar` : ''}
+          </div>
+          <div className="mt-1 text-[11px] text-slate-500">
             {empresa?.envioAeatActivo ? 'Envío automático activado' : 'Envío a la AEAT desactivado (Ajustes > Facturación)'}
           </div>
         </button>
