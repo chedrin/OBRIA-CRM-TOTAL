@@ -2,7 +2,7 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { NAV_ITEMS, NAV_TONES } from './navigation/navConfig';
 import { useNotifications } from '../context/NotificationsContext';
-import { Menu, Building2, Sparkles, Bell } from 'lucide-react';
+import { Menu, Building2, Sparkles, Bell, Mic, Calculator } from 'lucide-react';
 
 // Título y descripción largos de cada módulo (el icono y el color salen de navConfig).
 const TAB_TEXT = {
@@ -20,12 +20,29 @@ const TAB_TEXT = {
   empresa_config: { title: 'Ajustes de Empresa & Motor IA', desc: 'Datos fiscales de cabecera, API Key de Inteligencia Artificial y usuarios' }
 };
 
+function saludo() {
+  const h = new Date().getHours();
+  if (h < 14) return 'Buenos días';
+  if (h < 21) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
 export default function TopHeader({ onOpenMobileMenu = () => {} }) {
-  const { activeTab, setActiveTab, currentUser } = useApp();
+  const { activeTab, setActiveTab, currentUser, obras, mensajesInbox } = useApp();
   const { unreadCount, available: avisosAvailable } = useNotifications();
 
   const navItem = NAV_ITEMS.find(i => i.id === activeTab);
-  const text = TAB_TEXT[activeTab] || { title: 'ObraMaster', desc: 'Gestión integral para construcción y reformas' };
+  let text = TAB_TEXT[activeTab] || { title: 'ObraMaster', desc: 'Gestión integral para construcción y reformas' };
+  // En el Panel General la cabecera hace de bienvenida: saludo y resumen del día.
+  const isDashboard = activeTab === 'dashboard';
+  if (isDashboard) {
+    const enCurso = (obras || []).filter(o => o.estado === 'en_curso').length;
+    const pendientes = (mensajesInbox || []).filter(m => !m.estadoProcesado).length;
+    text = {
+      title: `${saludo()}, ${currentUser?.fullName || 'Administrador'}`,
+      desc: `Panel General · ${enCurso} obras en ejecución y ${pendientes} audios/mensajes de obra pendientes de procesar`
+    };
+  }
   const Icon = navItem?.icon || Building2;
   const tone = NAV_TONES[navItem?.tone || 'amber'];
   const avisosLabel = unreadCount ? `${unreadCount} avisos sin leer` : 'Avisos';
@@ -57,9 +74,33 @@ export default function TopHeader({ onOpenMobileMenu = () => {} }) {
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-400 truncate hidden md:block">{text.desc}</p>
+            <p className="text-[11px] text-slate-400 truncate hidden md:block" title={text.desc}>{text.desc}</p>
           </div>
         </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+        {isDashboard && (
+          <>
+            <button
+              onClick={() => setActiveTab('inbox')}
+              title="Grabar audio IA"
+              aria-label="Grabar audio IA"
+              className="flex items-center gap-2 p-2 sm:px-3 sm:py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
+            >
+              <Mic className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Grabar audio IA</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('presupuestos')}
+              title="Presupuesto IA"
+              aria-label="Presupuesto IA"
+              className="flex items-center gap-2 p-2 sm:px-3 sm:py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold text-xs sm:text-sm rounded-xl border border-amber-500/30 transition active:scale-95"
+            >
+              <Calculator className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Presupuesto IA</span>
+            </button>
+          </>
+        )}
 
         {currentUser?.role === 'admin' && avisosAvailable && (
           <button
@@ -76,6 +117,7 @@ export default function TopHeader({ onOpenMobileMenu = () => {} }) {
             )}
           </button>
         )}
+        </div>
 
       </div>
     </header>
