@@ -336,6 +336,19 @@ export default function FacturacionConfig() {
         )}
       </form>
 
+      {!empresa && (
+        <div className={card}>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-amber-400" />
+            <span>Certificado electrónico</span>
+          </h3>
+          <Aviso tipo="warn">
+            Para subir el certificado, primero rellena los datos fiscales de arriba y pulsa Guardar. Si al guardar sale un error de tabla,
+            falta ejecutar supabase_schema_facturacion.sql en Supabase.
+          </Aviso>
+        </div>
+      )}
+
       {empresa && (
         <div className={card}>
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
