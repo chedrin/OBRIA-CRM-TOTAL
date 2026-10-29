@@ -112,6 +112,8 @@ create table if not exists public.subcontractor_tokens (
 );
 
 create index if not exists subcontractor_tokens_obra_idx on public.subcontractor_tokens (obra_id);
+-- Token cifrado para poder reenviar el mismo enlace (ver supabase_migration_enlaces_reenvio.sql).
+alter table public.subcontractor_tokens add column if not exists token_enc text;
 
 -- -------------------------------------------------------------------------
 -- 5. NECESIDADES DE OBRA

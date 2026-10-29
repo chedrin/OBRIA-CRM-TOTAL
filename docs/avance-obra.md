@@ -44,6 +44,15 @@ Al guardar una asignación de tipo subcontrata (`POST /api/avance/assignments`) 
 
 La ventana de asignación muestra **Abrir WhatsApp**, **Copiar mensaje**, **Copiar enlace** y, si el servidor tiene `WHATSAPP_ACCESS_TOKEN` y `WHATSAPP_PHONE_NUMBER_ID`, **Enviar por WhatsApp API** (Cloud API de Meta). Meta solo admite texto libre si el contacto escribió en las últimas 24 h; para el primer contacto hace falta una plantilla aprobada (`WHATSAPP_TEMPLATE_NAME`, con un parámetro de cuerpo).
 
+### Volver a copiar y reenviar el enlace
+
+Hasta que el trabajo esté **finalizado** (fase o partida certificada al 100 % por el jefe de obra), el enlace se puede volver a copiar y mandar:
+
+- **Avisos y Pedidos > Enlaces**: botón **Copiar o reenviar** en cada enlace (o **Reactivar y reenviar** si caducó: se alarga los días indicados en el formulario). Los finalizados muestran "Finalizado" y los anulados no se pueden reenviar.
+- **Avance de Obra > partida > Ejecutores**: botón **Enlace** junto a la subcontrata. Reutiliza el último enlace vigente de esa asignación o crea uno si no tenía.
+
+El token se guarda cifrado (AES-256-GCM, columna `token_enc`, clave `LINK_ENCRYPTION_KEY` o, si falta, `CERT_ENCRYPTION_KEY`) para mandar el **mismo** enlace. Los enlaces creados antes de `supabase_migration_enlaces_reenvio.sql`, o si la clave cambia, no se pueden recuperar: al reenviarlos se genera uno nuevo en la misma fila y el anterior deja de funcionar (la app avisa antes).
+
 ## 5. Página de la subcontrata `/sub/<token>`
 
 Cabecera con la obra, la dirección (abre el mapa), la fase o partida asignada, medición, indicaciones del encargado, fin previsto y estado (Pendiente, En curso, Bloqueada, Terminada o Pendiente de revisión). Tres botones:
@@ -64,11 +73,12 @@ Además, **Reportar avance (%)** lista todas las partidas de su empresa en esa o
 | `GET /api/avance/obras/:obraId` · `GET /api/avance/logs` | Admin |
 | `POST /api/avance/assignments` (devuelve `link` para subcontratas) · `PATCH`/`DELETE /api/avance/assignments/:id` | Admin |
 | `POST /api/avance/certify` | Admin |
+| `POST /api/sub-tokens/:id/resend` · `POST /api/sub-tokens/assignment/:assignmentId` (reenviar enlace) | Admin |
 | `POST /api/whatsapp/send` | Admin (opcional, Cloud API) |
 
 ## 7. Puesta en marcha
 
-1. Supabase > SQL Editor: ejecutar `supabase_schema_avance_obra.sql` (después de `supabase_schema_notificaciones.sql`).
+1. Supabase > SQL Editor: ejecutar `supabase_schema_avance_obra.sql` (después de `supabase_schema_notificaciones.sql`) y `supabase_migration_enlaces_reenvio.sql`.
 2. Cada obrero debe tener su usuario vinculado a su ficha (`profiles.obrero_id`); los creados desde Ajustes > Usuarios ya lo están.
 3. Opcional: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` (y `WHATSAPP_TEMPLATE_NAME`) en Render y `.env`, sin prefijo `VITE_`.
 4. Probar: Avance de Obra > Asignar una partida a una subcontrata > Abrir WhatsApp; abrir el enlace en el móvil, pedir material y marcar terminada; volver al panel y validar el avance.

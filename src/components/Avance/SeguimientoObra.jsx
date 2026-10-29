@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLlenadoAnimado, RELLENO_ANIMADO } from '../Common/BarraProgreso';
 import {
-  ChevronDown, Loader2, UserPlus, ShieldCheck, History, AlertTriangle, Package, Building2, X, Trash2, RefreshCw, Flag
+  ChevronDown, Loader2, UserPlus, ShieldCheck, History, AlertTriangle, Package, Building2, X, Trash2, RefreshCw, Flag, Link2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useNotifications } from '../../context/NotificationsContext';
@@ -10,6 +10,7 @@ import { api, fmtDateTime, fmtDate, inputCls, btnPrimary, btnGhost } from '../..
 import { STATUS, applyCertifiedToObra } from '../../utils/avanceObra';
 import useNotify from '../Avisos/useNotify';
 import AsignacionRapida from './AsignacionRapida';
+import { EnlaceAsignacionModal } from '../Avisos/EnlaceEnvio';
 
 // Panel del jefe de obra: árbol Fase > Partidas con el avance reportado por obreros y
 // subcontratas, el planificado según las fechas asignadas y el certificado (validado).
@@ -322,6 +323,7 @@ function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, o
   const [pct, setPct] = useState(partida.reported);
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [linkFor, setLinkFor] = useState(null); // asignación de subcontrata cuyo enlace se reenvía
   const st = STATUS[partida.status] || STATUS.no_iniciada;
 
   useEffect(() => {
@@ -409,10 +411,17 @@ function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, o
                 </p>
                 {a.notes && <p className="text-slate-400">{a.notes}</p>}
               </div>
-              {!a.heredada && <button onClick={() => removeAssignment(a)} className="text-slate-500 hover:text-rose-400" aria-label="Quitar"><Trash2 className="w-4 h-4" /></button>}
+              <div className="flex items-center gap-2 shrink-0">
+                {a.assignee_type === 'subcontrata' && partida.certified < 100 && (
+                  <button onClick={() => setLinkFor(a)} className={`${btnGhost} !py-1 !text-xs`} title="Copiar o reenviar su enlace directo"><Link2 className="w-3.5 h-3.5" /> Enlace</button>
+                )}
+                {!a.heredada && <button onClick={() => removeAssignment(a)} className="text-slate-500 hover:text-rose-400" aria-label="Quitar"><Trash2 className="w-4 h-4" /></button>}
+              </div>
             </div>
           ))}
         </section>
+
+        {linkFor && <EnlaceAsignacionModal assignment={linkFor} onClose={() => setLinkFor(null)} />}
 
         <section className="space-y-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-3">
           <h4 className="text-xs font-bold text-emerald-300 flex items-center gap-1.5"><ShieldCheck className="w-4 h-4" /> Validar como avance certificado</h4>

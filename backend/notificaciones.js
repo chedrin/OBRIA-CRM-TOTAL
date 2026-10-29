@@ -12,6 +12,8 @@
  * Rutas con sesión (administrador, salvo POST /api/needs que también puede usar un obrero):
  *   POST  /api/sub-tokens               Crea un enlace para una subcontrata (devuelve URL y enlace de WhatsApp).
  *   POST  /api/sub-tokens/:id/revoke    Anula un enlace.
+ *   POST  /api/sub-tokens/:id/resend    Devuelve de nuevo la URL y el mensaje (hasta que el trabajo esté certificado al 100 %).
+ *   POST  /api/sub-tokens/assignment/:id  Igual, a partir de una asignación de Avance de Obra (lo crea si no existe).
  *   GET   /api/notifications            ?unread=1&obra=<id>&category=<cat>
  *   POST  /api/notifications/read       { ids: [...] } o { all: true }
  *   GET   /api/needs                    ?status=<estado>&obra=<id>
@@ -21,12 +23,13 @@
  *   PATCH /api/material-orders/:id      Editar el borrador (asunto, cuerpo, destinatario).
  *   POST  /api/material-orders/:id/send "Aprobar y enviar pedido" (Resend).
  *   GET   /api/suppliers  ·  POST /api/suppliers  ·  PATCH /api/suppliers/:id
- *   GET   /api/sub-tokens               Enlaces creados (sin el token).
+ *   GET   /api/sub-tokens               Enlaces creados (sin el token), con el % certificado y si se pueden reenviar.
  *   GET   /api/material-orders          ?need=<id>
  *   GET   /api/site-reports             Partes recibidos por enlace, con fotos firmadas.
  *   PATCH /api/site-reports/:id         { review_result: "aprobado" | "rechazado" }
  *
- * Variables de entorno (servidor): RESEND_API_KEY, RESEND_FROM_EMAIL (ver emailService.js), PUBLIC_APP_URL.
+ * Variables de entorno (servidor): RESEND_API_KEY, RESEND_FROM_EMAIL (ver emailService.js), PUBLIC_APP_URL,
+ * LINK_ENCRYPTION_KEY (opcional; si falta se usa CERT_ENCRYPTION_KEY) para guardar cifrado el token y poder reenviarlo.
  */
 
 import crypto from "node:crypto";
@@ -34,7 +37,7 @@ import { getAdminClient, isSupabaseReady } from "./authRoutes.js";
 import { buildSupplierOrderEmail, normalizeItems } from "./supplierEmail.js";
 import { sendPushForNotification } from "./webPush.js";
 import { sendEmail } from "./emailService.js";
-import { flattenPlan, findPartida, WHOLE_PHASE } from "../src/utils/avanceObra.js";
+import { computeAvance, flattenPlan, findPartida, WHOLE_PHASE } from "../src/utils/avanceObra.js";
 import { contactName, generateWhatsAppAssignmentUrl, isWhatsAppCloudConfigured, sendWhatsAppCloud } from "./whatsapp.js";
 
 const MAX_JSON_BYTES = 256 * 1024;
@@ -377,6 +380,69 @@ async function handleSubNeed(req, res, token, parseMultipart) {
   });
 }
 
+// El token se guarda cifrado (AES-256-GCM) para poder reenviar el mismo enlace.
+// Sin clave en el servidor solo queda la huella y reenviar genera un enlace nuevo.
+function linkKey() {
+  const raw = String(process.env.LINK_ENCRYPTION_KEY || process.env.CERT_ENCRYPTION_KEY || "");
+  return raw.length >= 32 ? crypto.createHash("sha256").update(`obramaster-enlaces-sub:${raw}`).digest() : null;
+}
+
+export function sealToken(rawToken) {
+  const key = linkKey();
+  if (!key) return null;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const data = Buffer.concat([cipher.update(rawToken, "utf8"), cipher.final()]);
+  return `v1.${iv.toString("base64")}.${cipher.getAuthTag().toString("base64")}.${data.toString("base64")}`;
+}
+
+export function openToken(sealed) {
+  const key = linkKey();
+  const [version, iv, tag, data] = String(sealed || "").split(".");
+  if (!key || version !== "v1" || !data) return null;
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64"));
+    decipher.setAuthTag(Buffer.from(tag, "base64"));
+    const raw = Buffer.concat([decipher.update(Buffer.from(data, "base64")), decipher.final()]).toString("utf8");
+    return TOKEN_PATTERN.test(raw) ? raw : null;
+  } catch {
+    return null; // clave cambiada: se regenera al reenviar
+  }
+}
+
+const newRawToken = () => `tk_${crypto.randomBytes(24).toString("base64url")}`;
+const missingTokenEnc = (error) => /token_enc/.test(error?.message || "");
+const daysFromNow = (days) => new Date(Date.now() + Math.min(Math.max(Number(days) || 60, 1), 365) * 86400000).toISOString();
+const publicToken = ({ token_hash, token_enc, ...rest }) => rest;
+const tokenTaskKind = (t) => (String(t.task_ref || "").startsWith("fase:") || (t.fase_id && !t.partida_id) ? "fase" : "partida");
+
+/** URL, mensaje de WhatsApp y datos para el correo de un enlace (al crearlo y al reenviarlo). */
+async function linkPayload(req, row, rawToken, taskKind = tokenTaskKind(row)) {
+  const sub = row.subcontractor_id ? await getAppRecord("subcontractors", row.subcontractor_id) : null;
+  const url = `${publicBaseUrl(req)}/sub/${rawToken}`;
+  const contacto = contactName(sub?.personaContacto, row.subcontractor_name);
+  const wa = generateWhatsAppAssignmentUrl({
+    phone: row.phone || sub?.telefono,
+    project: row.obra_label || "",
+    task: row.task_label,
+    taskKind,
+    contact: contacto,
+    url
+  });
+  return {
+    ...publicToken(row),
+    url,
+    phone: wa.phone,
+    whatsappUrl: wa.url,
+    mensaje: wa.message,
+    whatsappCloud: isWhatsAppCloudConfigured(),
+    // Para "Enviar por correo" (plantilla subcontrata_enlace)
+    email: clip(sub?.email, 254) || "",
+    contacto,
+    task_kind: taskKind
+  };
+}
+
 /**
  * Crea un enlace mágico. Devuelve la fila (sin el token), la URL y el enlace de
  * WhatsApp con el mensaje escrito. `faseId`/`partidaId`/`assignmentId` lo centran
@@ -387,53 +453,170 @@ export async function createSubToken({ req, subcontractorId = null, name = "", p
   const subName = clip(name || sub?.nombreComercial || sub?.razonSocial, 200);
   if (!subName) throw httpError(400, "Indica la subcontrata.");
   const obra = obraId ? await getObra(obraId) : null;
-  const tel = clip(phone || sub?.telefono, 40);
-  const validDays = Math.min(Math.max(Number(days) || 60, 1), 365);
 
-  const rawToken = `tk_${crypto.randomBytes(24).toString("base64url")}`;
+  const rawToken = newRawToken();
   const row = {
     token_hash: hashToken(rawToken),
     subcontractor_id: subcontractorId,
     subcontractor_name: subName,
-    phone: tel,
+    phone: clip(phone || sub?.telefono, 40),
     obra_id: obraId,
     obra_label: obraLabel(obra, clip(obraLabelText, 200)),
     obra_address: clip(obra?.direccion, 300),
     task_ref: taskRef,
     task_label: clip(taskLabel, 200) || null,
-    expires_at: new Date(Date.now() + validDays * 86400000).toISOString(),
+    expires_at: daysFromNow(days),
     created_by: req?.user?.id || null
   };
   // Columnas de supabase_schema_avance_obra.sql: solo si el enlace va ligado a una asignación.
   if (faseId) Object.assign(row, { fase_id: faseId, partida_id: partidaId || "", assignment_id: assignmentId });
+  const sealed = sealToken(rawToken);
+  const insert = (values) => getAdminClient().from("subcontractor_tokens").insert(values).select("*").single();
+  let { data, error } = await insert(sealed ? { ...row, token_enc: sealed } : row);
+  // Sin supabase_migration_enlaces_reenvio.sql todavía: se guarda sin cifrar el token (no se podrá reenviar el mismo).
+  if (error && sealed && missingTokenEnc(error)) ({ data, error } = await insert(row));
+  if (error) throw new Error(error.message);
+  return linkPayload(req, data, rawToken, taskKind);
+}
+
+/**
+ * % certificado del trabajo de cada enlace (fase, partida u obra entera).
+ * El trabajo está finalizado cuando el jefe de obra lo ha validado al 100 %.
+ */
+async function tokensWorkPct(tokens) {
+  const admin = getAdminClient();
+  const byObra = new Map();
+  for (const t of tokens) if (t.obra_id && !t.revoked_at) byObra.set(t.obra_id, null);
+  await Promise.all([...byObra.keys()].map(async (obraId) => {
+    const [obra, progress] = await Promise.all([
+      getObra(obraId).catch(() => null),
+      admin.from("work_item_progress").select("*").eq("obra_id", obraId) // sin la tabla de avance: el % de la obra
+    ]);
+    byObra.set(obraId, obra ? computeAvance(obra, { progress: progress.error ? [] : progress.data || [] }) : null);
+  }));
+  return new Map(tokens.map((t) => {
+    const summary = byObra.get(t.obra_id);
+    if (!summary) return [t.id, null];
+    let faseId = t.fase_id || null;
+    let partidaId = t.partida_id || WHOLE_PHASE;
+    const [kind, refId] = String(t.task_ref || "").split(":");
+    if (!faseId && kind === "fase") faseId = refId;
+    if (!faseId && kind === "tarea") {
+      const fase = summary.fases.find((f) => f.partidas.some((p) => p.id === refId));
+      if (!fase) return [t.id, null];
+      faseId = fase.id;
+      partidaId = refId;
+    }
+    if (!faseId) return [t.id, summary.certified];
+    const fase = summary.fases.find((f) => f.id === String(faseId));
+    if (!fase) return [t.id, null];
+    if (!partidaId) return [t.id, fase.certified];
+    const partida = fase.partidas.find((p) => p.id === String(partidaId));
+    return [t.id, partida ? partida.certified : null];
+  }));
+}
+
+async function listTokens() {
   const { data, error } = await getAdminClient()
     .from("subcontractor_tokens")
-    .insert(row)
-    .select("id, subcontractor_name, obra_label, task_label, expires_at")
-    .single();
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
   if (error) throw new Error(error.message);
-
-  const url = `${publicBaseUrl(req)}/sub/${rawToken}`;
-  const wa = generateWhatsAppAssignmentUrl({
-    phone: tel,
-    project: data.obra_label || "",
-    task: data.task_label,
-    taskKind,
-    contact: contactName(sub?.personaContacto, subName),
-    url
+  const rows = data || [];
+  const pct = await tokensWorkPct(rows);
+  return rows.map((t) => {
+    const workPct = pct.get(t.id);
+    const finished = workPct !== null && workPct !== undefined && workPct >= 100;
+    return {
+      ...publicToken(t),
+      work_pct: workPct ?? null,
+      finished,
+      can_resend: !t.revoked_at && !finished,
+      same_link: Boolean(openToken(t.token_enc))
+    };
   });
+}
+
+/**
+ * Reenviar un enlace: el mismo si está guardado cifrado o uno nuevo en la misma
+ * fila (el anterior deja de funcionar). Si había caducado, se alarga.
+ */
+async function resendToken(req, token, days) {
+  if (token.revoked_at) throw httpError(409, "El enlace está anulado: crea uno nuevo.");
+  const [workPct] = (await tokensWorkPct([token])).values();
+  if (workPct !== null && workPct >= 100) throw httpError(409, "El trabajo ya está finalizado (certificado al 100 %): no hace falta reenviar el enlace.");
+  const admin = getAdminClient();
+  const update = {};
+  let rawToken = openToken(token.token_enc);
+  if (!rawToken) {
+    rawToken = newRawToken();
+    update.token_hash = hashToken(rawToken);
+    const sealed = sealToken(rawToken);
+    if (sealed && "token_enc" in token) update.token_enc = sealed;
+  }
+  if (new Date(token.expires_at) < new Date()) update.expires_at = daysFromNow(days);
+  let row = token;
+  if (Object.keys(update).length) {
+    const { data, error } = await admin.from("subcontractor_tokens").update(update).eq("id", token.id).select("*").single();
+    if (error) throw new Error(error.message);
+    row = data;
+  }
   return {
-    ...data,
-    url,
-    phone: wa.phone,
-    whatsappUrl: wa.url,
-    mensaje: wa.message,
-    whatsappCloud: isWhatsAppCloudConfigured(),
-    // Para "Enviar por correo" (plantilla subcontrata_enlace)
-    email: clip(sub?.email, 254) || "",
-    contacto: contactName(sub?.personaContacto, subName),
-    task_kind: taskKind
+    ...(await linkPayload(req, row, rawToken)),
+    work_pct: workPct ?? null,
+    regenerated: Boolean(update.token_hash),
+    extended: Boolean(update.expires_at)
   };
+}
+
+async function handleResendToken(req, res, id) {
+  const body = await readJson(req).catch(() => ({}));
+  const { data, error } = await getAdminClient().from("subcontractor_tokens").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw httpError(404, "Enlace no encontrado.");
+  sendJson(res, 200, await resendToken(req, data, body.days));
+}
+
+/** Enlace de una asignación de Avance de Obra: reenvía el último vigente o crea uno. */
+async function handleAssignmentLink(req, res, assignmentId) {
+  const body = await readJson(req).catch(() => ({}));
+  const admin = getAdminClient();
+  const { data: a, error } = await admin.from("work_assignments").select("*").eq("id", assignmentId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!a || a.assignee_type !== "subcontrata") throw httpError(404, "Asignación de subcontrata no encontrada.");
+  const { data: existing, error: tokenError } = await admin
+    .from("subcontractor_tokens")
+    .select("*")
+    .eq("assignment_id", assignmentId)
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (tokenError) throw new Error(tokenError.message);
+  if (existing?.length) {
+    sendJson(res, 200, await resendToken(req, existing[0], body.days));
+    return;
+  }
+  const obra = await getObra(a.obra_id);
+  const found = obra ? findPartida(flattenPlan(obra), a.fase_id, a.partida_id) : null;
+  if (!found) throw httpError(404, "La fase o partida de esta asignación ya no existe en la obra.");
+  const isFase = !a.partida_id;
+  const [workPct] = (await tokensWorkPct([{ id: a.id, obra_id: a.obra_id, fase_id: a.fase_id, partida_id: a.partida_id }])).values();
+  if (workPct !== null && workPct >= 100) throw httpError(409, "El trabajo ya está finalizado (certificado al 100 %).");
+  const link = await createSubToken({
+    req,
+    subcontractorId: a.subcontractor_id,
+    name: a.assignee_name,
+    obraId: String(a.obra_id),
+    taskRef: isFase ? `fase:${a.fase_id}` : `tarea:${a.partida_id}`,
+    taskLabel: isFase ? found.fase.nombre : `${found.partida.codigo} ${found.partida.titulo}`,
+    taskKind: isFase ? "fase" : "partida",
+    faseId: a.fase_id,
+    partidaId: a.partida_id || WHOLE_PHASE,
+    assignmentId: a.id,
+    days: body.days
+  });
+  sendJson(res, 201, { ...link, work_pct: workPct ?? null });
 }
 
 async function handleCreateToken(req, res) {
@@ -821,15 +1004,7 @@ export async function handleNotificationRoutes(req, res, pathname, query) {
   const m = (re) => pathname.match(re);
   const routes = [
     [/^\/api\/sub-tokens$/, {
-      GET: async () => {
-        const { data, error } = await getAdminClient()
-          .from("subcontractor_tokens")
-          .select("id, subcontractor_id, subcontractor_name, phone, obra_id, obra_label, task_label, expires_at, revoked_at, last_used_at, use_count, created_at")
-          .order("created_at", { ascending: false })
-          .limit(100);
-        if (error) throw new Error(error.message);
-        sendJson(res, 200, data || []);
-      },
+      GET: async () => sendJson(res, 200, await listTokens()),
       POST: () => handleCreateToken(req, res)
     }],
     [new RegExp(`^/api/sub-tokens/(${UUID})/revoke$`), { POST: async (id) => {
@@ -837,6 +1012,8 @@ export async function handleNotificationRoutes(req, res, pathname, query) {
       if (error) throw new Error(error.message);
       sendJson(res, 200, { ok: true });
     } }],
+    [new RegExp(`^/api/sub-tokens/(${UUID})/resend$`), { POST: (id) => handleResendToken(req, res, id) }],
+    [new RegExp(`^/api/sub-tokens/assignment/(${UUID})$`), { POST: (id) => handleAssignmentLink(req, res, id) }],
     [/^\/api\/whatsapp\/send$/, { POST: async () => {
       // Envío directo opcional (WhatsApp Business Cloud API). Sin configurar responde 503.
       const body = await readJson(req);
