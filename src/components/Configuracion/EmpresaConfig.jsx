@@ -12,7 +12,8 @@ import {
   Brain,
   Palette,
   Database,
-  BellRing
+  BellRing,
+  Mail
 } from 'lucide-react';
 import GestionUsuarios from './GestionUsuarios';
 import PerfilDirectorConfig from './PerfilDirectorConfig';
@@ -23,6 +24,7 @@ import FacturacionConfig from './FacturacionConfig';
 import AparienciaConfig from './AparienciaConfig';
 import DatosEjemploConfig from './DatosEjemploConfig';
 import NotificacionesConfig from './NotificacionesConfig';
+import CorreosConfig from './CorreosConfig';
 
 export default function EmpresaConfig() {
   const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification, facturacionActivada, demoDataCount } = useApp();
@@ -67,6 +69,7 @@ export default function EmpresaConfig() {
           { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
           { id: 'apariencia', label: 'Apariencia y Vistas', icon: Palette, badge: 'Nuevo' },
           { id: 'notificaciones', label: 'Notificaciones', icon: BellRing },
+          { id: 'correos', label: 'Correos y plantillas', icon: Mail },
           { id: 'datos_ejemplo', label: 'Datos de ejemplo', icon: Database, count: demoDataCount },
           { id: 'verifactu', label: 'Facturación (VeriFactu)', icon: ShieldCheck, badge: facturacionActivada ? 'Activada' : 'Desactivada' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
@@ -122,6 +125,8 @@ export default function EmpresaConfig() {
       {activeSubTab === 'apariencia' && <AparienciaConfig />}
 
       {activeSubTab === 'notificaciones' && <NotificacionesConfig />}
+
+      {activeSubTab === 'correos' && <CorreosConfig />}
 
       {activeSubTab === 'datos_ejemplo' && <DatosEjemploConfig />}
 

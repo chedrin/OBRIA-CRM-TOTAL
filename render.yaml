@@ -29,7 +29,7 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      # --- Pedidos a proveedores y enlaces de subcontratas (solo servidor) ---
+      # --- Correo (Resend, ver docs/correo-resend.md), pedidos y enlaces de subcontratas (solo servidor) ---
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM_EMAIL

@@ -4,6 +4,7 @@ import useNotify from '../Avisos/useNotify';
 import { useApp } from '../../context/AppContext';
 import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import { flattenPlan } from '../../utils/avanceObra';
+import EnviarEnlaceCorreo from '../Avisos/EnviarEnlaceCorreo';
 
 /**
  * Asignación rápida de ejecutores: una fase completa (se hereda en todas sus
@@ -116,6 +117,7 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} {sentByApi ? 'Enviado por la API' : 'Enviar por WhatsApp API'}
               </button>
             )}
+            <EnviarEnlaceCorreo link={link} />
           </div>
           {!link.phone && <p className="text-[11px] text-amber-300">La subcontrata no tiene un móvil válido: WhatsApp te dejará elegir el contacto.</p>}
           <div className="flex justify-end"><button type="button" onClick={onClose} className={btnGhost}>Hecho</button></div>
