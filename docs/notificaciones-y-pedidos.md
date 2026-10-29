@@ -67,7 +67,7 @@ nueva ──(Generar borrador)──> en_revision ──(Aprobar y enviar)──
 1. **Alta.** La necesidad entra con obra, tajo, categoría, líneas de material (`items`: material, cantidad, unidad), fecha límite y contacto en obra. Si viene de una subcontrata en texto libre, el texto se guarda como primera línea y se corrige en la pantalla de revisión antes de generar el borrador (más adelante, la IA ya integrada podría separar materiales y cantidades).
 2. **Borrador.** `POST /api/needs/<id>/order-draft` con `supplier_ids` (uno, o varios para comparar precios) y `kind` (`pedido` o `solicitud_presupuesto`). Crea una fila `material_orders` en estado `borrador` por proveedor con asunto (código de obra, dirección de entrega, URGENTE si procede), tabla de materiales, fecha límite y persona de contacto para la descarga, en HTML y en texto. La necesidad pasa a `en_revision`. No se envía nada.
 3. **Revisión.** El administrador edita asunto, cuerpo y destinatario con `PATCH /api/material-orders/<id>`.
-4. **Aprobar y enviar.** `POST /api/material-orders/<id>/send` envía con Resend desde el servidor (`RESEND_API_KEY`, sin prefijo `VITE_`), con `reply_to` al correo de la empresa para que el proveedor conteste a la oficina y una clave de idempotencia para no mandar dos veces el mismo pedido. El pedido pasa a `enviado` y la necesidad a `pedido_tramitado`. Si Resend falla, el pedido queda en `error` con el motivo y se puede reintentar.
+4. **Aprobar y enviar.** `POST /api/material-orders/<id>/send` envía con Resend desde el servidor (`backend/emailService.js`; el texto sale de la plantilla de Ajustes > Correos y plantillas) (`RESEND_API_KEY`, sin prefijo `VITE_`), con `reply_to` al correo de la empresa para que el proveedor conteste a la oficina y una clave de idempotencia para no mandar dos veces el mismo pedido. El pedido pasa a `enviado` y la necesidad a `pedido_tramitado`. Si Resend falla, el pedido queda en `error` con el motivo y se puede reintentar.
 5. **Proveedores.** Tabla `suppliers` con `categories` (fontanería, electricidad, áridos…) para proponer los habituales de cada partida.
 
 ## 5. Subcontratas sin app ni contraseña
@@ -83,6 +83,6 @@ Seguridad del enlace: caduca (60 días por defecto, configurable), se puede anul
 ## 6. Puesta en marcha
 
 1. Supabase > SQL Editor: ejecutar `supabase_schema_notificaciones.sql`.
-2. Render y `.env`: `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (con dominio verificado en Resend), `PUBLIC_APP_URL=https://obria-crm.onrender.com`, y las tres `VAPID_*` (generadas con `npx web-push generate-vapid-keys`).
+2. Render y `.env`: `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (con dominio verificado en Resend; pasos en `docs/correo-resend.md`), `PUBLIC_APP_URL=https://obria-crm.onrender.com`, y las tres `VAPID_*` (generadas con `npx web-push generate-vapid-keys`).
 3. En la app: Avisos y Pedidos > Proveedores (dar de alta los habituales con su correo y categorías) y pulsar "Activar avisos en este dispositivo" en el PC y en el móvil (en iPhone, con la app instalada en la pantalla de inicio).
 4. Probar: Enlaces a subcontratas > crear un enlace, abrirlo en el móvil y mandar una necesidad de material; debe saltar el aviso en el panel y llegar la notificación al móvil. Después: Necesidades y pedidos > Generar borrador > Aprobar y enviar pedido.

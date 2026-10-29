@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link2, Loader2, Copy, MessageCircle, Ban } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
+import EnviarEnlaceCorreo from './EnviarEnlaceCorreo';
 import { api, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 
 // Enlaces mágicos para subcontratas: se crean aquí y se mandan por WhatsApp con un toque.
@@ -104,6 +105,7 @@ export default function EnlacesPanel() {
               <button type="button" onClick={() => copy(result.url)} className={btnGhost}><Copy className="w-4 h-4" /> Copiar enlace</button>
               <button type="button" onClick={() => copy(result.mensaje)} className={btnGhost}><Copy className="w-4 h-4" /> Copiar mensaje</button>
             </div>
+            <EnviarEnlaceCorreo key={result.id} link={result} />
           </div>
         )}
       </form>

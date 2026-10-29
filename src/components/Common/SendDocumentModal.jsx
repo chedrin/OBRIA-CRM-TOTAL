@@ -13,11 +13,14 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
-  sendEmailDocument,
+  sendTemplateEmail,
   sendWhatsAppCloudMessage,
-  buildWhatsAppDirectUrl,
-  generateDocumentEmailHtml
+  buildWhatsAppDirectUrl
 } from '../../services/documentDispatchService';
+import { renderEmail } from '../../utils/emailTemplates';
+import { documentPdfAttachment } from '../../utils/documentPdf';
+
+const eur = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function SendDocumentModal({
   isOpen,
@@ -26,7 +29,7 @@ export default function SendDocumentModal({
   documentType = 'presupuesto',
   onSent
 }) {
-  const { empresaConfig, showNotification, addAuditLog, updatePresupuesto, updateFactura } = useApp();
+  const { empresaConfig, facturacion, facturas = [], showNotification, addAuditLog, updatePresupuesto, updateFactura } = useApp();
   const backdropRef = useRef(null);
 
   if (!isOpen || !document) return null;
@@ -64,6 +67,24 @@ export default function SendDocumentModal({
 
   const [customMsg, setCustomMsg] = useState(defaultMsg);
 
+  // Correo: sale de la plantilla de Ajustes > Correos y se puede retocar para este envío.
+  const emailVariables = {
+    cliente: docClient,
+    numero: docNumber,
+    obra: docTitle,
+    base: eur(baseImponible),
+    iva: eur(cuotaIva),
+    total: eur(totalConIva),
+    fecha: isInvoice ? (document.fechaEmision || '') : (document.fecha || ''),
+    vencimiento: document.fechaVencimiento || '',
+    iban: empresaConfig.iban || '',
+    enlace: ''
+  };
+  const [emailDraft] = useState(() => renderEmail(documentType, emailVariables, { templates: empresaConfig.plantillasCorreo, empresa: empresaConfig }));
+  const [emailAsunto, setEmailAsunto] = useState(emailDraft.subject);
+  const [emailCuerpo, setEmailCuerpo] = useState(emailDraft.text);
+  const [adjuntarPdf, setAdjuntarPdf] = useState(true);
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(signatureLink);
     setCopiedLink(true);
@@ -74,31 +95,20 @@ export default function SendDocumentModal({
   const handleSend = async () => {
     setIsSending(true);
 
-    const emailHtml = generateDocumentEmailHtml({
-      documentType,
-      documentNumber: docNumber,
-      documentTitle: docTitle,
-      clientName: docClient,
-      clientNif: document.nif || '',
-      totalAmount: totalConIva,
-      baseImponible,
-      cuotaIva,
-      ivaPct,
-      companyName: empresaConfig.nombreEmpresa || 'ObraMaster Construcción',
-      companyCif: empresaConfig.cif || 'B-84920184',
-      companyPhone: empresaConfig.telefono || '+34 910 234 567',
-      directorName: empresaConfig.directorNombre || 'Director de Obra',
-      actionUrl: signatureLink,
-      customNotes: 'Documento expedido formalmente por el departamento técnico.'
-    });
-
     try {
       if (channel === 'email' || channel === 'both') {
-        await sendEmailDocument({
+        const attachments = adjuntarPdf
+          ? [await documentPdfAttachment({ type: documentType, data: document, empresaConfig, facturacion, facturas })]
+          : undefined;
+        const sent = await sendTemplateEmail({
+          tipo: documentType === 'factura' ? 'factura' : 'presupuesto',
           to: email,
-          subject: `${typeLabel} Oficial ${docNumber} - ${docTitle} (${empresaConfig.nombreEmpresa || 'ObraMaster'})`,
-          html: emailHtml
+          variables: emailVariables,
+          asunto: emailAsunto,
+          cuerpo: emailCuerpo,
+          attachments
         });
+        if (sent.provider === 'simulated_smtp') showNotification(sent.message, 'warning');
       }
 
       if (channel === 'whatsapp' || channel === 'both') {
@@ -274,16 +284,40 @@ export default function SendDocumentModal({
           </button>
         </div>
 
+        {/* Correo (plantilla de Ajustes > Correos) */}
+        {channel !== 'whatsapp' && (
+          <div className="space-y-2 text-xs">
+            <label className="text-slate-400 block">Asunto del correo:</label>
+            <input
+              type="text"
+              value={emailAsunto}
+              onChange={(e) => setEmailAsunto(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-400"
+            />
+            <label className="text-slate-400 block">Texto del correo (plantilla de Ajustes &gt; Correos):</label>
+            <textarea
+              rows="6"
+              value={emailCuerpo}
+              onChange={(e) => setEmailCuerpo(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-400 font-sans"
+            ></textarea>
+            <label className="flex items-center gap-2 text-slate-300">
+              <input type="checkbox" checked={adjuntarPdf} onChange={(e) => setAdjuntarPdf(e.target.checked)} className="accent-emerald-500" />
+              Adjuntar el PDF ({docNumber}.pdf)
+            </label>
+          </div>
+        )}
+
         {/* Message preview */}
-        <div>
-          <label className="text-slate-400 text-xs block mb-1">Texto del Mensaje de Envío:</label>
+        {channel !== 'email' && <div>
+          <label className="text-slate-400 text-xs block mb-1">Texto del WhatsApp:</label>
           <textarea
             rows="3"
             value={customMsg}
             onChange={(e) => setCustomMsg(e.target.value)}
             className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-400 font-sans"
           ></textarea>
-        </div>
+        </div>}
 
         {/* Actions - Positioned bottom right as specified in AGENTS.md */}
         <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">

@@ -21,6 +21,7 @@ import { handleAvancePublicRoutes, handleAvanceRoutes } from "./avanceRoutes.js"
 import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
 import { handleDocumentRoutes } from "./documentRoutes.js";
+import { handleEmailRoutes } from "./emailRoutes.js";
 import { applySecurityHeaders, applyCors, readBodyLimited } from "./security.js";
 import { iniciarColaVerifactu } from "./verifactu/envio.js";
 
@@ -1154,6 +1155,8 @@ async function handleRequest(req, res) {
 
   // Envío de presupuestos y facturas por correo o WhatsApp (claves solo en el servidor)
   if (await handleDocumentRoutes(req, res, pathname)) return;
+  // Correo con plantillas de Ajustes > Correos (Resend)
+  if (await handleEmailRoutes(req, res, pathname)) return;
 
   // Endpoints GET
   if (req.method === "GET") {
