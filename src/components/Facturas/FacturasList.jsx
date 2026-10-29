@@ -442,7 +442,7 @@ export default function FacturasList() {
                     title="Enviar factura por email o WhatsApp"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Enviar</span>
+                    <span>Enviar al cliente</span>
                   </button>
 
                   {!fac.anulada && (!isCobrada ? (
