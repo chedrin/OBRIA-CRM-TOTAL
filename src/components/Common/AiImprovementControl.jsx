@@ -55,7 +55,7 @@ export default function AiImprovementControl({
         setImprovedResult(result);
         setShowComparison(true);
         confetti({ particleCount: 30, spread: 50, origin: { y: 0.7 } });
-        showNotification('✨ Texto mejorado con la IA activa e imitando las referencias.');
+        showNotification(`✨ Texto mejorado${result.latencyMs ? ` en ${(result.latencyMs / 1000).toFixed(1)} s` : ''}.`);
       } else {
         throw new Error('No se pudo generar la versión mejorada del texto.');
       }
