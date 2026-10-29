@@ -10,7 +10,8 @@ import {
   Sparkles,
   KeyRound,
   Brain,
-  Palette
+  Palette,
+  Database
 } from 'lucide-react';
 import GestionUsuarios from './GestionUsuarios';
 import PerfilDirectorConfig from './PerfilDirectorConfig';
@@ -19,9 +20,10 @@ import AiMemoryConfig from './AiMemoryConfig';
 import PresupuestosModeloConfig from './PresupuestosModeloConfig';
 import FacturacionConfig from './FacturacionConfig';
 import AparienciaConfig from './AparienciaConfig';
+import DatosEjemploConfig from './DatosEjemploConfig';
 
 export default function EmpresaConfig() {
-  const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification, facturacionActivada } = useApp();
+  const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification, facturacionActivada, demoDataCount } = useApp();
 
   const [form, setForm] = useState({ ...empresaConfig });
   const [activeSubTab, setActiveSubTab] = useState('perfil_director'); // perfil_director, motor_ia, presupuestos_modelo, usuarios, verifactu, ticketbai, sii_facturae, audit
@@ -62,6 +64,7 @@ export default function EmpresaConfig() {
           { id: 'presupuestos_modelo', label: 'Presupuestos Modelo (PDFs IA)', icon: FileText, badge: `${activeRefsCount} Activos` },
           { id: 'usuarios', label: 'Gestión de Usuarios y Accesos', icon: KeyRound, badge: 'RBAC' },
           { id: 'apariencia', label: 'Apariencia y Vistas', icon: Palette, badge: 'Nuevo' },
+          { id: 'datos_ejemplo', label: 'Datos de ejemplo', icon: Database, count: demoDataCount },
           { id: 'verifactu', label: 'Facturación (VeriFactu)', icon: ShieldCheck, badge: facturacionActivada ? 'Activada' : 'Desactivada' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
           { id: 'sii_facturae', label: 'SII & Facturae B2B', icon: FileSpreadsheet },
@@ -114,6 +117,8 @@ export default function EmpresaConfig() {
       {activeSubTab === 'usuarios' && <GestionUsuarios />}
 
       {activeSubTab === 'apariencia' && <AparienciaConfig />}
+
+      {activeSubTab === 'datos_ejemplo' && <DatosEjemploConfig />}
 
       {/* TAB 2: FACTURACIÓN LEGAL (VERIFACTU) */}
       {activeSubTab === 'verifactu' && <FacturacionConfig />}

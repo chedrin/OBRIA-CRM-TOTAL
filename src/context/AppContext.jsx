@@ -523,6 +523,55 @@ export function AppProvider({ children }) {
     setAuditLogs(prev => [newLog, ...prev]);
   };
 
+  // Datos de ejemplo (src/data/initialData.js) para probar o enseñar todos los módulos.
+  // Se añaden solo los registros cuyo id no existe, así nunca se pisa nada real; se guardan en Supabase como cualquier cambio.
+  const demoSets = [
+    { label: 'obras', list: INITIAL_OBRAS, value: obras, set: setObras },
+    { label: 'presupuestos', list: INITIAL_PRESUPUESTOS, value: presupuestos, set: setPresupuestos },
+    { label: 'obreros', list: INITIAL_OBREROS, value: obreros, set: setObreros },
+    { label: 'precios', list: INITIAL_BASE_PRECIOS, value: basePrecios, set: setBasePrecios },
+    { label: 'facturas', list: INITIAL_FACTURAS, value: facturas, set: setFacturas },
+    { label: 'facturas de proveedores', list: INITIAL_FACTURAS_PROVEEDORES, value: facturasProveedores, set: setFacturasProveedores },
+    { label: 'mensajes', list: INITIAL_MENSAJES_INBOX, value: mensajesInbox, set: setMensajesInbox },
+    { label: 'presupuestos de subcontratas', list: INITIAL_SUBCONTRATAS_PRESUPUESTOS, value: subcontratasPresupuestos, set: setSubcontratasPresupuestos },
+    { label: 'empleados', list: INITIAL_EMPLOYEES, value: employees, set: setEmployees },
+    { label: 'subcontratas', list: INITIAL_SUBCONTRACTORS, value: subcontractors, set: setSubcontractors },
+    { label: 'avisos', list: INITIAL_AVISOS_TECNICOS, value: avisosTecnicos, set: setAvisosTecnicos },
+    { label: 'presupuestos modelo', list: INITIAL_REFERENCE_BUDGETS, value: referenceBudgets, set: setReferenceBudgets }
+  ];
+  const demoIds = (list) => new Set(list.map(r => String(r.id)));
+  const demoDataCount = demoSets.reduce((n, d) => {
+    const ids = demoIds(d.list);
+    return n + (d.value || []).filter(r => ids.has(String(r.id))).length;
+  }, 0);
+  const demoDataTotal = demoSets.reduce((n, d) => n + d.list.length, 0);
+
+  const cargarDatosEjemplo = () => {
+    if (currentUser?.role !== 'admin') return;
+    // Las obras de ejemplo enlazan con sus presupuestos: se ajustan como al arrancar (solo las de ejemplo).
+    const allPres = [...presupuestos, ...INITIAL_PRESUPUESTOS.filter(p => !presupuestos.some(x => String(x.id) === String(p.id)))];
+    let added = 0;
+    demoSets.forEach(d => {
+      const have = new Set((d.value || []).map(r => String(r.id)));
+      let missing = d.list.filter(r => !have.has(String(r.id)));
+      if (d.set === setObras) missing = repairAndSyncObrasWithBudgets(missing, allPres);
+      added += missing.length;
+      if (missing.length) d.set(prev => [...(prev || []), ...missing]);
+    });
+    addAuditLog('DATOS_EJEMPLO_CARGADOS', `${added} registros`);
+    showNotification(added ? `Datos de ejemplo cargados: ${added} registros nuevos.` : 'Los datos de ejemplo ya estaban cargados.');
+  };
+
+  const quitarDatosEjemplo = () => {
+    if (currentUser?.role !== 'admin') return;
+    demoSets.forEach(d => {
+      const ids = demoIds(d.list);
+      d.set(prev => (prev || []).filter(r => !ids.has(String(r.id))));
+    });
+    addAuditLog('DATOS_EJEMPLO_QUITADOS', `${demoDataCount} registros`);
+    showNotification(`Datos de ejemplo quitados: ${demoDataCount} registros.`);
+  };
+
   const showNotification = (msg, type = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 4000);
@@ -2187,6 +2236,10 @@ export function AppProvider({ children }) {
       updateEmpresaConfig,
       auditLogs,
       addAuditLog,
+      cargarDatosEjemplo,
+      quitarDatosEjemplo,
+      demoDataCount,
+      demoDataTotal,
       obras,
       setObras,
       addObra,
