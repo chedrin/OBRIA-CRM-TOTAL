@@ -100,7 +100,8 @@ function readJsonBody(req, maxBytes = 512 * 1024) {
 function dbError(error) {
   const text = String(error?.message || error || "");
   if (["42P01", "42703", "PGRST205", "PGRST202", "PGRST204"].includes(error?.code) || /does not exist|schema cache/i.test(text)) {
-    return httpError(503, "Falta actualizar la base de datos: ejecuta supabase_schema_facturacion.sql en Supabase > SQL Editor.");
+    // Se añade el detalle (qué tabla o columna falta) para poder diagnosticarlo sin acceso a los logs.
+    return httpError(503, `Falta actualizar la base de datos: ejecuta supabase_schema_facturacion.sql en Supabase > SQL Editor. Detalle: ${text.slice(0, 200)}`);
   }
   if (error?.code === "P0001" || error?.code === "23514" || error?.code === "23505") return httpError(400, text);
   return httpError(500, `Error de la base de datos: ${text}`);
