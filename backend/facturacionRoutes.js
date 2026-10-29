@@ -389,13 +389,22 @@ const handlers = {
     const current = await findCompany(user);
 
     // Envío a la AEAT y paso a producción: solo con certificado y declaración responsable completa.
-    const quiereEnvio = body.envioAeatActivo === true;
+    // Sin certificado o sin productor se guardan igualmente los datos fiscales (el certificado se sube
+    // después de guardarlos) y el envío queda desactivado con un aviso; el paso a producción sí se bloquea.
+    let quiereEnvio = body.envioAeatActivo === true;
     const quiereProduccion = body.verifactuEntorno === "produccion";
+    let aviso = null;
     if ((quiereEnvio && !current?.envio_aeat_activo) || (quiereProduccion && current?.verifactu_entorno !== "produccion")) {
       const productor = datosProductor();
-      if (!productor.completo) throw httpError(409, `Faltan los datos del productor del software en el servidor (${productor.faltan.join(", ")}).`);
       const cert = current ? await estadoCertificado(db, current.id) : null;
-      if (!cert || cert.error) throw httpError(409, "Sube primero el certificado electrónico de la empresa.");
+      const falta = !productor.completo
+        ? `faltan los datos del productor del software en el servidor (${productor.faltan.join(", ")})`
+        : (!cert || cert.error) ? "falta subir el certificado electrónico de la empresa" : null;
+      if (falta && quiereProduccion && current?.verifactu_entorno !== "produccion") throw httpError(409, `No se puede pasar a producción: ${falta}.`);
+      if (falta) {
+        quiereEnvio = false;
+        aviso = `Datos guardados, pero el envío a la AEAT sigue desactivado: ${falta}.`;
+      }
     }
     if (quiereProduccion && current?.verifactu_entorno !== "produccion") {
       if (body.confirmarProduccion !== true) throw httpError(400, "Confirma el paso a producción: desde ese momento las facturas son reales y se envían a la AEAT.");
@@ -450,7 +459,7 @@ const handlers = {
       await audit(company.id, user?.id, company.envio_aeat_activo ? "ENVIO_AEAT_ACTIVADO" : "ENVIO_AEAT_DESACTIVADO", { entorno: company.verifactu_entorno });
     }
     if (current) await audit(company.id, user?.id, "EMPRESA_ACTUALIZADA", { nif: company.nif });
-    return { empresa: await empresaCompleta(company) };
+    return { empresa: await empresaCompleta(company), ...(aviso ? { aviso } : {}) };
   },
 
   async subirCertificado({ req, user }) {

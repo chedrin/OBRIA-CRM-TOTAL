@@ -92,7 +92,8 @@ export default function FacturacionConfig() {
       return false;
     }
     await recargarFacturacion();
-    return true;
+    // El servidor guarda los datos aunque falte el certificado y lo avisa (devuelve el texto del aviso).
+    return result.data?.aviso || true;
   };
 
   const handleSave = async (e) => {
@@ -104,7 +105,9 @@ export default function FacturacionConfig() {
       );
       if (!ok) return;
     }
-    if (await guardar()) showNotification(form.facturacionActivada ? 'Facturación guardada.' : 'Datos guardados. La facturación está desactivada.');
+    const guardado = await guardar();
+    if (typeof guardado === 'string') showNotification(guardado, 'error');
+    else if (guardado) showNotification(form.facturacionActivada ? 'Facturación guardada.' : 'Datos guardados. La facturación está desactivada.');
   };
 
   const handleProduccion = async () => {
@@ -380,7 +383,7 @@ export default function FacturacionConfig() {
             </div>
             <div className="flex gap-2">
               <button type="submit" disabled={!cert.file || subiendo} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs">
-                {subiendo ? 'Subiendo…' : 'Subir certificado'}
+                {subiendo ? 'Subiendo…' : cert.file ? 'Subir certificado' : 'Elige primero el archivo'}
               </button>
               {certificado?.origen === 'empresa' && !enProduccion && (
                 <button type="button" onClick={handleQuitarCertificado} className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs">Quitar</button>
