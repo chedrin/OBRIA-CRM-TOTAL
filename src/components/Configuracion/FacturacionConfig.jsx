@@ -116,6 +116,13 @@ export default function FacturacionConfig() {
       '· A partir de ese momento deja de emitir facturas en tu programa anterior.\n\n¿Pasar a producción?'
     );
     if (!ok) return;
+    // Segunda confirmación: hay que escribir la palabra para que no se pase por un clic despistado.
+    const escrito = window.prompt('Segunda confirmación. Este paso no se puede deshacer.\n\nEscribe PRODUCCION para continuar:');
+    if (escrito === null) return;
+    if (escrito.trim().toUpperCase() !== 'PRODUCCION') {
+      showNotification('No se ha pasado a producción: el texto no coincide.');
+      return;
+    }
     if (await guardar({ verifactuEntorno: 'produccion', envioAeatActivo: true, confirmarProduccion: true })) {
       showNotification('Facturación en producción: las facturas ya son reales y se envían a la AEAT.');
     }
