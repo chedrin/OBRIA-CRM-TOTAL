@@ -31,6 +31,7 @@ const USER_FRIENDLY_AI_ERROR = "No ha sido posible conectar con la IA. Revise la
 const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
 const GEMINI_FALLBACK_CASCADE = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-3.1-pro-preview"];
 const GEMINI_MODELS_CACHE_MS = 60 * 60 * 1000;
+const FAST_AI_TIMEOUT_MS = 20000;
 const geminiModelsCache = new Map();
 
 // Error de IA con mensaje amable y el motivo técnico aparte (sin claves) para mostrarlo y diagnosticar.
@@ -360,7 +361,11 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
     throw aiError("Falta la clave GEMINI_API_KEY.");
   }
 
-  const modelsToTry = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL);
+  // En modo rápido solo se prueban 2 modelos, una vuelta y con tiempo máximo: si Gemini no contesta pronto,
+  // se pasa al siguiente proveedor en vez de encadenar esperas.
+  const allModels = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL);
+  const modelsToTry = fast ? allModels.slice(0, 2) : allModels;
+  const signalFor = () => (fast ? AbortSignal.timeout(FAST_AI_TIMEOUT_MS) : undefined);
 
   const baseUrl = `https://generativelanguage.googleapis.com/v1beta`;
   const bodyPayload = {
@@ -379,7 +384,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
   let busyModels = [];
 
   // Segunda vuelta solo para los modelos saturados (429/500/503), tras una pausa breve.
-  for (let round = 0; round < 2; round++) {
+  for (let round = 0; round < (fast ? 1 : 2); round++) {
     const roundModels = round === 0 ? modelsToTry : busyModels;
     if (!roundModels.length) break;
     if (round > 0) await new Promise(r => setTimeout(r, 2500));
@@ -391,7 +396,8 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
         const post = (payload) => fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: signalFor()
         });
         const thinkingConfig = fast ? geminiFastThinking(targetModel) : null;
         let response = await post(thinkingConfig
@@ -757,23 +763,29 @@ async function callActiveProvider({ config, systemInstruction, userPrompt, tempe
   });
 
   const failures = [];
+  // Modo rápido: si un proveedor no contesta a tiempo, se prueba el siguiente.
+  const limit = (promise) => !fast ? promise : Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`sin respuesta en ${FAST_AI_TIMEOUT_MS / 1000} s`)), FAST_AI_TIMEOUT_MS * 2))
+  ]);
   for (const { provider, apiKey } of attempts) {
     const model = modelForProvider(config, provider);
+    const startedAt = Date.now();
     try {
       if (provider === "openai" || provider === "openrouter") {
         const call = provider === "openai" ? callOpenAiProvider : callOpenRouterProvider;
-        return await call({
+        return await limit(call({
           apiKey, model, temperature, maxTokens,
           messages: [{ role: "system", content: systemInstruction }, { role: "user", content: attachments.length ? openAiContent(userPrompt, attachments) : userPrompt }]
-        });
+        }));
       }
       if (provider === "anthropic") {
-        return await callAnthropicProvider({
+        return await limit(callAnthropicProvider({
           apiKey, model, systemPrompt: systemInstruction, userPrompt, temperature, maxTokens,
           userContent: attachments.length ? anthropicContent(userPrompt, attachments) : null
-        });
+        }));
       }
-      return await callGeminiProvider({
+      return await limit(callGeminiProvider({
         apiKey,
         model,
         contents: [{ role: "user", parts: [{ text: userPrompt }, ...attachments, ...geminiParts] }],
@@ -781,10 +793,10 @@ async function callActiveProvider({ config, systemInstruction, userPrompt, tempe
         temperature,
         maxTokens,
         fast
-      });
+      }));
     } catch (err) {
       failures.push(`${provider} (${keyTail(apiKey)}): ${explainAiFailure(provider, err.detail || err.message)}`);
-      console.warn(`[IA] Falló ${provider}, probando el siguiente proveedor.`, err.detail || err.message);
+      console.warn(`[IA] Falló ${provider} tras ${Date.now() - startedAt} ms, probando el siguiente proveedor.`, err.detail || err.message);
     }
   }
   if (candidates.length === 1) {
@@ -1229,6 +1241,7 @@ async function handleRequest(req, res) {
         const refBudgetsText = buildReferenceBudgetsText((refBudgets || []).filter(r => r && !r.ai_reviewed_at), { max: 3, chars: 2500 });
 
         const memoryContext = await buildMemoryContext("texto");
+        const memoryMs = Math.round(performance.now() - startTime);
 
         const systemInstruction = `
 Eres un Ingeniero Técnico de Edificación y Jefe de Obra experto de "ObraMaster".
@@ -1262,6 +1275,7 @@ ${textToImprove.trim()}
         });
 
         const elapsedMs = Math.round(performance.now() - startTime);
+        console.log(`[IA] Mejorar texto: ${elapsedMs} ms en total (memoria ${memoryMs} ms, prompt ${systemInstruction.length + userPrompt.length} caracteres)`);
         let parsed = {};
         try {
           parsed = JSON.parse(cleanJsonOutput(rawOutput));
