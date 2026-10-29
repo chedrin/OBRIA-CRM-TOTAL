@@ -13,7 +13,8 @@ import {
   Calendar,
   Euro,
   FileText,
-  Plus
+  Plus,
+  ChevronDown
 } from 'lucide-react';
 
 // Tarjeta entera clicable y accesible con teclado (Enter / espacio).
@@ -108,6 +109,14 @@ export default function Dashboard() {
   const daysRemaining = endingObra?.fechaFinEstimada
     ? Math.max(0, Math.round((new Date(endingObra.fechaFinEstimada) - new Date()) / 86400000))
     : 12;
+
+  // Calendario de fin de todas las obras no finalizadas, de la más próxima a la más lejana (sin fecha, al final).
+  const finDeObra = (o) => o.fechaFinEstimada || o.fechaEntregaCliente || '';
+  const obrasPendientes = obras
+    .filter(o => o.estado !== 'finalizada')
+    .sort((a, b) => (finDeObra(a) || '9999').localeCompare(finDeObra(b) || '9999'));
+  const ESTADO_OBRA = { en_curso: 'En curso', presupuestada: 'Presupuestada', pausada: 'Pausada' };
+  const diasHasta = (fecha) => Math.round((new Date(fecha) - new Date(new Date().toDateString())) / 86400000);
 
   return (
     <div className="space-y-6">
@@ -260,6 +269,41 @@ export default function Dashboard() {
               </div>
             ) : (
               <p className="text-xs text-slate-400">Sin obras en ejecución. Cuando haya alguna, aquí verás cuál termina antes para liberar equipo.</p>
+            )}
+            {obrasPendientes.length > 0 && (
+              <details className="group rounded-xl border border-slate-800 bg-slate-950 text-[11px]">
+                <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2 px-3 py-2 text-slate-300 hover:text-white">
+                  <span className="font-semibold">Fin de todas las obras pendientes ({obrasPendientes.length})</span>
+                  <ChevronDown className="w-3.5 h-3.5 shrink-0 transition group-open:rotate-180" />
+                </summary>
+                <ul className="border-t border-slate-800 divide-y divide-slate-800 max-h-64 overflow-y-auto">
+                  {obrasPendientes.map((o) => {
+                    const fin = finDeObra(o);
+                    const dias = fin ? diasHasta(fin) : null;
+                    return (
+                      <li key={o.id}>
+                        <div
+                          {...clickable(() => handleOpenObra(o.id))}
+                          className="cursor-pointer flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-800/60 transition"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium text-white truncate">{o.titulo}</p>
+                            <p className="text-slate-500">{ESTADO_OBRA[o.estado] || o.estado}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-slate-300 tabular-nums">{fin ? new Date(fin).toLocaleDateString('es-ES') : 'Sin fecha'}</p>
+                            {dias !== null && (
+                              <p className={`tabular-nums font-semibold ${dias < 0 ? 'text-red-400' : dias <= 15 ? 'text-amber-400' : 'text-slate-500'}`}>
+                                {dias < 0 ? `Retrasada ${-dias} d` : dias === 0 ? 'Hoy' : `En ${dias} d`}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
             )}
           </Widget>
 
