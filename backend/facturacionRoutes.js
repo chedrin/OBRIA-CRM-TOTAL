@@ -252,15 +252,29 @@ function toAppCompany(company, ajustes, extra = {}) {
   };
 }
 
-async function contarRegistros(companyId, entorno) {
+/**
+ * Registros con algo pendiente (sin enviar, rechazados o aceptados con errores). Solo cuenta el
+ * último registro de cada factura: un alta rechazada que después se subsanó o se anuló ya está cerrada.
+ */
+async function registrosAbiertos(companyId, entorno) {
   const db = getAdminClient();
-  const contar = async (estado) => {
-    const { count, error } = await db.from("verifactu_records").select("id", { count: "exact", head: true })
-      .eq("company_id", companyId).eq("entorno", entorno).eq("estado_envio", estado);
-    if (error) throw dbError(error);
-    return count || 0;
-  };
-  return { pendientes: await contar("pendiente"), rechazados: await contar("rechazado"), conErrores: await contar("aceptado_con_errores") };
+  const problemas = await run(db.from("verifactu_records")
+    .select("id, invoice_id, tipo_registro, num_serie, estado_envio, codigo_error, descripcion_error, intentos, ultimo_intento_at")
+    .eq("company_id", companyId).eq("entorno", entorno)
+    .in("estado_envio", ["pendiente", "rechazado", "aceptado_con_errores"])
+    .order("id", { ascending: false }).limit(500));
+  if (!problemas.length) return [];
+  const facturas = [...new Set(problemas.map((r) => r.invoice_id))];
+  const todos = await run(db.from("verifactu_records").select("id, invoice_id").in("invoice_id", facturas));
+  const ultimo = new Map();
+  for (const r of todos) if (!ultimo.has(r.invoice_id) || r.id > ultimo.get(r.invoice_id)) ultimo.set(r.invoice_id, r.id);
+  return problemas.filter((r) => ultimo.get(r.invoice_id) === r.id);
+}
+
+async function contarRegistros(companyId, entorno) {
+  const abiertos = await registrosAbiertos(companyId, entorno);
+  const contar = (estado) => abiertos.filter((r) => r.estado_envio === estado).length;
+  return { pendientes: contar("pendiente"), rechazados: contar("rechazado"), conErrores: contar("aceptado_con_errores") };
 }
 
 async function empresaCompleta(company) {
@@ -498,12 +512,8 @@ const handlers = {
     const company = await requireCompany(user);
     const db = getAdminClient();
     const envios = await run(db.from("verifactu_envios").select("*").eq("company_id", company.id).order("id", { ascending: false }).limit(20));
-    const problemas = await run(db.from("verifactu_records")
-      .select("id, invoice_id, tipo_registro, num_serie, estado_envio, codigo_error, descripcion_error, intentos, ultimo_intento_at")
-      .eq("company_id", company.id).eq("entorno", company.verifactu_entorno)
-      .in("estado_envio", ["pendiente", "rechazado", "aceptado_con_errores"])
-      .order("id", { ascending: false }).limit(100));
-    return { envios, registros: problemas };
+    const problemas = await registrosAbiertos(company.id, company.verifactu_entorno);
+    return { envios, registros: problemas.slice(0, 100) };
   },
 
   async enviar({ user }) {
