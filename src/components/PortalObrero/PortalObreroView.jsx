@@ -131,7 +131,7 @@ export default function PortalObreroView() {
   const [photoNote, setPhotoNote] = useState('');
 
   // Voice note state
-  const [voiceText, setVoiceText] = useState('Manuel, ya hemos colocado el suelo porcelánico del pasillo y mañana empezamos con el baño suite.');
+  const [voiceText, setVoiceText] = useState('');
 
   const currentObra = obras.find(o => o.id === activeObraId) || obras[0];
 
