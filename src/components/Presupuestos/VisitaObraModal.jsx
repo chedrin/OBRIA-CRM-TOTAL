@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import {
   Sparkles,
@@ -457,12 +458,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
               const pct = Math.min(97, Math.max(stepFloor, Math.round(95 * (1 - Math.exp(-elapsedSec / 50)))));
               return (
                 <div className="w-full max-w-lg space-y-1.5">
-                  <div className="h-3 w-full rounded-full bg-slate-800 overflow-hidden border border-slate-700">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-orange-400 transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
+                  <BarraProgreso valor={pct} alto="h-6" color="bg-gradient-to-r from-amber-500 to-orange-400" className="border border-slate-700" />
                   <div className="flex justify-between text-[11px] font-mono text-slate-400">
                     <span>{pct}%</span>
                     <span>{elapsedSec}s · puede tardar 1-2 minutos</span>

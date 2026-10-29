@@ -1,4 +1,5 @@
 import React from 'react';
+import BarraProgreso from './Common/BarraProgreso';
 import { useApp } from '../context/AppContext';
 import EmptyState from './Common/EmptyState';
 import {
@@ -213,14 +214,7 @@ export default function Dashboard() {
                       <span>Progreso global</span>
                       <span className="font-bold text-slate-200">{pct}% completado</span>
                     </div>
-                    <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          pct === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      ></div>
-                    </div>
+                    <BarraProgreso valor={pct} alto="h-5" color={pct === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'} />
                   </div>
 
                   {/* Financials & Quick Tags */}

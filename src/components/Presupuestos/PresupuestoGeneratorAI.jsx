@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import BotonVolver from '../Common/BotonVolver';
+import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import {
   Sparkles,
@@ -273,12 +275,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
             <BookOpen className="w-4 h-4" />
             <span>Presupuestos Modelo ({referenceBudgets?.filter(b => b.is_active).length || 0} activos)</span>
           </button>
-          <button
-            onClick={onCancel}
-            className="text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3.5 py-2 rounded-xl transition w-fit"
-          >
-            Volver a Presupuestos
-          </button>
+          <BotonVolver onClick={onCancel}>Volver a Presupuestos</BotonVolver>
         </div>
       </div>
 
@@ -323,12 +320,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                   </span>
                   <span>{progressPct}%</span>
                 </div>
-                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-amber-500 transition-all duration-300"
-                    style={{ width: `${progressPct}%` }}
-                  ></div>
-                </div>
+                <BarraProgreso valor={progressPct} alto="h-4" color="bg-amber-500" />
               </div>
             )}
           </div>
@@ -515,9 +507,7 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
                   <span>{progressStatus}</span>
                   <span>{progressPct}%</span>
                 </div>
-                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${progressPct}%` }}></div>
-                </div>
+                <BarraProgreso valor={progressPct} alto="h-4" color="bg-amber-500" />
               </div>
             )}
           </div>

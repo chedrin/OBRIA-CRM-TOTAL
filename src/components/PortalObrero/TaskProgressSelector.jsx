@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BarraProgreso from '../Common/BarraProgreso';
 import { Clock } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -84,18 +85,19 @@ export default function TaskProgressSelector({
       </div>
 
       {/* Mini Progress Bar Line */}
-      <div className="w-full bg-slate-900 border border-slate-800 h-1.5 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-300 ${
-            optimisticProgress === 100
-              ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
-              : optimisticProgress > 0
-              ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
-              : 'bg-transparent'
-          }`}
-          style={{ width: `${optimisticProgress}%` }}
-        ></div>
-      </div>
+      <BarraProgreso
+        valor={optimisticProgress}
+        alto="h-3"
+        fondo="bg-slate-900"
+        className="border border-slate-800"
+        color={
+          optimisticProgress === 100
+            ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
+            : optimisticProgress > 0
+            ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
+            : 'bg-transparent'
+        }
+      />
 
       {/* Botonera Táctil Rápida */}
       <div className="grid grid-cols-5 gap-1 pt-1">

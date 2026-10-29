@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import {
   Users,
@@ -969,14 +970,7 @@ export default function ObrerosList() {
                       <span>Vacaciones Anuales:</span>
                       <span className="font-bold text-white">{usedVac} / {totalVac} días consumidos</span>
                     </div>
-                    <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          pctUsed > 80 ? 'bg-amber-400' : 'bg-blue-500'
-                        }`}
-                        style={{ width: `${pctUsed}%` }}
-                      ></div>
-                    </div>
+                    <BarraProgreso valor={pctUsed} alto="h-5" color={pctUsed > 80 ? 'bg-amber-400' : 'bg-blue-500'} />
                     <div className="flex justify-between text-[11px] text-slate-400">
                       <span>Saldo disponible: <strong className="text-emerald-400">{pendingVac} días</strong></span>
                       <span>{pctUsed}% gastado</span>
@@ -1147,12 +1141,7 @@ export default function ObrerosList() {
                         <span className="text-slate-400">Calidad Acabados:</span>
                         <span className="font-bold text-white font-mono">{Number(crit.calidadAcabados || 5).toFixed(1)} / 5.0</span>
                       </div>
-                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.calidadAcabados || 5)}`}
-                          style={{ width: `${Math.min(100, Math.max(0, ((crit.calidadAcabados || 5) / 5) * 100))}%` }}
-                        />
-                      </div>
+                      <BarraProgreso valor={((crit.calidadAcabados || 5) / 5) * 100} alto="h-3" color={barColor(crit.calidadAcabados || 5)} />
                     </div>
 
                     <div>
@@ -1160,12 +1149,7 @@ export default function ObrerosList() {
                         <span className="text-slate-400">Puntualidad Plazos:</span>
                         <span className="font-bold text-white font-mono">{Number(crit.puntualidadPlazos || 5).toFixed(1)} / 5.0</span>
                       </div>
-                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.puntualidadPlazos || 5)}`}
-                          style={{ width: `${Math.min(100, Math.max(0, ((crit.puntualidadPlazos || 5) / 5) * 100))}%` }}
-                        />
-                      </div>
+                      <BarraProgreso valor={((crit.puntualidadPlazos || 5) / 5) * 100} alto="h-3" color={barColor(crit.puntualidadPlazos || 5)} />
                     </div>
 
                     <div>
@@ -1173,12 +1157,7 @@ export default function ObrerosList() {
                         <span className="text-slate-400">Limpieza y Seguridad:</span>
                         <span className="font-bold text-white font-mono">{Number(crit.limpiezaSeguridad || 5).toFixed(1)} / 5.0</span>
                       </div>
-                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.limpiezaSeguridad || 5)}`}
-                          style={{ width: `${Math.min(100, Math.max(0, ((crit.limpiezaSeguridad || 5) / 5) * 100))}%` }}
-                        />
-                      </div>
+                      <BarraProgreso valor={((crit.limpiezaSeguridad || 5) / 5) * 100} alto="h-3" color={barColor(crit.limpiezaSeguridad || 5)} />
                     </div>
 
                     <div>
@@ -1186,12 +1165,7 @@ export default function ObrerosList() {
                         <span className="text-slate-400">Autonomía y Resolución:</span>
                         <span className="font-bold text-white font-mono">{Number(crit.autonomiaProblemas || 5).toFixed(1)} / 5.0</span>
                       </div>
-                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${barColor(crit.autonomiaProblemas || 5)}`}
-                          style={{ width: `${Math.min(100, Math.max(0, ((crit.autonomiaProblemas || 5) / 5) * 100))}%` }}
-                        />
-                      </div>
+                      <BarraProgreso valor={((crit.autonomiaProblemas || 5) / 5) * 100} alto="h-3" color={barColor(crit.autonomiaProblemas || 5)} />
                     </div>
                   </div>
 

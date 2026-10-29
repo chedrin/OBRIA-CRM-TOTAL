@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { ArrowLeft, CheckCircle2, Loader2, Flag } from 'lucide-react';
+import BotonVolver from '../Common/BotonVolver';
+import BarraProgreso from '../Common/BarraProgreso';
+import { CheckCircle2, Loader2, Flag } from 'lucide-react';
 import { STATUS } from '../../utils/avanceObra';
 import { PhotoPicker, DictadoButton } from './mobileKit';
 
@@ -70,9 +72,7 @@ export default function ReporteAvanceSheet({ partida, onSubmit, onClose }) {
 
   return (
     <div className="space-y-5">
-      <button type="button" onClick={onClose} className="flex items-center gap-1 text-slate-400 text-sm">
-        <ArrowLeft className="w-4 h-4" /> Volver a mis partidas
-      </button>
+      <BotonVolver onClick={onClose}>Volver a mis partidas</BotonVolver>
 
       <div>
         <span className="text-xs font-mono font-bold text-amber-400">{partida.codigo}</span>
@@ -153,9 +153,7 @@ export function PartidaCard({ partida, onOpen }) {
         </div>
         <span className="text-xl font-black tabular-nums">{partida.reported}%</span>
       </div>
-      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${partida.reported >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${partida.reported}%` }} />
-      </div>
+      <BarraProgreso valor={partida.reported} alto="h-4" color={partida.reported >= 100 ? 'bg-emerald-500' : 'bg-amber-500'} />
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className={`px-2 py-0.5 rounded-lg border font-semibold ${st.cls}`}>{st.label}</span>
         {partida.readyForCertification && <span className="px-2 py-0.5 rounded-lg border font-semibold bg-emerald-500/15 text-emerald-300 border-emerald-500/30">Lista para certificar</span>}
