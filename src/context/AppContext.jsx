@@ -40,6 +40,7 @@ import {
   calculatePhaseWeightedProgress,
   repairAndSyncObrasWithBudgets
 } from '../services/obraBudgetSyncService';
+import { conRevision, datosNuevaAceptacion, presupuestoVigente } from '../utils/presupuestoRevision';
 import {
   INITIAL_REFERENCE_BUDGETS,
   SAMPLE_REFERENCE_BUDGET_IDS,
@@ -105,7 +106,7 @@ export function AppProvider({ children }) {
   const [obras, setObras] = useState(() => {
     const rawObras = loadStored(STORAGE_KEYS.OBRAS, INITIAL_OBRAS);
     const rawPres = loadStored(STORAGE_KEYS.PRESUPUESTOS, INITIAL_PRESUPUESTOS);
-    return repairAndSyncObrasWithBudgets(rawObras, rawPres);
+    return repairAndSyncObrasWithBudgets(rawObras, (rawPres || []).map(presupuestoVigente));
   });
   const [facturas, setFacturas] = useState(() => loadStored(STORAGE_KEYS.FACTURAS, INITIAL_FACTURAS));
   const [facturasProveedores, setFacturasProveedores] = useState(() => loadStored(STORAGE_KEYS.FACTURAS_PROV, INITIAL_FACTURAS_PROVEEDORES));
@@ -1174,7 +1175,9 @@ export function AppProvider({ children }) {
     const targetQuote = presupuestos.find(p => p.id === quoteId);
     if (!targetQuote) return null;
 
-    const updatedQuote = await applyVoiceCommandToQuote(targetQuote, commandText, empresaConfig.aiConfig);
+    const refinedQuote = await applyVoiceCommandToQuote(targetQuote, commandText, empresaConfig.aiConfig);
+    // Si ya estaba aprobado, el ajuste por IA también lo deja "Revisado".
+    const updatedQuote = { ...refinedQuote, ...conRevision(targetQuote, {}) };
     setPresupuestos(prev => prev.map(p => p.id === quoteId ? updatedQuote : p));
     addAuditLog('REFINADO_VOZ_IA', `Presupuesto: ${targetQuote.numero} - Comando: "${commandText}"`);
     showNotification(`✨ Ajuste por voz aplicado: ${updatedQuote._lastChangelog || 'Presupuesto recalculado.'}`);
@@ -1221,28 +1224,14 @@ export function AppProvider({ children }) {
   const updatePresupuesto = (id, updates) => {
     setPresupuestos(prev => prev.map(p => {
       if (p.id === id) {
-        const newPres = { ...p, ...updates };
+        const tocaContenido = !updates.estado && ('partidas' in updates || 'capitulos' in updates);
+        let newPres = { ...p, ...(tocaContenido ? conRevision(p, updates) : updates) };
+        const esAceptacion = updates.estado === 'aceptado' || updates.estado === 'firmado';
+        // Aceptar un presupuesto revisado cuenta como su nueva aceptación.
+        if (esAceptacion && p.pendienteNuevaAceptacion) newPres = { ...newPres, ...datosNuevaAceptacion(p) };
 
-        if (updates.estado === 'aceptado' || updates.estado === 'firmado') {
-          const canonicalFases = generateExecutionPlanFromBudget(newPres);
-          const canonicalProgreso = calculateGlobalProjectProgress(canonicalFases);
-
-          setObras(prevObras => prevObras.map(o => {
-            if (o.id === newPres.obraId || o.presupuestoId === newPres.id) {
-              return {
-                ...o,
-                presupuestoId: newPres.id,
-                presupuestoTotal: newPres.totalConIva || newPres.baseImponible,
-                fases: canonicalFases,
-                progreso: canonicalProgreso,
-                _syncSourceOfTruth: {
-                  presupuestoNumero: newPres.numero,
-                  syncedAt: new Date().toISOString()
-                }
-              };
-            }
-            return o;
-          }));
+        if (esAceptacion) {
+          syncObraConPresupuesto(newPres);
         }
 
         return newPres;
@@ -1250,6 +1239,44 @@ export function AppProvider({ children }) {
       return p;
     }));
     showNotification('Presupuesto actualizado y sincronizado');
+  };
+
+  // Reescribe las fases de la obra vinculada con el presupuesto aceptado, conservando avances y responsables.
+  const syncObraConPresupuesto = (pres) => {
+    setObras(prevObras => prevObras.map(o => {
+      if (o.id === pres.obraId || o.presupuestoId === pres.id) {
+        const canonicalFases = generateExecutionPlanFromBudget(pres, o.fases || []);
+        return {
+                ...o,
+                presupuestoId: pres.id,
+                presupuestoTotal: pres.totalConIva || pres.baseImponible,
+                fases: canonicalFases,
+                progreso: calculateGlobalProjectProgress(canonicalFases),
+                _syncSourceOfTruth: {
+                  presupuestoNumero: pres.numero,
+                  syncedAt: new Date().toISOString()
+                }
+              };
+      }
+      return o;
+    }));
+  };
+
+  // Edición de contenido (cabecera, capítulos, partidas). Sin aviso: se llama al escribir.
+  // Si el presupuesto ya estaba aprobado queda "Revisado" y pendiente de nueva aceptación.
+  const editarPresupuesto = (id, updates) => {
+    setPresupuestos(prev => prev.map(p => (p.id === id ? { ...p, ...conRevision(p, updates) } : p)));
+  };
+
+  // El cliente acepta la versión revisada: la obra pasa a seguir esta versión.
+  const registrarNuevaAceptacion = (id) => {
+    const pres = presupuestos.find(p => p.id === id);
+    if (!pres?.pendienteNuevaAceptacion) return;
+    const aceptado = { ...pres, ...datosNuevaAceptacion(pres) };
+    setPresupuestos(prev => prev.map(p => (p.id === id ? aceptado : p)));
+    if (['aceptado', 'firmado', 'facturado'].includes(aceptado.estado)) syncObraConPresupuesto(aceptado);
+    addAuditLog('PRESUPUESTO_NUEVA_ACEPTACION', `Presupuesto ${pres.numero} (revisión ${pres.revisionNumero || 1}) aceptado de nuevo por ${pres.cliente}`);
+    showNotification(`Nueva aceptación registrada: ${pres.numero} revisión ${pres.revisionNumero || 1}.`);
   };
 
   // Con la facturación activada, toda factura se emite en el servidor (número + VeriFactu).
@@ -2178,6 +2205,8 @@ export function AppProvider({ children }) {
       setPresupuestos,
       addPresupuesto,
       updatePresupuesto,
+      editarPresupuesto,
+      registrarNuevaAceptacion,
       convertPresupuestoToFactura,
       rectificarFactura,
       anularFactura,

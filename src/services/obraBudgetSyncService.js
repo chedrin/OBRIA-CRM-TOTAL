@@ -41,6 +41,9 @@ export function generateExecutionPlanFromBudget(presupuesto, existingFases = [])
       f.nombre?.toLowerCase().includes(capituloName.toLowerCase()) ||
       capituloName.toLowerCase().includes(f.nombre?.toLowerCase() || '') ||
       f.capitulo === capituloName
+    ) || existingFases.find(f =>
+      // Capítulo renombrado en una revisión del presupuesto: se reconoce por sus partidas.
+      (f.tareas || []).some(t => items.some(it => it.id && (t.quote_line_id === it.id || t.partidaId === it.id)))
     );
 
     const faseId = existingFase?.id || `fase-${capituloName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${faseIndex}`;
