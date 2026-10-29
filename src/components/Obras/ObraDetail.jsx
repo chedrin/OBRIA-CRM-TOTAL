@@ -29,6 +29,7 @@ import {
 import TaskProgressSelector from '../PortalObrero/TaskProgressSelector';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
+import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 
 export default function ObraDetail({ obraId, onBack }) {
   const {
@@ -187,52 +188,27 @@ export default function ObraDetail({ obraId, onBack }) {
   // New Price Item State for Modal / Inline Add
   const [showNewPriceModal, setShowNewPriceModal] = useState(false);
   const [editingPriceItem, setEditingPriceItem] = useState(null);
-  const [priceForm, setPriceForm] = useState({
-    codigo: '',
-    concepto: '',
-    capitulo: 'Albañilería',
-    gremio: 'Albañilería',
-    unidad: 'm²',
-    costeSubcontrata: 15.00,
-    margenPct: 30,
-    precioVenta: 19.50
-  });
 
   const handleOpenEditPrice = (item) => {
     setEditingPriceItem(item);
-    setPriceForm({
-      codigo: item.codigo,
-      concepto: item.concepto,
-      capitulo: item.capitulo || 'Albañilería',
-      gremio: item.gremio || 'Albañilería',
-      unidad: item.unidad || 'm²',
-      costeSubcontrata: item.costeSubcontrata || 0,
-      margenPct: item.margenPct || 30,
-      precioVenta: item.precioVenta || 0
-    });
     setShowNewPriceModal(true);
   };
 
-  const handleSavePriceItem = (e) => {
-    e.preventDefault();
+  const handleSavePriceItem = (partida) => {
     if (editingPriceItem) {
-      updateObraBasePrecioItem(obra.id, editingPriceItem.id, priceForm);
+      updateObraBasePrecioItem(obra.id, editingPriceItem.id, partida);
     } else {
-      addObraBasePrecioItem(obra.id, priceForm);
+      addObraBasePrecioItem(obra.id, partida);
     }
     setShowNewPriceModal(false);
     setEditingPriceItem(null);
-    setPriceForm({
-      codigo: '',
-      concepto: '',
-      capitulo: 'Albañilería',
-      gremio: 'Albañilería',
-      unidad: 'm²',
-      costeSubcontrata: 15.00,
-      margenPct: 30,
-      precioVenta: 19.50
-    });
   };
+
+  const handleDeletePriceItem = (item) => {
+    if (!window.confirm(`¿Eliminar la partida ${item.codigo} del catálogo de esta obra?`)) return;
+    deleteObraBasePrecioItem(obra.id, item.id);
+  };
+
 
   const handleToggleFase = (faseId) => {
     const updatedFases = (obra.fases || []).map(f => {
@@ -1148,16 +1124,6 @@ export default function ObraDetail({ obraId, onBack }) {
             <button
               onClick={() => {
                 setEditingPriceItem(null);
-                setPriceForm({
-                  codigo: `PAR-${catalogList.length + 1}`,
-                  concepto: '',
-                  capitulo: 'Albañilería',
-                  gremio: 'Albañilería',
-                  unidad: 'm²',
-                  costeSubcontrata: 15.00,
-                  margenPct: 30,
-                  precioVenta: 19.50
-                });
                 setShowNewPriceModal(true);
               }}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow"
@@ -1169,7 +1135,7 @@ export default function ObraDetail({ obraId, onBack }) {
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs sm:text-sm text-slate-300">
+              <table className="w-full min-w-[820px] text-left text-xs sm:text-sm text-slate-300">
                 <thead className="bg-slate-950/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
                     <th className="py-3 px-4">Código</th>
@@ -1186,7 +1152,7 @@ export default function ObraDetail({ obraId, onBack }) {
                     <tr key={item.id} className="hover:bg-slate-800/40 transition">
                       <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.codigo}</td>
                       <td className="py-3 px-4">
-                        <span className="font-semibold text-white block">{item.concepto}</span>
+                        <span className="font-semibold text-white block whitespace-pre-line break-words">{item.concepto}</span>
                         <span className="text-[10px] text-slate-400">{item.capitulo} · {item.gremio}</span>
                       </td>
                       <td className="py-3 px-4 text-slate-300">{item.unidad}</td>
@@ -1197,13 +1163,13 @@ export default function ObraDetail({ obraId, onBack }) {
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() => handleOpenEditPrice(item)}
-                            title="Editar concepto o margen"
+                            title="Editar partida"
                             className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg transition"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => deleteObraBasePrecioItem(obra.id, item.id)}
+                            onClick={() => handleDeletePriceItem(item)}
                             title="Eliminar partida"
                             className="p-1.5 bg-slate-800 hover:bg-rose-900/40 text-rose-400 rounded-lg transition"
                           >
@@ -1529,146 +1495,14 @@ export default function ObraDetail({ obraId, onBack }) {
 
       {/* Modal Editar / Añadir Partida de Catálogo de la Obra */}
       {showNewPriceModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
-            <h3 className="text-lg font-bold text-white">
-              {editingPriceItem ? 'Editar Partida de Precios' : 'Nueva Partida en Catálogo de Obra'}
-            </h3>
-            <form onSubmit={handleSavePriceItem} className="space-y-3 text-xs sm:text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 block mb-1">Código</label>
-                  <input
-                    type="text"
-                    required
-                    value={priceForm.codigo}
-                    onChange={(e) => setPriceForm({ ...priceForm, codigo: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Unidad (m², ud, ml, etc.)</label>
-                  <input
-                    type="text"
-                    required
-                    value={priceForm.unidad}
-                    onChange={(e) => setPriceForm({ ...priceForm, unidad: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1">Concepto / Descripción Partida</label>
-                <textarea
-                  rows="2"
-                  required
-                  value={priceForm.concepto}
-                  onChange={(e) => setPriceForm({ ...priceForm, concepto: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
-                ></textarea>
-                <div className="mt-2">
-                  <AiImprovementControl
-                    value={priceForm.concepto}
-                    onAccept={(improved) => setPriceForm({ ...priceForm, concepto: improved })}
-                    context="Descripción de partida de presupuesto"
-                    buttonLabel="Mejorar Partida con IA"
-                    buttonSize="small"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 block mb-1">Capítulo</label>
-                  <input
-                    type="text"
-                    value={priceForm.capitulo}
-                    onChange={(e) => setPriceForm({ ...priceForm, capitulo: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Gremio</label>
-                  <input
-                    type="text"
-                    value={priceForm.gremio}
-                    onChange={(e) => setPriceForm({ ...priceForm, gremio: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <div>
-                  <label className="text-slate-400 block mb-1 text-[11px]">Coste Base (€)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={priceForm.costeSubcontrata}
-                    onChange={(e) => {
-                      const c = parseFloat(e.target.value) || 0;
-                      const m = parseFloat(priceForm.margenPct) || 0;
-                      setPriceForm({
-                        ...priceForm,
-                        costeSubcontrata: c,
-                        precioVenta: (c * (1 + m / 100)).toFixed(2)
-                      });
-                    }}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-amber-400 block mb-1 text-[11px] font-bold">Ganancia (%)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    required
-                    value={priceForm.margenPct}
-                    onChange={(e) => {
-                      const m = parseFloat(e.target.value) || 0;
-                      const c = parseFloat(priceForm.costeSubcontrata) || 0;
-                      setPriceForm({
-                        ...priceForm,
-                        margenPct: m,
-                        precioVenta: (c * (1 + m / 100)).toFixed(2)
-                      });
-                    }}
-                    className="w-full bg-slate-800 border border-amber-500/50 rounded-xl p-2 text-amber-300 font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-emerald-400 block mb-1 text-[11px] font-bold">PVP Final (€)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={priceForm.precioVenta}
-                    onChange={(e) => setPriceForm({ ...priceForm, precioVenta: e.target.value })}
-                    className="w-full bg-slate-800 border border-emerald-500/50 rounded-xl p-2 text-emerald-300 font-mono font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowNewPriceModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl"
-                >
-                  Guardar Partida
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <PartidaPrecioModal
+          initial={editingPriceItem || { codigo: `PAR-${catalogList.length + 1}` }}
+          isEditing={Boolean(editingPriceItem)}
+          title={editingPriceItem ? `Editar partida ${editingPriceItem.codigo}` : 'Nueva partida en el catálogo de la obra'}
+          catalogo={catalogList}
+          onSave={handleSavePriceItem}
+          onClose={() => { setShowNewPriceModal(false); setEditingPriceItem(null); }}
+        />
       )}
 
       {/* Modal Asignar Nueva Tarea (Realtime Dispatch) */}
