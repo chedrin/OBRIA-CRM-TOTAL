@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import BotonVolver from '../Common/BotonVolver';
+import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import {
-  ArrowLeft,
   Calendar,
   CheckCircle2,
   AlertTriangle,
@@ -168,7 +169,7 @@ export default function ObraDetail({ obraId, onBack }) {
     return (
       <div className="text-center py-12">
         <p className="text-slate-400">Obra no encontrada.</p>
-        <button onClick={onBack} className="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg">Volver</button>
+        <BotonVolver onClick={onBack} className="mt-4">Volver al listado de obras</BotonVolver>
       </div>
     );
   }
@@ -330,13 +331,7 @@ export default function ObraDetail({ obraId, onBack }) {
       
       {/* Top Header & Breadcrumb */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition w-fit"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Volver al listado de obras</span>
-        </button>
+        <BotonVolver onClick={onBack}>Volver al listado de obras</BotonVolver>
 
         <div className="flex items-center gap-2">
           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
@@ -424,12 +419,7 @@ export default function ObraDetail({ obraId, onBack }) {
             <span className="text-slate-400 font-medium">Avance de Ejecución de la Obra</span>
             <span className="text-amber-400 font-bold text-sm">{obra.progreso}%</span>
           </div>
-          <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-500"
-              style={{ width: `${obra.progreso}%` }}
-            ></div>
-          </div>
+          <BarraProgreso valor={obra.progreso} alto="h-6" />
           {(() => {
             const sched = calculateObraScheduling(obra, obras);
             const desv = sched.desviacionEntregaDias;
@@ -678,12 +668,12 @@ export default function ObraDetail({ obraId, onBack }) {
                     <div className="flex items-center gap-4 shrink-0 justify-between sm:justify-end">
                       <div className="text-right">
                         <div className="flex items-center gap-3">
-                          <div className="w-28 sm:w-36 bg-slate-800 h-2 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-300 ${isCompleted ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'}`}
-                              style={{ width: `${fase.progreso}%` }}
-                            ></div>
-                          </div>
+                          <BarraProgreso
+                            valor={fase.progreso}
+                            ancho="w-28 sm:w-36"
+                            alto="h-4"
+                            color={isCompleted ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'}
+                          />
                           <span className={`text-sm font-mono font-black w-12 text-right ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}`}>
                             {fase.progreso}%
                           </span>

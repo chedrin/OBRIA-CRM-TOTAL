@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BotonVolver from '../Common/BotonVolver';
 import { useApp } from '../../context/AppContext';
 import {
   Sparkles,
@@ -7,7 +8,6 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
-  ArrowLeft,
   Share2,
   Download,
   History,
@@ -66,7 +66,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
     return (
       <div className="p-8 text-center space-y-4">
         <p className="text-slate-400">Presupuesto no encontrado.</p>
-        <button onClick={onBack} className="px-4 py-2 bg-slate-800 text-white rounded-xl">Volver</button>
+        <BotonVolver onClick={onBack} className="mx-auto">Volver a Presupuestos</BotonVolver>
       </div>
     );
   }
@@ -246,13 +246,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack }) {
       {/* Top Navigation & Status Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-sm">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition"
-            title="Volver"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
+          <BotonVolver onClick={onBack}>Volver</BotonVolver>
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono font-bold bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30">

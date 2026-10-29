@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import ObraDetail from './ObraDetail';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
@@ -272,12 +273,7 @@ export default function ObrasList() {
                     <span>Avance</span>
                     <span className="font-bold text-white">{obra.progreso}%</span>
                   </div>
-                  <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${isFinalizada ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'}`}
-                      style={{ width: `${obra.progreso}%` }}
-                    ></div>
-                  </div>
+                  <BarraProgreso valor={obra.progreso} alto="h-4" color={isFinalizada ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'} />
                 </div>
 
                 {/* Planificación IA Card */}

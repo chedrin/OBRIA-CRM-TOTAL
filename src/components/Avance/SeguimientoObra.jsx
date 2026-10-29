@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLlenadoAnimado, RELLENO_ANIMADO } from '../Common/BarraProgreso';
 import {
   ChevronDown, Loader2, UserPlus, ShieldCheck, History, AlertTriangle, Package, Building2, X, Trash2, RefreshCw, Flag
 } from 'lucide-react';
@@ -23,10 +24,12 @@ const LOG_LABEL = {
 };
 
 function ProgressBars({ reported, certified, planned }) {
+  const reportedAnimado = useLlenadoAnimado(reported);
+  const certifiedAnimado = useLlenadoAnimado(certified);
   return (
-    <div className="relative w-full h-2.5 bg-slate-800 rounded-full overflow-hidden" title={`Reportado ${reported}% · Certificado ${certified}%${planned != null ? ` · Planificado ${planned}%` : ''}`}>
-      <div className="absolute inset-y-0 left-0 bg-amber-500/50 rounded-full transition-all" style={{ width: `${reported}%` }} />
-      <div className="absolute inset-y-0 left-0 bg-emerald-500 rounded-full transition-all" style={{ width: `${certified}%` }} />
+    <div className="relative w-full h-5 bg-slate-800 rounded-full overflow-hidden" title={`Reportado ${reported}% · Certificado ${certified}%${planned != null ? ` · Planificado ${planned}%` : ''}`}>
+      <div className={`absolute inset-y-0 left-0 bg-amber-500/50 ${RELLENO_ANIMADO}`} style={{ width: `${reportedAnimado}%` }} />
+      <div className={`absolute inset-y-0 left-0 bg-emerald-500 ${RELLENO_ANIMADO}`} style={{ width: `${certifiedAnimado}%` }} />
       {planned != null && <div className="absolute inset-y-0 w-0.5 bg-white" style={{ left: `calc(${planned}% - 1px)` }} />}
     </div>
   );

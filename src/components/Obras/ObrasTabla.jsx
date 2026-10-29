@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import BarraProgreso from '../Common/BarraProgreso';
 import { ArrowUpDown, ArrowUp, ArrowDown, Filter, X, ChevronRight } from 'lucide-react';
 
 const ESTADOS = {
@@ -134,9 +135,7 @@ export default function ObrasTabla({ obras, compact, onOpen }) {
                         case 'progreso': return (
                           <td key={col.id} className="px-3 py-3">
                             <div className="flex items-center justify-end gap-2">
-                              <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${obra.estado === 'finalizada' ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${obra.progreso || 0}%` }} />
-                              </div>
+                              <BarraProgreso valor={obra.progreso || 0} ancho="w-16" alto="h-3" color={obra.estado === 'finalizada' ? 'bg-emerald-500' : 'bg-amber-500'} />
                               <span className="tabular-nums font-semibold text-slate-300 w-8 text-right">{obra.progreso || 0}%</span>
                             </div>
                           </td>

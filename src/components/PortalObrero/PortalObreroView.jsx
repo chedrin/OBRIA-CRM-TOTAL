@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import EmptyState from '../Common/EmptyState';
 import {
@@ -586,12 +587,7 @@ export default function PortalObreroView() {
                 </div>
 
                 {/* Progress bar */}
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full transition-all duration-300"
-                    style={{ width: `${currentObra.progreso}%` }}
-                  ></div>
-                </div>
+                <BarraProgreso valor={currentObra.progreso} alto="h-4" />
               </div>
             )}
 
@@ -676,12 +672,12 @@ export default function PortalObreroView() {
                         </div>
 
                         {/* Phase Progress Bar */}
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-300 ${isCompleted ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'}`}
-                            style={{ width: `${fase.progreso}%` }}
-                          ></div>
-                        </div>
+                        <BarraProgreso
+                          valor={fase.progreso}
+                          alto="h-3"
+                          fondo="bg-slate-900"
+                          color={isCompleted ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'}
+                        />
 
                         {/* Indicación de plazo del operario: alimenta el fin de obra previsto */}
                         {!isCompleted && (

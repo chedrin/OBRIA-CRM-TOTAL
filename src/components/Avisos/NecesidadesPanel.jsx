@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, FileText, Loader2, ArrowLeft, Phone, CalendarClock, Image as ImageIcon } from 'lucide-react';
+import BotonVolver from '../Common/BotonVolver';
+import { Plus, Trash2, FileText, Loader2, Phone, CalendarClock, Image as ImageIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
 import { api, NEED_CATEGORIES, NEED_STATUS, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
@@ -139,7 +140,7 @@ function DetalleNecesidad({ need, suppliers, onBack, onNeedChange }) {
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-slate-400 hover:text-white flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Volver a la lista</button>
+      <BotonVolver onClick={onBack}>Volver a la lista</BotonVolver>
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-2">

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import BotonVolver from '../Common/BotonVolver';
 import {
-  CheckCircle2, AlertTriangle, Loader2, ArrowLeft, HardHat, Phone, ListChecks, Package, MapPin, CalendarClock, Gauge
+  CheckCircle2, AlertTriangle, Loader2, HardHat, Phone, ListChecks, Package, MapPin, CalendarClock, Gauge
 } from 'lucide-react';
 import { PhotoPicker } from '../Avance/mobileKit';
 import ReporteAvanceSheet, { PartidaCard } from '../Avance/ReporteAvanceSheet';
@@ -209,9 +210,7 @@ export default function SubcontrataPortal() {
   const avance = foco && foco.partidas.length ? Math.round(foco.partidas.reduce((s, p) => s + p.reported, 0) / foco.partidas.length) : null;
   const notasEncargado = foco ? [...new Set(foco.partidas.map((p) => p.notes).filter(Boolean))].join(' · ') : '';
   const back = (to = 'menu') => (
-    <button onClick={() => reset(to)} className="flex items-center gap-1 text-slate-400 text-sm mb-4">
-      <ArrowLeft className="w-4 h-4" /> Volver
-    </button>
+    <BotonVolver onClick={() => reset(to)} className="mb-4">Volver</BotonVolver>
   );
 
   const header = (
@@ -261,7 +260,7 @@ export default function SubcontrataPortal() {
         <div className="text-center space-y-4 mt-6">
           <CheckCircle2 className="w-16 h-16 text-emerald-400 mx-auto" />
           <p className="text-lg font-bold">{doneMessage}</p>
-          <button onClick={() => reset('menu')} className="text-amber-400 font-semibold underline">Volver al inicio</button>
+          <BotonVolver onClick={() => reset('menu')}>Volver al inicio</BotonVolver>
         </div>
       </>
     );
