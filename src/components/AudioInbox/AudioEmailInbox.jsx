@@ -1,17 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Mic,
   Mail,
   Sparkles,
   Play,
-  Square,
   Package,
   DollarSign,
   Volume2,
   Inbox
 } from 'lucide-react';
 import AudioEmailCaptureView from './AudioEmailCaptureView';
+import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
 
 export default function AudioEmailInbox() {
   const {
@@ -23,10 +23,6 @@ export default function AudioEmailInbox() {
 
   const [inboxViewMode, setInboxViewMode] = useState('multimodal_studio'); // 'multimodal_studio' | 'message_feed'
   const [activeTab, setActiveTab] = useState('todos'); // todos, audios, emails, procesados
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordSeconds, setRecordSeconds] = useState(0);
-  const timerRef = useRef(null);
-
   // New simulated input state
   const [newMode, setNewMode] = useState('quick_audio'); // quick_audio, mic, manual_email
   const [emailText, setEmailText] = useState('');
@@ -34,54 +30,11 @@ export default function AudioEmailInbox() {
   const [emailSubject, setEmailSubject] = useState('');
   const [targetObraId, setTargetObraId] = useState(obras[0]?.id || '');
 
-  // Live Canvas Waveform for recording
-  const canvasRef = useRef(null);
-  const animationFrameRef = useRef(null);
+  // Nota de voz real: se guarda exactamente lo transcrito, sin análisis inventado.
+  const [micTranscript, setMicTranscript] = useState('');
+  const [micResetKey, setMicResetKey] = useState(0);
 
-  useEffect(() => {
-    if (isRecording) {
-      let angle = 0;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-
-      const draw = () => {
-        angle += 0.15;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 3;
-
-        for (let x = 0; x < canvas.width; x++) {
-          const y = canvas.height / 2 + Math.sin(x * 0.05 + angle) * 16 * Math.sin(angle * 0.5 + x * 0.02);
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        animationFrameRef.current = requestAnimationFrame(draw);
-      };
-      draw();
-    } else {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    }
-    return () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    };
-  }, [isRecording]);
-
-  const startRecording = () => {
-    setIsRecording(true);
-    setRecordSeconds(0);
-    timerRef.current = setInterval(() => {
-      setRecordSeconds(s => s + 1);
-    }, 1000);
-  };
-
-  const stopRecording = (simulatedCase = null) => {
-    setIsRecording(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    // If simulated case chosen or mic recorded
+  const loadExampleAudio = (simulatedCase) => {
     let newMsg;
     if (simulatedCase === 'obrero_pladur') {
       newMsg = {
@@ -129,31 +82,27 @@ export default function AudioEmailInbox() {
         }
       };
     } else {
-      // General voice note recorded
-      newMsg = {
-        tipo: 'audio',
-        origen: 'Grabación de Voz en Directo',
-        remitente: 'Nota de Voz en Obra',
-        telefono: '+34 611 000 111',
-        obraId: targetObraId || obras[0]?.id,
-        obraTitulo: obras.find(o => o.id === targetObraId)?.titulo || obras[0]?.titulo,
-        audioDuracion: `0:${String(recordSeconds).padStart(2, '0')}`,
-        audioTranscripcion: 'Audio registrado: Revisión de estado de obra. Se requiere pedir mortero fino y coordinar revisión de fontanería antes de cerrar suelo.',
-        analisisIA: {
-          remitenteDetectado: 'Nota de Voz de Encargado',
-          obraDetectada: obras.find(o => o.id === targetObraId)?.titulo || obras[0]?.titulo,
-          urgencia: 'Normal',
-          necesidadesCalculadas: [
-            { concepto: 'Mortero fino de acabado gris', cantidad: 4, unidad: 'sacos', costeAprox: 32, pvpCliente: 45 },
-            { concepto: 'Revisión presión colectores fontanería', cantidad: 1, unidad: 'servicio', costeAprox: 0, pvpCliente: 0 }
-          ],
-          impactoPresupuesto: 45.00,
-          accionSugerida: 'Verificar albarán con proveedor y registrar en diario de obra.'
-        }
-      };
+      return;
     }
 
     addMensajeInbox(newMsg);
+  };
+
+  const handleSaveVoiceNote = () => {
+    const text = micTranscript.trim();
+    if (!text) return;
+    const obra = obras.find(o => o.id === targetObraId) || obras[0];
+    addMensajeInbox({
+      tipo: 'audio',
+      origen: 'Grabación de Voz en Directo',
+      remitente: 'Nota de Voz en Obra',
+      obraId: obra?.id,
+      obraTitulo: obra?.titulo,
+      audioTranscripcion: text,
+      analisisIA: null
+    });
+    setMicTranscript('');
+    setMicResetKey(k => k + 1);
   };
 
   const handleSendManualEmail = (e) => {
@@ -171,16 +120,8 @@ export default function AudioEmailInbox() {
       cuerpo: emailText,
       obraId: matchedObra.id,
       obraTitulo: matchedObra.titulo,
-      analisisIA: {
-        remitenteDetectado: 'Cliente',
-        obraDetectada: matchedObra.titulo,
-        urgencia: 'Media',
-        necesidadesCalculadas: [
-          { concepto: 'Modificación según solicitud de email: ' + emailSubject, cantidad: 1, unidad: 'partida', costeAprox: 150, pvpCliente: 210 }
-        ],
-        impactoPresupuesto: 210.00,
-        accionSugerida: 'Calcular medición exacta y responder al cliente con presupuesto adicional.'
-      }
+      // Sin análisis inventado: el correo se guarda tal cual.
+      analisisIA: null
     };
 
     addMensajeInbox(newMsg);
@@ -313,7 +254,7 @@ export default function AudioEmailInbox() {
                   "Manuel, nos faltan 5 placas de pladur hidrófugo verde y 2 rollos de cinta para cerrar el techo del salón..."
                 </p>
                 <button
-                  onClick={() => stopRecording('obrero_pladur')}
+                  onClick={() => loadExampleAudio('obrero_pladur')}
                   className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition"
                 >
                   <Play className="w-3.5 h-3.5 fill-slate-950" />
@@ -339,7 +280,7 @@ export default function AudioEmailInbox() {
                   "Hola Manuel, preferimos poner plato de ducha de resina pizarra blanca y grifería monomando cascada negro mate..."
                 </p>
                 <button
-                  onClick={() => stopRecording('cliente_griferia')}
+                  onClick={() => loadExampleAudio('cliente_griferia')}
                   className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition"
                 >
                   <Play className="w-3.5 h-3.5 fill-white" />
@@ -353,34 +294,21 @@ export default function AudioEmailInbox() {
 
         {/* MODE 2: LIVE MIC RECORDER */}
         {newMode === 'mic' && (
-          <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
-            {isRecording ? (
-              <div className="space-y-4 w-full max-w-md">
-                <div className="flex items-center justify-center gap-2 text-rose-500 animate-pulse font-bold text-sm">
-                  <span className="w-3 h-3 rounded-full bg-rose-500"></span>
-                  <span>Grabando audio de obra... {recordSeconds}s</span>
-                </div>
-                <canvas ref={canvasRef} width="400" height="60" className="w-full h-14 bg-slate-950 rounded-xl border border-slate-800"></canvas>
-                <button
-                  onClick={() => stopRecording()}
-                  className="px-6 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs sm:text-sm rounded-xl flex items-center gap-2 mx-auto shadow-lg shadow-rose-600/30"
-                >
-                  <Square className="w-4 h-4 fill-white" />
-                  <span>Detener y Analizar con IA</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <button
-                  onClick={startRecording}
-                  className="w-20 h-20 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 hover:scale-105 active:scale-95 transition flex items-center justify-center text-slate-950 shadow-xl shadow-amber-500/25 mx-auto"
-                >
-                  <Mic className="w-8 h-8 stroke-[2.2]" />
-                </button>
-                <p className="text-xs text-slate-300 font-medium">Pulsa el micrófono para dictar las necesidades de la obra o grabar al cliente</p>
-                <p className="text-[11px] text-slate-500">Dicta materiales que faltan, cambios de alicatado, rozas o peticiones</p>
-              </div>
-            )}
+          <div className="space-y-3">
+            <AudioVoiceRecorder
+              key={micResetKey}
+              title="Nota de voz de obra"
+              placeholder="Graba o sube el audio: aquí aparece exactamente lo que se dice. Revísalo y guárdalo en la bandeja."
+              onTranscriptChange={(text) => setMicTranscript(text || '')}
+            />
+            <button
+              onClick={handleSaveVoiceNote}
+              disabled={!micTranscript.trim()}
+              className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-bold text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 transition"
+            >
+              <Inbox className="w-4 h-4" />
+              <span>Guardar nota en la bandeja</span>
+            </button>
           </div>
         )}
 

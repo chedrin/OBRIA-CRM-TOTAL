@@ -94,7 +94,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   const [audioTranscript, setAudioTranscript] = useState('');
   const [audioRefinedText, setAudioRefinedText] = useState('');
   // Cambia cada vez que termina una transcripción: la IA mejora el texto sola.
-  const [autoImproveToken, setAutoImproveToken] = useState(null);
 
   // Anotaciones & WhatsApp / Email text
   const [complementaryText, setComplementaryText] = useState('');
@@ -820,15 +819,12 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                 <AudioVoiceRecorder
                   title="🎤 Grabación o Subida de Audio"
                   initialTranscript={audioTranscript}
-                  placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio': la explicación de la obra se transcribe aquí y la IA la mejora con su memoria y los presupuestos de referencia..."
+                  placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio': la explicación de la obra se transcribe aquí tal cual se dice. Si quieres, pulsa después 'Mejorar Transcripción con IA'..."
                   onTranscriptChange={(text, blob) => {
                     setAudioTranscript(text);
                     setAudioRefinedText('');
-                    if (blob) {
-                      setAudioFile(blob);
-                      // Transcripción terminada: la IA la mejora automáticamente
-                      if (text?.trim()) setAutoImproveToken(Date.now());
-                    }
+                    // Solo se transcribe: la mejora con IA se lanza a mano con su botón.
+                    if (blob) setAudioFile(blob);
                   }}
                 />
 
@@ -841,7 +837,6 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                     }}
                     context="Dictado de visita de obra para presupuesto: redáctalo como alcance técnico de los trabajos, ordenado por capítulos de obra, conservando todas las medidas, cantidades y calidades dictadas"
                     buttonLabel="Mejorar Transcripción con IA"
-                    autoRunToken={autoImproveToken}
                   />
                 </div>
               </div>

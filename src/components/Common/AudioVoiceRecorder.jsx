@@ -278,11 +278,15 @@ export default function AudioVoiceRecorder({
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        // Safari/iPhone graban en MP4: se etiqueta con el formato real para que la IA lo oiga bien.
+        const mimeType = (mediaRecorder.mimeType || 'audio/webm').split(';')[0];
+        const ext = /mp4|aac|m4a/.test(mimeType) ? 'm4a' : /ogg/.test(mimeType) ? 'ogg' : 'webm';
+        const fileName = `Grabacion_${new Date().toLocaleTimeString().replace(/:/g, '-')}.${ext}`;
+        const audioBlob = new File(audioChunksRef.current, fileName, { type: mimeType });
         const previewUrl = URL.createObjectURL(audioBlob);
         setAudioPreview({
           url: previewUrl,
-          name: `Grabacion_${new Date().toLocaleTimeString().replace(/:/g, '-')}.webm`,
+          name: fileName,
           size: `${(audioBlob.size / 1024).toFixed(1)} KB`
         });
         stopAudioTracks();
@@ -447,7 +451,7 @@ export default function AudioVoiceRecorder({
           </div>
           <div>
             <h4 className="text-xs sm:text-sm font-extrabold text-white leading-tight">{title}</h4>
-            <p className="text-[11px] text-slate-400">Captura por voz y normalización técnica</p>
+            <p className="text-[11px] text-slate-400">Transcripción literal de lo que se dice</p>
           </div>
         </div>
 

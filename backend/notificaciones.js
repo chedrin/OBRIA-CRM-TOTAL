@@ -28,13 +28,14 @@
  *   GET   /api/site-reports             Partes recibidos por enlace, con fotos firmadas.
  *   PATCH /api/site-reports/:id         { review_result: "aprobado" | "rechazado" }
  *
- * Variables de entorno (servidor): RESEND_API_KEY, RESEND_FROM_EMAIL, PUBLIC_APP_URL.
+ * Variables de entorno (servidor): RESEND_API_KEY, RESEND_FROM_EMAIL (ver emailService.js), PUBLIC_APP_URL.
  */
 
 import crypto from "node:crypto";
 import { getAdminClient, isSupabaseReady } from "./authRoutes.js";
 import { buildSupplierOrderEmail, normalizeItems } from "./supplierEmail.js";
 import { sendPushForNotification } from "./webPush.js";
+import { sendEmail } from "./emailService.js";
 import { flattenPlan, findPartida, WHOLE_PHASE } from "../src/utils/avanceObra.js";
 import { contactName, generateWhatsAppAssignmentUrl, isWhatsAppCloudConfigured, sendWhatsAppCloud } from "./whatsapp.js";
 
@@ -92,8 +93,8 @@ function readBuffer(req, limit) {
   });
 }
 
-export async function readJson(req) {
-  const buffer = await readBuffer(req, MAX_JSON_BYTES);
+export async function readJson(req, limit = MAX_JSON_BYTES) {
+  const buffer = await readBuffer(req, limit);
   if (buffer.length === 0) return {};
   try {
     return JSON.parse(buffer.toString("utf-8"));
@@ -423,7 +424,18 @@ export async function createSubToken({ req, subcontractorId = null, name = "", p
     contact: contactName(sub?.personaContacto, subName),
     url
   });
-  return { ...data, url, phone: wa.phone, whatsappUrl: wa.url, mensaje: wa.message, whatsappCloud: isWhatsAppCloudConfigured() };
+  return {
+    ...data,
+    url,
+    phone: wa.phone,
+    whatsappUrl: wa.url,
+    mensaje: wa.message,
+    whatsappCloud: isWhatsAppCloudConfigured(),
+    // Para "Enviar por correo" (plantilla subcontrata_enlace)
+    email: clip(sub?.email, 254) || "",
+    contacto: contactName(sub?.personaContacto, subName),
+    task_kind: taskKind
+  };
 }
 
 async function handleCreateToken(req, res) {
@@ -697,36 +709,26 @@ async function handleSendOrder(req, res, id) {
   sendJson(res, 200, await sendOrder(order, req.user?.id || null));
 }
 
-/** Envía un pedido en borrador por correo (Resend) y lo marca como enviado. */
+/** Envía un pedido en borrador por correo (emailService) y lo marca como enviado. */
 async function sendOrder(order, userId) {
-  const apiKey = process.env.RESEND_API_KEY || "";
-  if (!apiKey) throw httpError(503, "Falta RESEND_API_KEY en el servidor: no se puede enviar el correo.");
   const admin = getAdminClient();
   if (order.status !== "borrador" && order.status !== "error") throw httpError(409, "Este pedido ya se envió.");
   if (!EMAIL_LIST.test(order.to_email || "")) throw httpError(400, "Falta el correo del proveedor o no es válido.");
 
-  const empresa = await getEmpresa();
-  const from = process.env.RESEND_FROM_EMAIL || "ObraMaster <pedidos@obramaster.app>";
-  const payload = {
-    from,
-    to: splitEmails(order.to_email),
-    subject: order.subject,
-    html: order.body_html,
-    text: order.body_text
-  };
-  if (order.cc_email && EMAIL_LIST.test(order.cc_email)) payload.cc = splitEmails(order.cc_email);
-  if (empresa.email) payload.reply_to = empresa.email;
-
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": `order-${order.id}` },
-    body: JSON.stringify(payload)
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = clip(result?.message || result?.error || `HTTP ${response.status}`, 500);
-    await admin.from("material_orders").update({ status: "error", error: detail }).eq("id", order.id);
-    throw httpError(502, `El proveedor de correo rechazó el envío: ${detail}`);
+  let result;
+  try {
+    result = await sendEmail({
+      to: splitEmails(order.to_email),
+      cc: order.cc_email && EMAIL_LIST.test(order.cc_email) ? splitEmails(order.cc_email) : undefined,
+      subject: order.subject,
+      html: order.body_html,
+      text: order.body_text,
+      empresa: await getEmpresa(),
+      idempotencyKey: `order-${order.id}`
+    });
+  } catch (err) {
+    if (err.status === 502) await admin.from("material_orders").update({ status: "error", error: clip(err.message, 500) }).eq("id", order.id);
+    throw err;
   }
 
   const { data: sent } = await admin

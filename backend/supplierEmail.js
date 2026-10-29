@@ -3,15 +3,12 @@
  *
  * Función pura (sin red ni base de datos): recibe la necesidad de obra, la obra,
  * el proveedor y los datos de la empresa, y devuelve { subject, html, text, items }.
- * El administrador puede editar el resultado antes de enviarlo.
+ * El texto sale de la plantilla "pedido_material" o "solicitud_presupuesto" de
+ * Ajustes > Correos (src/utils/emailTemplates.js). El administrador puede editar
+ * el resultado antes de enviarlo.
  */
 
-const escapeHtml = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+import { renderEmail } from "../src/utils/emailTemplates.js";
 
 function formatDate(value) {
   if (!value) return "";
@@ -41,107 +38,38 @@ export function normalizeItems(items, fallbackDescription = "") {
  * @param {object} p
  * @param {object} p.need       Fila de worksite_needs.
  * @param {object} [p.obra]     Registro de la obra (app_records, colección "obras").
- * @param {object[]} [p.obras]  Varias obras, si el pedido es para más de una (la primera manda en la dirección).
- * @param {string} [p.notes]    Observaciones para el proveedor.
+ * @param {object[]} [p.obras]  Varias obras para un mismo pedido (se unen en {{obra}}).
  * @param {object} [p.supplier] Fila de suppliers.
- * @param {object} [p.empresa]  Configuración de la empresa (app_records, "empresa_config").
+ * @param {object} [p.empresa]  Configuración de la empresa (app_records, "empresa_config"),
+ *                              con las plantillas de Ajustes > Correos en plantillasCorreo.
+ * @param {string} [p.notes]    Observaciones del pedido.
  * @param {"pedido"|"solicitud_presupuesto"} [p.kind]
  */
-export function buildSupplierOrderEmail({ need, obra = {}, obras = [], supplier = {}, empresa = {}, kind = "pedido", notes = "" }) {
+export function buildSupplierOrderEmail({ need, obra = {}, obras = [], supplier = {}, empresa = {}, notes = "", kind = "pedido" }) {
   const items = normalizeItems(need.items, need.description);
-  const list = (obras.length ? obras : [obra]).filter(Boolean);
-  const several = list.length > 1;
-  const obraCode = list.map((o) => o.codigo).filter(Boolean).join(", ") || (several ? "" : need.obra_id || "");
-  const obraLine = list.map((o) => [o.codigo, o.titulo].filter(Boolean).join(" - ")).filter(Boolean).join(" / ") || need.obra_label || obraCode;
-  const address = need.delivery_address || list[0]?.direccion || "";
-  const observations = String(notes || "").trim();
-  const neededBy = formatDate(need.needed_by);
-  const contactName = need.site_contact_name || list[0]?.encargado || list[0]?.responsable || empresa.personaContacto || "";
-  const contactPhone = need.site_contact_phone || list[0]?.telefonoEncargado || empresa.telefono || "";
-  const companyName = empresa.nombreComercial || empresa.razonSocial || "ObraMaster";
-  const isQuote = kind === "solicitud_presupuesto";
+  const obraList = (Array.isArray(obras) && obras.length ? obras : [obra]).filter(Boolean);
+  const obraText = obraList
+    .map((o) => [o.codigo, o.titulo].filter(Boolean).join(" - "))
+    .filter(Boolean)
+    .join(" · ") || [need.obra_id, need.obra_label].filter(Boolean).join(" - ");
+  const address = need.delivery_address || obraList[0]?.direccion || "";
+  const first = obraList[0] || {};
+  const contactName = need.site_contact_name || first.encargado || first.responsable || empresa.personaContacto || "";
+  const contactPhone = need.site_contact_phone || first.telefonoEncargado || empresa.telefono || "";
 
-  const subjectParts = [
-    isQuote ? "Solicitud de presupuesto" : "Pedido de material",
-    obraCode && `${several ? "Obras" : "Obra"} ${obraCode}`,
-    address && `Entrega: ${address}`,
-    need.urgency === "urgente" && "URGENTE"
-  ].filter(Boolean);
-  const subject = subjectParts.join(" · ").slice(0, 250);
-
-  const greeting = supplier.contact_name ? `Hola ${supplier.contact_name},` : "Buenos días,";
-  const intro = isQuote
-    ? "Les pedimos precio y plazo de entrega para el siguiente material:"
-    : "Les hacemos el siguiente pedido de material para entregar en obra:";
-
-  const rowsText = items
-    .map((it) => `- ${it.material}${it.cantidad ? ` · ${it.cantidad}${it.unidad ? ` ${it.unidad}` : ""}` : ""}${it.notas ? ` (${it.notas})` : ""}`)
-    .join("\n");
-
-  const text = [
-    greeting,
-    "",
-    intro,
-    "",
-    rowsText,
-    "",
-    obraLine && `${several ? "Obras" : "Obra"}: ${obraLine}`,
-    address && `Dirección de entrega: ${address}`,
-    need.tajo && `Tajo / zona: ${need.tajo}`,
-    neededBy && `Fecha límite de entrega en obra: ${neededBy}`,
-    contactName && `Contacto en obra para la descarga: ${contactName}${contactPhone ? ` (${contactPhone})` : ""}`,
-    observations && `Observaciones: ${observations}`,
-    "",
-    isQuote
-      ? "Por favor, respondan a este correo con su oferta."
-      : "Por favor, confirmen disponibilidad y fecha de entrega respondiendo a este correo.",
-    "",
-    "Un saludo,",
-    companyName,
-    [empresa.telefono, empresa.email].filter(Boolean).join(" · ")
-  ]
-    .filter((line) => line !== false && line !== undefined && line !== null && line !== 0)
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n");
-
-  const td = 'style="padding:8px 10px;border-bottom:1px solid #e2e8f0;"';
-  const rowsHtml = items
-    .map(
-      (it) =>
-        `<tr><td ${td}>${escapeHtml(it.material)}${it.notas ? `<br><span style="color:#64748b;font-size:12px;">${escapeHtml(it.notas)}</span>` : ""}</td>` +
-        `<td ${td} align="right">${escapeHtml(it.cantidad)}</td><td ${td}>${escapeHtml(it.unidad)}</td></tr>`
-    )
-    .join("");
-
-  const infoRow = (label, value) =>
-    value
-      ? `<tr><td style="padding:4px 12px 4px 0;color:#64748b;white-space:nowrap;vertical-align:top;">${escapeHtml(label)}</td><td style="padding:4px 0;font-weight:600;">${escapeHtml(value)}</td></tr>`
-      : "";
-
-  const html = `<!doctype html>
-<html lang="es"><body style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
-<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;">
-  <h2 style="margin:0 0 4px;font-size:18px;">${escapeHtml(isQuote ? "Solicitud de presupuesto" : "Pedido de material")}${need.urgency === "urgente" ? ' <span style="color:#dc2626;">· URGENTE</span>' : ""}</h2>
-  <p style="margin:0 0 16px;color:#64748b;font-size:13px;">${escapeHtml(obraLine)}</p>
-  <p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>
-  <p style="margin:0 0 16px;">${escapeHtml(intro)}</p>
-  <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
-    <thead><tr style="background:#f1f5f9;text-align:left;">
-      <th style="padding:8px 10px;">Material</th><th style="padding:8px 10px;" align="right">Cantidad</th><th style="padding:8px 10px;">Unidad</th>
-    </tr></thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
-  <table cellspacing="0" cellpadding="0" style="font-size:14px;margin-bottom:20px;">
-    ${infoRow("Dirección de entrega", address)}
-    ${infoRow("Tajo / zona", need.tajo)}
-    ${infoRow("Entregar antes de", neededBy)}
-    ${infoRow("Contacto para la descarga", [contactName, contactPhone].filter(Boolean).join(" · "))}
-    ${infoRow("Observaciones", observations)}
-  </table>
-  <p style="margin:0 0 16px;">${escapeHtml(isQuote ? "Por favor, respondan a este correo con su oferta." : "Por favor, confirmen disponibilidad y fecha de entrega respondiendo a este correo.")}</p>
-  <p style="margin:0;">Un saludo,<br><strong>${escapeHtml(companyName)}</strong><br><span style="color:#64748b;font-size:13px;">${escapeHtml([empresa.telefono, empresa.email].filter(Boolean).join(" · "))}</span></p>
-</div>
-</body></html>`;
+  const tipo = kind === "solicitud_presupuesto" ? "solicitud_presupuesto" : "pedido_material";
+  const { subject, html, text } = renderEmail(tipo, {
+    saludo: supplier.contact_name ? `Hola ${supplier.contact_name},` : "Buenos días,",
+    proveedor: supplier.name || "",
+    obra: obraText,
+    direccion_entrega: address,
+    tajo: need.tajo || "",
+    fecha_entrega: formatDate(need.needed_by),
+    contacto_obra: [contactName, contactPhone && `(${contactPhone})`].filter(Boolean).join(" "),
+    observaciones: notes || need.notes || "",
+    urgente: need.urgency === "urgente" ? "URGENTE" : "",
+    lineas_material: items
+  }, { templates: empresa.plantillasCorreo, empresa });
 
   return { subject, html, text, items, deliveryAddress: address, contactName, contactPhone };
 }

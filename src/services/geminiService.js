@@ -148,11 +148,12 @@ export async function transcribeAudioWithGemini(audioBlob, customApiKey = '', mo
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(preferredModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const payload = {
+    systemInstruction: { parts: [{ text: LITERAL_TRANSCRIPTION_INSTRUCTION }] },
     contents: [
       {
         parts: [
           {
-            text: 'Eres un transcriptor experto en construcción y arquitectura técnica de "ObraMaster". Escucha atentamente el audio adjunto y transcribe fielmente en español todo lo dicho en la grabación, corrigiendo términos técnicos de obra si es necesario. Devuelve estrictamente un JSON válido con la clave "transcripcion".'
+            text: 'Transcribe literalmente este audio.'
           },
           {
             inlineData: {
@@ -164,8 +165,7 @@ export async function transcribeAudioWithGemini(audioBlob, customApiKey = '', mo
       }
     ],
     generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.1
+      temperature: 0
     }
   };
 
@@ -191,18 +191,32 @@ export async function transcribeAudioWithGemini(audioBlob, customApiKey = '', mo
   }
 
   const data = await response.json();
-  const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const rawContent = (data.candidates?.[0]?.content?.parts || [])
+    .filter(p => p.text && !p.thought)
+    .map(p => p.text)
+    .join('');
   if (!rawContent) {
     throw new Error('Respuesta vacía al transcribir el audio con Gemini.');
   }
+  return cleanTranscript(rawContent);
+}
 
-  try {
-    const cleaned = cleanGeminiJsonResponse(rawContent);
-    const parsed = JSON.parse(cleaned);
-    return parsed.transcripcion || parsed.texto || rawContent.trim();
-  } catch (parseErr) {
-    return rawContent.trim();
-  }
+// Misma regla que en el servidor: transcribir solo lo que se oye; la mejora va aparte, con su botón.
+export const LITERAL_TRANSCRIPTION_INSTRUCTION = `Eres un transcriptor literal de audio. Tu única tarea es escribir, palabra por palabra y en el idioma hablado, exactamente lo que se dice en el audio.
+Reglas estrictas:
+- No resumas, no reformules, no corrijas, no completes frases y no añadas nada que no se oiga.
+- No inventes medidas, cantidades, materiales, nombres ni datos que no se digan claramente.
+- Si una palabra o fragmento no se entiende, escribe [inaudible] en su lugar.
+- Si en el audio no hay voz (silencio, ruido o música), responde únicamente: SIN_VOZ
+- Devuelve solo la transcripción en texto plano, sin comillas, títulos, comentarios ni formato JSON.`;
+
+// Frases que los motores "oyen" en audios mudos o con solo ruido.
+const SILENCE_HALLUCINATIONS = /amara\.org|subt[ií]tulos (realizados|por)|gracias por ver|suscr[ií]bete|^\s*(\[?(m[uú]sica|silencio|sin voz|inaudible)\]?\.?)\s*$/i;
+
+export function cleanTranscript(text) {
+  const t = String(text || '').trim();
+  if (!t || SILENCE_HALLUCINATIONS.test(t) || /^\[?SIN_VOZ\]?$/i.test(t)) return '';
+  return t;
 }
 
 /**
