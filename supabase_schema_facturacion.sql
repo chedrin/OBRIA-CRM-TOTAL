@@ -889,3 +889,6 @@ $$;
 -- Los certificados no se pueden leer desde el navegador (ni siquiera cifrados).
 alter table public.company_certificates enable row level security;
 revoke all on public.company_certificates from anon, authenticated;
+
+-- Que la API de Supabase vea al momento las tablas y columnas nuevas.
+notify pgrst, 'reload schema';

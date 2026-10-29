@@ -33,16 +33,41 @@ export default function PresupuestosList() {
     return <PresupuestoGeneratorAI onCancel={() => setViewMode('list')} onCreated={() => setViewMode('list')} />;
   }
 
+  // Sin la facturación activada el botón Facturar se ve igual, pero explica qué falta y lleva a Ajustes.
+  const facturar = (pres) => {
+    if (facturacionActivada) {
+      setShowConvertModal(pres);
+      return;
+    }
+    showNotification('Para facturar, activa antes la facturación en Ajustes > Facturación (VeriFactu): marca "Facturación activada", rellena tus datos fiscales y pulsa Guardar.', 'error');
+    setActiveTab('empresa_config');
+  };
+
+  const emitirFacturaModal = showConvertModal && (
+    <EmitirFacturaModal
+      presupuestos={presupuestos}
+      presupuestoInicial={showConvertModal}
+      onClose={() => setShowConvertModal(null)}
+      onEmitida={() => {
+        setShowConvertModal(null);
+        setActiveTab('facturas');
+      }}
+    />
+  );
+
   if (viewMode === 'revision_consola' && selectedQuoteId) {
     return (
-      <ConsolaRevisionPresupuesto
-        quoteId={selectedQuoteId}
-        onBack={() => setViewMode('list')}
-      />
+      <>
+        <ConsolaRevisionPresupuesto
+          quoteId={selectedQuoteId}
+          onBack={() => setViewMode('list')}
+          onFacturar={facturar}
+        />
+        {emitirFacturaModal}
+      </>
     );
   }
 
-  const handleOpenConvertModal = (pres) => setShowConvertModal(pres);
 
   // El cliente acepta: se crea la obra con los datos confirmados en el modal.
   const handleAceptarPresupuesto = (pres, datosObra) => {
@@ -123,13 +148,7 @@ export default function PresupuestosList() {
           },
           onPdf: (pres) => setPdfModalData({ type: 'presupuesto', data: pres }),
           onEnviar: (pres) => setQuoteToSend(pres),
-          // Sin la facturación activada el botón se ve igual, pero explica qué falta y lleva a Ajustes.
-          onFacturar: facturacionActivada
-            ? (pres) => handleOpenConvertModal(pres)
-            : () => {
-                showNotification('Para facturar, activa antes la facturación en Ajustes > Facturación (VeriFactu): marca "Facturación activada", rellena tus datos fiscales y pulsa Guardar.', 'error');
-                setActiveTab('empresa_config');
-              }
+          onFacturar: facturar
         }}
       />}
 
@@ -146,17 +165,7 @@ export default function PresupuestosList() {
       )}
 
       {/* Emitir factura desde el presupuesto (datos del cliente e IVA de la obra) */}
-      {showConvertModal && (
-        <EmitirFacturaModal
-          presupuestos={presupuestos}
-          presupuestoInicial={showConvertModal}
-          onClose={() => setShowConvertModal(null)}
-          onEmitida={() => {
-            setShowConvertModal(null);
-            setActiveTab('facturas');
-          }}
-        />
-      )}
+      {emitirFacturaModal}
 
       {/* Modal Enviar Presupuesto por Email / WhatsApp */}
       <SendDocumentModal
