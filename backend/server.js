@@ -508,9 +508,10 @@ function replaceSavedGeminiModel(oldModel, newModel) {
 
 async function geminiModelsToTry(apiKey, preferredModel, { fast = false } = {}) {
   const { models, lite = [], unavailable } = await listGeminiModelsCached(apiKey);
-  if (fast && lite.length) {
+  if (fast) {
     // Texto corto: primero el modelo ligero (responde en 1-3 s); si falla, el modelo elegido en Ajustes.
-    const quick = [lite[0], preferredModel, ...models.slice(0, 1)].filter(m => m && !unavailable.has(m));
+    // Si no se pudo leer la lista de modelos, se usa el alias estable de Google para flash-lite.
+    const quick = [lite[0] || "gemini-flash-lite-latest", preferredModel, ...models.slice(0, 1)].filter(m => m && !unavailable.has(m));
     if (quick.length) return [...new Set(quick)];
   }
   const candidates = models.length
