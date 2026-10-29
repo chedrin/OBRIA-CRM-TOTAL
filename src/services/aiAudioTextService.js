@@ -14,7 +14,8 @@ import {
   normalizeGeminiModel,
   DEFAULT_GEMINI_MODEL,
   USER_FRIENDLY_AI_ERROR,
-  getGeminiApiKey
+  getGeminiApiKey,
+  cleanTranscript
 } from './geminiService';
 import { buildFewShotReferenceContext, buildGeminiSystemPromptWithReferences } from './referenceBudgetService';
 import { checkBackendStatus, transcribeAudioViaBackend, generateBudgetViaBackend } from './backendAiService';
@@ -28,6 +29,7 @@ export async function transcribeAudioWithOpenAI(audioBlob, apiKey) {
   form.append('file', audioBlob, filename);
   form.append('model', 'whisper-1');
   form.append('language', 'es');
+  form.append('temperature', '0');
   form.append('prompt', 'Construcción y reformas: alicatados, rozas, solado porcelánico, pladur, bajantes, REBT, CTE.');
 
   const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -44,7 +46,7 @@ export async function transcribeAudioWithOpenAI(audioBlob, apiKey) {
   }
 
   const data = await res.json();
-  return data.text || '';
+  return cleanTranscript(data.text);
 }
 
 export const SYSTEM_PROMPT_TECHNICAL_SPECS = `Eres el Ingeniero Técnico de Edificación y Presupuestador Jefe de la empresa constructora "ObraMaster".
@@ -95,7 +97,10 @@ export async function transcribeAudio(audioBlob, aiConfig = {}, liveSpeechFallba
       const transResult = await transcribeAudioViaBackend(audioBlob, apiKey);
       const text = (transResult?.texto || transResult?.transcripcion || '').trim();
       if (text) return { success: true, text, source: 'backend-ai' };
+      // El servidor oyó el audio y no hay voz: no se sustituye por nada inventado.
+      if (transResult?.sinVoz) throw Object.assign(new Error('No se ha detectado voz en el audio.'), { noSpeech: true });
     } catch (bErr) {
+      if (bErr.noSpeech && !(liveSpeechFallback && liveSpeechFallback.trim().length > 3)) throw bErr;
       lastError = bErr;
       console.warn('Backend transcripción no disponible o devolvió error:', bErr.message);
     }

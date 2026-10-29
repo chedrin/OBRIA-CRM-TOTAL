@@ -317,9 +317,25 @@ function parseAiJson(raw) {
   }
 }
 
+// Formato real del audio según sus primeros bytes: Safari/iPhone graban MP4 aunque el nombre diga .webm,
+// y con un tipo equivocado la IA "oye" mal y rellena con texto inventado.
+function sniffAudioFormat(buffer) {
+  if (!buffer || buffer.length < 12) return null;
+  const ascii = (start, end) => buffer.toString("latin1", start, end);
+  if (ascii(4, 8) === "ftyp") return { mime: "audio/mp4", ext: "m4a" };
+  if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) return { mime: "audio/webm", ext: "webm" };
+  if (ascii(0, 4) === "OggS") return { mime: "audio/ogg", ext: "ogg" };
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE") return { mime: "audio/wav", ext: "wav" };
+  if (ascii(0, 3) === "ID3" || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)) return { mime: "audio/mp3", ext: "mp3" };
+  return null;
+}
+
 function fileToPart(file) {
   let mimeType = (file.mimetype || "application/octet-stream").split(";")[0].trim();
-  if (file.originalname) {
+  const sniffed = sniffAudioFormat(file.buffer);
+  if (sniffed) {
+    mimeType = sniffed.mime;
+  } else if (file.originalname) {
     const ext = file.originalname.split(".").pop().toLowerCase();
     if (ext === "mp3") mimeType = "audio/mp3";
     else if (ext === "wav") mimeType = "audio/wav";
@@ -888,25 +904,40 @@ async function transcribeAudioUnified({ audioFile, config }) {
   if (openAiKey && !attempts.includes("openai")) attempts.push("openai");
 
   let lastError = null;
+  let heardNothing = false;
   for (const engine of attempts) {
     try {
       const text = engine === "openai"
         ? await transcribeWithWhisper(audioFile, openAiKey)
         : await transcribeWithGemini(audioFile, geminiKey, modelForProvider(config, "google"));
       if (text && text.trim()) return text.trim();
+      heardNothing = true;
     } catch (err) {
       lastError = err;
       console.warn(`[Transcripción] Falló con ${engine}:`, err.message);
     }
   }
+  if (heardNothing) return "";
   if (lastError) throw lastError;
   throw new Error("No hay ninguna clave de IA para transcribir audio (GEMINI_API_KEY u OPENAI_API_KEY).");
 }
 
+// Frases que Whisper y Gemini "oyen" en audios mudos o con solo ruido.
+const SILENCE_HALLUCINATIONS = /amara\.org|subt[ií]tulos (realizados|por)|gracias por ver|suscr[ií]bete|^\s*(\[?(m[uú]sica|silencio|sin voz|inaudible)\]?\.?)\s*$/i;
+const WHISPER_VOCABULARY = "Construcción y reformas: alicatados, rozas, solado porcelánico, pladur, bajantes, REBT, CTE.";
+
+function cleanTranscript(text) {
+  const t = String(text || "").trim();
+  if (!t || SILENCE_HALLUCINATIONS.test(t) || t === WHISPER_VOCABULARY || /^\[?SIN_VOZ\]?$/i.test(t)) return "";
+  return t;
+}
+
 async function transcribeWithWhisper(audioFile, apiKey) {
   const boundary = "--------------------------" + Math.random().toString(36).substring(2);
-  const filename = audioFile.originalname || "audio-grabacion.webm";
-  const mime = audioFile.mimetype || "audio/webm";
+  const sniffed = sniffAudioFormat(audioFile.buffer);
+  const baseName = (audioFile.originalname || "audio-grabacion").replace(/\.[^.]+$/, "");
+  const filename = sniffed ? `${baseName}.${sniffed.ext}` : (audioFile.originalname || "audio-grabacion.webm");
+  const mime = sniffed?.mime || audioFile.mimetype || "audio/webm";
 
   const bodyParts = [];
   bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`));
@@ -914,7 +945,8 @@ async function transcribeWithWhisper(audioFile, apiKey) {
   bodyParts.push(Buffer.from("\r\n"));
   bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`));
   bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\nes\r\n`));
-  bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\nConstrucción y reformas: alicatados, rozas, solado porcelánico, pladur, bajantes, REBT, CTE.\r\n`));
+  bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="temperature"\r\n\r\n0\r\n`));
+  bodyParts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\n${WHISPER_VOCABULARY}\r\n`));
   bodyParts.push(Buffer.from(`--${boundary}--\r\n`));
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
@@ -939,36 +971,30 @@ async function transcribeWithWhisper(audioFile, apiKey) {
     throw new Error(USER_FRIENDLY_AI_ERROR);
   }
 
-  return data.text || "";
+  return cleanTranscript(data.text);
 }
 
-async function transcribeWithGemini(audioFile, apiKey, model) {
-  const promptText = `
-Eres un transcriptor experto en construcción y reformas de "ObraMaster".
-Escucha el audio adjunto y transcribe fielmente todo lo dicho en español, corrigiendo términos de obra (alicatados, rozas, falsos techos, etc.).
-No resumas ni inventes: si una parte no se entiende, escribe [inaudible].
+// Transcripción literal: solo lo que se oye, sin corregir, completar ni mejorar. La mejora con IA
+// es un paso aparte que el usuario lanza con su botón.
+const LITERAL_TRANSCRIPTION_INSTRUCTION = `Eres un transcriptor literal de audio. Tu única tarea es escribir, palabra por palabra y en el idioma hablado, exactamente lo que se dice en el audio.
+Reglas estrictas:
+- No resumas, no reformules, no corrijas, no completes frases y no añadas nada que no se oiga.
+- No inventes medidas, cantidades, materiales, nombres ni datos que no se digan claramente.
+- Si una palabra o fragmento no se entiende, escribe [inaudible] en su lugar.
+- Si en el audio no hay voz (silencio, ruido o música), responde únicamente: SIN_VOZ
+- Devuelve solo la transcripción en texto plano, sin comillas, títulos, comentarios ni formato JSON.`;
 
-Devuelve estrictamente un JSON válido con esta estructura exacta:
-{"transcripcion": "Texto fiel y literal en español"}
-`;
+async function transcribeWithGemini(audioFile, apiKey, model) {
   const rawText = await callGeminiProvider({
     apiKey,
     model,
-    contents: [{ role: "user", parts: [{ text: promptText }, fileToPart(audioFile)] }],
-    temperature: 0.1,
+    systemInstruction: LITERAL_TRANSCRIPTION_INSTRUCTION,
+    contents: [{ role: "user", parts: [{ text: "Transcribe literalmente este audio." }, fileToPart(audioFile)] }],
+    temperature: 0,
     maxTokens: 8192,
-    responseMimeType: "application/json"
+    responseMimeType: null
   });
-
-  try {
-    const cleaned = cleanJsonOutput(rawText);
-    if (!cleaned || cleaned === "{}") return rawText ? rawText.trim() : "";
-    const parsed = JSON.parse(cleaned);
-    return parsed.transcripcion || parsed.texto || rawText.trim() || "";
-  } catch (parseErr) {
-    console.warn("[Backend Gemini Transcribe] Fallo al parsear JSON, usando texto raw:", parseErr.message);
-    return rawText ? rawText.trim() : "";
-  }
+  return cleanTranscript(rawText);
 }
 
 // Servidor Estático
@@ -1491,6 +1517,7 @@ ${textToImprove.trim()}
           success: true,
           texto: fullText,
           transcripcion: fullText,
+          sinVoz: !fullText,
           archivosProcesados: audioFiles.length,
           latencyMs: elapsedMs
         }));
