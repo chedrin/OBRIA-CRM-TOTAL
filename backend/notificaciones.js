@@ -17,7 +17,7 @@
  *   GET   /api/needs                    ?status=<estado>&obra=<id>
  *   POST  /api/needs                    Alta de una necesidad (obrero / encargado / admin).
  *   PATCH /api/needs/:id                Cambiar estado o datos.
- *   POST  /api/needs/:id/order-draft    { supplier_ids: [...], kind } -> borradores de correo.
+ *   POST  /api/needs/:id/order-draft    { supplier_ids: [...], kind, send? } -> borradores de correo (send: los envía ya).
  *   PATCH /api/material-orders/:id      Editar el borrador (asunto, cuerpo, destinatario).
  *   POST  /api/material-orders/:id/send "Aprobar y enviar pedido" (Resend).
  *   POST  /api/material-orders/manual   "Nuevo pedido": obras, proveedores y materiales; send=true lo envía ya.
@@ -681,7 +681,12 @@ async function handleOrderDraft(req, res, needId) {
     .map((s) => clip(s, 40))
     .filter((s) => new RegExp(`^${UUID}$`).test(s))
     .slice(0, 5);
-  sendJson(res, 201, { drafts: await createOrderDrafts(need, supplierIds, kind) });
+  // send: true crea los borradores y los envía en el mismo paso (alta de la necesidad o más tarde).
+  if (body.send && supplierIds.length === 0) throw httpError(400, "Elige al menos un proveedor para enviar el pedido.");
+  const drafts = await createOrderDrafts(need, supplierIds, kind, { notes: clip(body.notes, 2000) });
+  if (!body.send) return sendJson(res, 201, { drafts, errors: [] });
+  const { orders, errors } = await sendDrafts(drafts, req.user?.id || null);
+  sendJson(res, 201, { drafts: orders, errors });
 }
 
 async function handleUpdateOrder(req, res, id) {
@@ -793,18 +798,24 @@ async function handleManualOrder(req, res) {
   const drafts = await createOrderDrafts(need, supplierIds, kind, { notes });
   if (!body.send) return sendJson(res, 201, { need, orders: drafts, errors: [] });
 
+  const { orders, errors } = await sendDrafts(drafts, req.user?.id || null);
+  sendJson(res, 201, { need: { ...need, status: errors.length === drafts.length ? need.status : "pedido_tramitado" }, orders, errors });
+}
+
+/** Envía varios borradores; un fallo no impide enviar el resto. */
+async function sendDrafts(drafts, userId) {
   const orders = [];
   const errors = [];
   for (const draft of drafts) {
     try {
-      orders.push(await sendOrder(draft, req.user?.id || null));
+      orders.push(await sendOrder(draft, userId));
     } catch (err) {
       errors.push(err.message);
       const { data: failed } = await getAdminClient().from("material_orders").select("*").eq("id", draft.id).maybeSingle();
       orders.push(failed || draft);
     }
   }
-  sendJson(res, 201, { need: { ...need, status: errors.length === drafts.length ? need.status : "pedido_tramitado" }, orders, errors });
+  return { orders, errors };
 }
 
 const RESPONSE_STATUSES = new Set(["pendiente", "confirmado", "parcial", "rechazado"]);
