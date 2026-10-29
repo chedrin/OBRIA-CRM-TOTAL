@@ -92,7 +92,8 @@ export default function FacturacionConfig() {
       return false;
     }
     await recargarFacturacion();
-    return true;
+    // El servidor guarda los datos aunque falte el certificado y lo avisa (devuelve el texto del aviso).
+    return result.data?.aviso || true;
   };
 
   const handleSave = async (e) => {
@@ -104,7 +105,9 @@ export default function FacturacionConfig() {
       );
       if (!ok) return;
     }
-    if (await guardar()) showNotification(form.facturacionActivada ? 'Facturación guardada.' : 'Datos guardados. La facturación está desactivada.');
+    const guardado = await guardar();
+    if (typeof guardado === 'string') showNotification(guardado, 'error');
+    else if (guardado) showNotification(form.facturacionActivada ? 'Facturación guardada.' : 'Datos guardados. La facturación está desactivada.');
   };
 
   const handleProduccion = async () => {
