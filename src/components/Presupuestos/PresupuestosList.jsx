@@ -123,8 +123,13 @@ export default function PresupuestosList() {
           },
           onPdf: (pres) => setPdfModalData({ type: 'presupuesto', data: pres }),
           onEnviar: (pres) => setQuoteToSend(pres),
-          // Sin la facturación activada no se ofrece facturar.
-          onFacturar: facturacionActivada ? (pres) => handleOpenConvertModal(pres) : null
+          // Sin la facturación activada el botón se ve igual, pero explica qué falta y lleva a Ajustes.
+          onFacturar: facturacionActivada
+            ? (pres) => handleOpenConvertModal(pres)
+            : () => {
+                showNotification('Para facturar, activa antes la facturación en Ajustes > Facturación (VeriFactu): marca "Facturación activada", rellena tus datos fiscales y pulsa Guardar.', 'error');
+                setActiveTab('empresa_config');
+              }
         }}
       />}
 
