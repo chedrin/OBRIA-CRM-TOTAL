@@ -107,7 +107,7 @@ export default function Sidebar({
     <div className="flex flex-col h-full bg-slate-900 text-slate-200 select-none">
 
       {/* Marca */}
-      <div className={`h-16 px-4 border-b border-slate-800 flex items-center shrink-0 ${collapsed ? 'justify-center px-2' : 'justify-between'}`}>
+      <div className={`h-16 border-b border-slate-800 flex items-center shrink-0 ${collapsed ? 'justify-center gap-1 px-1.5' : 'justify-between gap-2 px-4'}`}>
         <button
           type="button"
           onClick={() => handleSelectTab('dashboard')}
@@ -123,6 +123,16 @@ export default function Sidebar({
               <span className="block text-[11px] text-slate-500 truncate">Gestión integral de obra</span>
             </div>
           )}
+        </button>
+
+        <button
+          onClick={onToggleCollapse}
+          className="hidden lg:flex items-center justify-center w-7 h-7 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition border border-slate-700/60 shrink-0"
+          title={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
+          aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
+          aria-expanded={!collapsed}
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
 
         <button
@@ -314,18 +324,6 @@ export default function Sidebar({
         )}
       </nav>
 
-      {/* Contraer menú */}
-      <div className={`hidden lg:block p-3 border-t border-slate-800 shrink-0 ${collapsed ? 'px-2' : ''}`}>
-        <button
-          onClick={onToggleCollapse}
-          className={`flex w-full items-center gap-2 text-[11px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-slate-800/70 rounded-lg py-1.5 transition ${collapsed ? 'justify-center' : 'px-2'}`}
-          title={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
-          aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
-          aria-expanded={!collapsed}
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <><ChevronLeft className="w-4 h-4" /><span>Contraer menú</span></>}
-        </button>
-      </div>
     </div>
   );
 
