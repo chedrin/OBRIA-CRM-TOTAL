@@ -351,6 +351,8 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
     resumen: resumenGeneral,
     // Notas y mediciones de la visita: las usa el croquis 2D.
     medidasNotas: expediente.medidasNotas || '',
+    // Croquis del escaneo LiDAR subido en la visita (medidas reales).
+    ...(expediente.croquis?.plan?.rooms?.length ? { croquis: expediente.croquis } : {}),
     observaciones_tecnicas: observacionesTecnicas,
     conceptos: conceptosSugeridos,
     capitulos: capitulosCalculados,
