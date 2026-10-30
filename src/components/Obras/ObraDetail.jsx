@@ -36,7 +36,7 @@ import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 
-export default function ObraDetail({ obraId, onBack }) {
+export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   const {
     obras,
     updateObra,
@@ -65,7 +65,7 @@ export default function ObraDetail({ obraId, onBack }) {
 
   const obra = obras.find(o => o.id === obraId);
   const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, documentos, catalogo_precios, equipo
-  const [showCroquis, setShowCroquis] = useState(false);
+  const [showCroquis, setShowCroquis] = useState(abrirCroquis);
   const [expandedFases, setExpandedFases] = useState({});
   const [editingFase, setEditingFase] = useState(null); // copia de la fase en edición
 
@@ -415,7 +415,7 @@ export default function ObraDetail({ obraId, onBack }) {
               className="group relative rounded-xl overflow-hidden border border-slate-800 hover:border-amber-500/60 transition-colors"
               style={{ background: '#ffffff' }}
             >
-              <CroquisLienzo plan={croquisPlanObra} soloLectura mostrarCotas={false} alto="11rem" />
+              <CroquisLienzo plan={croquisPlanObra} soloLectura mostrarCotas={false} alto="11rem" ajustado />
               <span className="absolute top-1.5 left-2 text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-white/85 rounded px-1.5 py-0.5">
                 Croquis · {resumenSuperficies(croquisPlanObra).util.toLocaleString('es-ES')} m² útiles
               </span>
