@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import BarraFacturacion from '../Facturas/BarraFacturacion';
 import BotonVolver from '../Common/BotonVolver';
 import { useApp } from '../../context/AppContext';
 import {
@@ -43,7 +44,7 @@ const CAMPOS_CABECERA = [
   { id: 'notasLegales', label: 'Condiciones y notas', span: 4, multiline: true }
 ];
 
-export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar }) {
+export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar, estadoFacturacion = null }) {
   const {
     presupuestos,
     refineQuoteWithVoiceCommand,
@@ -284,6 +285,9 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
                 {quote.direccion}
               </span>
             </p>
+            {estadoFacturacion?.facturado > 0 && (
+              <BarraFacturacion estado={estadoFacturacion} className="mt-2 max-w-md" />
+            )}
           </div>
         </div>
 
@@ -292,10 +296,12 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           {onFacturar && (
             <button
               onClick={() => onFacturar(quote)}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              disabled={Boolean(estadoFacturacion?.completo)}
+              title={estadoFacturacion?.completo ? 'Ya está facturado al 100 %' : 'Emitir una factura o certificación de este presupuesto'}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
               <Receipt className="w-3.5 h-3.5" />
-              <span>Pasar a factura</span>
+              <span>{estadoFacturacion?.completo ? 'Facturado al 100 %' : 'Pasar a factura'}</span>
             </button>
           )}
           <button

@@ -40,6 +40,8 @@ import { validarNif } from "./verifactu/nif.js";
 import { verificarCadena } from "./verifactu/huella.js";
 import { estadoCertificado, guardarCertificado, MAX_PFX_BYTES } from "./verifactu/certificados.js";
 import { datosProductor, declaracionResponsable } from "./verifactu/sistema.js";
+import { getAppRecord } from "./notificaciones.js";
+import { baseFacturadaPorPresupuesto, estadoFacturacion, MARGEN_LIMITE } from "../src/utils/facturadoPresupuesto.js";
 import { enviarPendientesEmpresa } from "./verifactu/envio.js";
 import { calcularFiscalidadObra } from "./verifactu/fiscalidadObra.js";
 import { generarFacturae } from "./verifactu/facturae.js";
@@ -331,6 +333,50 @@ function parseCliente(body) {
     cliente_municipio: clip(body.clienteMunicipio, 100),
     cliente_provincia: clip(body.clienteProvincia, 100)
   };
+}
+
+// Emisiones de una misma empresa, una detrás de otra: así dos facturas a la vez no pueden
+// pasar las dos el límite del presupuesto.
+const colas = new Map();
+function enCola(companyId, fn) {
+  const anterior = colas.get(companyId) || Promise.resolve();
+  const actual = anterior.catch(() => {}).then(fn);
+  colas.set(companyId, actual);
+  actual.finally(() => { if (colas.get(companyId) === actual) colas.delete(companyId); }).catch(() => {});
+  return actual;
+}
+
+const eur = (n) => Number(n).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * No deja facturar de un presupuesto más del 100 % de su base imponible, contando las
+ * facturas vigentes (sin anuladas y con sus rectificativas). `nueva` es la factura que se
+ * va a emitir, en formato de la app. La base del presupuesto se lee de los datos guardados
+ * de la app; si no están en el servidor, se usa la que manda la pantalla.
+ */
+async function comprobarLimitePresupuesto(company, presupuestoId, nueva, baseEnviada) {
+  if (!presupuestoId) return;
+  const rows = await run(getAdminClient().from("invoices").select("*")
+    .eq("company_id", company.id).eq("entorno", company.verifactu_entorno).eq("status", "ISSUED")
+    .eq("presupuesto_id", presupuestoId));
+  const facturas = rows.map((r) => toAppInvoice(r));
+  const antes = baseFacturadaPorPresupuesto(facturas).get(presupuestoId) || 0;
+  const despues = baseFacturadaPorPresupuesto([...facturas, { ...nueva, presupuestoId }]).get(presupuestoId) || 0;
+  // Lo que rebaja lo facturado (rectificativas a la baja) siempre se puede emitir.
+  if (despues <= antes + MARGEN_LIMITE / 2) return;
+  const presupuesto = await getAppRecord("presupuestos", presupuestoId).catch(() => null);
+  const base = Number(presupuesto?.baseImponible ?? baseEnviada);
+  if (!Number.isFinite(base) || base <= 0) {
+    throw httpError(400, "No se encuentra el importe del presupuesto: guarda el presupuesto y vuelve a intentarlo.");
+  }
+  if (despues > base + MARGEN_LIMITE) {
+    const estado = estadoFacturacion(base, antes);
+    throw httpError(409,
+      `Este presupuesto ya tiene facturado ${eur(estado.facturado)} € de ${eur(base)} € de base (${estado.pct} %). ` +
+      (estado.pendiente > 0
+        ? `Solo quedan ${eur(estado.pendiente)} € por facturar.`
+        : "Ya está facturado entero: para cambiar el importe emite una rectificativa."));
+  }
 }
 
 async function emitir(draft, user) {
@@ -752,23 +798,27 @@ const handlers = {
       throw httpError(400, "La inversión del sujeto pasivo solo se aplica cuando el cliente es empresario o profesional.");
     }
     const fechaOperacion = isoDate(body.fechaOperacion);
+    const presupuestoId = clip(body.presupuestoId, 64) || null;
 
-    const emitida = await emitir({
-      company_id: company.id,
-      tipo_factura: "F1",
-      descripcion: clip(body.descripcion, 500),
-      cliente_nombre: clienteNombre,
-      cliente_nif: nif.nif,
-      ...cliente,
-      obra_id: clip(body.obraId, 64) || null,
-      presupuesto_id: clip(body.presupuestoId, 64) || null,
-      lineas: parseLineas(body.lineas),
-      metodo_pago: clip(body.metodoPago, 120),
-      fecha_operacion: fechaOperacion,
-      iva_motivo: clip(body.ivaMotivo, 500),
-      created_by: user?.id || null,
-      ...importes
-    }, user);
+    const emitida = await enCola(company.id, async () => {
+      await comprobarLimitePresupuesto(company, presupuestoId, { id: "nueva", baseImponible: importes.base_imponible }, body.presupuestoBase);
+      return emitir({
+        company_id: company.id,
+        tipo_factura: "F1",
+        descripcion: clip(body.descripcion, 500),
+        cliente_nombre: clienteNombre,
+        cliente_nif: nif.nif,
+        ...cliente,
+        obra_id: clip(body.obraId, 64) || null,
+        presupuesto_id: presupuestoId,
+        lineas: parseLineas(body.lineas),
+        metodo_pago: clip(body.metodoPago, 120),
+        fecha_operacion: fechaOperacion,
+        iva_motivo: clip(body.ivaMotivo, 500),
+        created_by: user?.id || null,
+        ...importes
+      }, user);
+    });
     return { status: 201, body: { factura: toAppInvoice(emitida, { tipo_registro: "alta", estado_envio: "pendiente" }) } };
   },
 
@@ -787,29 +837,35 @@ const handlers = {
     if (sustitucion && importes.base_imponible < 0) throw httpError(400, "En una rectificativa por sustitución indica la base correcta completa (no negativa).");
     if (!sustitucion && importes.base_imponible === 0) throw httpError(400, "Indica la diferencia de base imponible (negativa para rebajar).");
 
-    const emitida = await emitir({
-      company_id: company.id,
-      tipo_factura: TIPOS_RECTIFICATIVA.has(body.tipo) ? body.tipo : "R1",
-      tipo_rectificativa: sustitucion ? "S" : "I",
-      rectifica_invoice_id: original.id,
-      rectificacion_causa: causa,
-      descripcion: clip(body.descripcion, 500) || `Rectifica a ${original.num_serie}: ${causa}`.slice(0, 500),
-      cliente_nombre: original.cliente_nombre,
-      cliente_nif: original.cliente_nif,
-      cliente_tipo: original.cliente_tipo || "empresa",
-      cliente_direccion: original.cliente_direccion,
-      cliente_codigo_postal: original.cliente_codigo_postal || "",
-      cliente_municipio: original.cliente_municipio || "",
-      cliente_provincia: original.cliente_provincia || "",
-      obra_id: original.obra_id,
-      presupuesto_id: original.presupuesto_id,
-      lineas: parseLineas(body.lineas),
-      metodo_pago: original.metodo_pago,
-      fecha_operacion: isoDate(body.fechaOperacion),
-      iva_motivo: original.iva_motivo || "",
-      created_by: user?.id || null,
-      ...importes
-    }, user);
+    const emitida = await enCola(company.id, async () => {
+      await comprobarLimitePresupuesto(company, original.presupuesto_id, {
+        id: "nueva", rectificaId: original.id, tipoRectificativa: sustitucion ? "S" : "I",
+        baseImponible: importes.base_imponible, fechaEmision: "9999-12-31"
+      }, body.presupuestoBase);
+      return emitir({
+        company_id: company.id,
+        tipo_factura: TIPOS_RECTIFICATIVA.has(body.tipo) ? body.tipo : "R1",
+        tipo_rectificativa: sustitucion ? "S" : "I",
+        rectifica_invoice_id: original.id,
+        rectificacion_causa: causa,
+        descripcion: clip(body.descripcion, 500) || `Rectifica a ${original.num_serie}: ${causa}`.slice(0, 500),
+        cliente_nombre: original.cliente_nombre,
+        cliente_nif: original.cliente_nif,
+        cliente_tipo: original.cliente_tipo || "empresa",
+        cliente_direccion: original.cliente_direccion,
+        cliente_codigo_postal: original.cliente_codigo_postal || "",
+        cliente_municipio: original.cliente_municipio || "",
+        cliente_provincia: original.cliente_provincia || "",
+        obra_id: original.obra_id,
+        presupuesto_id: original.presupuesto_id,
+        lineas: parseLineas(body.lineas),
+        metodo_pago: original.metodo_pago,
+        fecha_operacion: isoDate(body.fechaOperacion),
+        iva_motivo: original.iva_motivo || "",
+        created_by: user?.id || null,
+        ...importes
+      }, user);
+    });
     return { status: 201, body: { factura: toAppInvoice(emitida, { tipo_registro: "alta", estado_envio: "pendiente" }) } };
   },
 
