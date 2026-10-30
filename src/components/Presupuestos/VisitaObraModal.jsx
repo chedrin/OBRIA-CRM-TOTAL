@@ -22,6 +22,8 @@ import confetti from 'canvas-confetti';
 import { transcribeAudio } from '../../services/aiAudioTextService';
 import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
 import AiImprovementControl from '../Common/AiImprovementControl';
+import EscaneoLidarSubida from '../Croquis/EscaneoLidarSubida';
+import { textoMedicionesEscaneo } from '../../utils/escaneoLidar';
 
 export const TIPOS_CLIENTE = [
   { id: 'particular', label: 'Particular' },
@@ -99,6 +101,9 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   const [complementaryText, setComplementaryText] = useState('');
   const [notesRefinedText, setNotesRefinedText] = useState('');
   const [medicion, setMedicion] = useState({ largo: '', ancho: '', alto: '', zona: '' });
+  // Croquis sacado del escaneo LiDAR: se guarda con el presupuesto generado.
+  const [croquisEscaneo, setCroquisEscaneo] = useState(null);
+  const lidarActivo = Boolean(empresaConfig?.escaneoLidar?.activo);
 
   // Documents State (PDF, Word, Excel)
   const [documentos, setDocumentos] = useState([]);
@@ -217,6 +222,34 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
     setComplementaryText(prev => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n${line}` : line));
     setNotesRefinedText('');
     setMedicion({ largo: '', ancho: '', alto: '', zona: '' });
+  };
+
+  // Escaneo LiDAR: sus mediciones van a las anotaciones y su planta queda como croquis del presupuesto.
+  const handleUsarEscaneo = (res) => {
+    if (res.formato === 'imagen') {
+      setCapturas(prev => [{
+        id: `cap-lidar-${Date.now()}`,
+        tipo: 'foto_estado',
+        titulo: `Plano del escaneo LiDAR (${res.nombreArchivo})`,
+        url: URL.createObjectURL(res.imagen),
+        file: res.imagen,
+        isLocalBlob: true,
+        notas: 'Plano acotado exportado del escaneo LiDAR: sus cotas son medidas reales.'
+      }, ...prev]);
+      showNotification('Plano del escaneo añadido a las fotos para la IA.');
+      return;
+    }
+    const lineas = textoMedicionesEscaneo(res.plan, res.nombreArchivo);
+    setComplementaryText(prev => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n\n${lineas}` : lineas));
+    setNotesRefinedText('');
+    setCroquisEscaneo({
+      plan: res.plan,
+      mediciones: res.mediciones,
+      notas: `Croquis del escaneo LiDAR «${res.nombreArchivo}».`,
+      origen: 'lidar',
+      actualizado: new Date().toISOString()
+    });
+    showNotification(`Mediciones de ${res.plan.rooms.length} estancias añadidas. El croquis se guardará con el presupuesto.`);
   };
 
   const handleDocumentUpload = (e) => {
@@ -367,6 +400,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
       audioTranscripcion: finalAudioText,
       audioBlob: audioFile,
       capturas: realUploadedCapturas,
+      croquis: croquisEscaneo,
       medidasNotas: (finalNotesText ? `${finalNotesText}${docsSummary}\n\nCalidades solicitadas: ${calidades}.` : `Medidas tomadas in situ con distanciómetro láser.${docsSummary}\nCalidades: ${calidades}.`),
       documentos
     };
@@ -897,6 +931,17 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                     <span>Añadir a anotaciones</span>
                   </button>
                 </div>
+                {lidarActivo && (
+                  <div className="space-y-1.5 pb-2 border-b border-slate-800">
+                    <EscaneoLidarSubida onUsar={handleUsarEscaneo} textoUsar="Añadir mediciones y croquis" />
+                    {croquisEscaneo && (
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 rounded-xl px-3 py-1.5">
+                        <span>📐 Croquis del escaneo listo ({croquisEscaneo.plan.rooms.length} estancias): se guardará con el presupuesto.</span>
+                        <button type="button" onClick={() => setCroquisEscaneo(null)} className="text-slate-400 hover:text-white" aria-label="Quitar croquis del escaneo"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                   <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <label className="text-[10px] text-slate-400 block font-semibold">Largo (m)</label>
