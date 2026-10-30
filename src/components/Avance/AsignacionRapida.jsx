@@ -1,10 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { X, Loader2, HardHat, Building2, UserPlus, MessageCircle, Copy, Send, CheckCircle2 } from 'lucide-react';
-import useNotify from '../Avisos/useNotify';
+import { X, Loader2, HardHat, Building2, UserPlus, CheckCircle2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import { flattenPlan } from '../../utils/avanceObra';
-import EnviarEnlaceCorreo from '../Avisos/EnviarEnlaceCorreo';
+import EnlaceEnvio from '../Avisos/EnlaceEnvio';
 
 /**
  * Asignación rápida de ejecutores: una fase completa (se hereda en todas sus
@@ -24,10 +23,8 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
   const [phone, setPhone] = useState('');
   const [linkDays, setLinkDays] = useState(60);
   const [link, setLink] = useState(null); // enlace mágico creado al asignar a una subcontrata
-  const [sentByApi, setSentByApi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const notify = useNotify();
   const sub = type === 'subcontrata' ? subcontractors.find((s) => s.id === who) : null;
 
   const changeFase = (id) => {
@@ -75,27 +72,6 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
     }
   };
 
-  const copy = async (text, what) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      notify(`${what} copiado`);
-    } catch {
-      notify('No se pudo copiar: selecciónalo a mano', 'error');
-    }
-  };
-
-  const sendApi = async () => {
-    setBusy(true);
-    try {
-      await api('/api/whatsapp/send', { method: 'POST', body: { phone: link.phone, message: link.mensaje } });
-      setSentByApi(true);
-    } catch (err) {
-      notify(err.message, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (link) {
     return (
       <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
@@ -104,22 +80,8 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
             <h3 className="font-black text-white flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Asignada a {link.subcontractor_name}</h3>
             <button type="button" onClick={onClose} className="text-slate-400" aria-label="Cerrar"><X className="w-5 h-5" /></button>
           </div>
-          <p className="text-xs text-slate-400">Enlace directo, sin usuario ni contraseña. Caduca el {new Date(link.expires_at).toLocaleDateString('es-ES')}.</p>
-          <p className="text-sm text-slate-200 bg-slate-950 border border-slate-800 rounded-xl p-3 whitespace-pre-wrap break-words">{link.mensaje}</p>
-          <div className="grid sm:grid-cols-2 gap-2">
-            <a href={link.whatsappUrl} target="_blank" rel="noreferrer" className={`${btnPrimary} !bg-emerald-500 hover:!bg-emerald-400`}>
-              <MessageCircle className="w-4 h-4" /> Abrir WhatsApp
-            </a>
-            <button type="button" onClick={() => copy(link.mensaje, 'Mensaje')} className={btnGhost}><Copy className="w-4 h-4" /> Copiar mensaje</button>
-            <button type="button" onClick={() => copy(link.url, 'Enlace')} className={btnGhost}><Copy className="w-4 h-4" /> Copiar enlace</button>
-            {link.whatsappCloud && link.phone && (
-              <button type="button" onClick={sendApi} disabled={busy || sentByApi} className={btnGhost}>
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} {sentByApi ? 'Enviado por la API' : 'Enviar por WhatsApp API'}
-              </button>
-            )}
-            <EnviarEnlaceCorreo link={link} />
-          </div>
-          {!link.phone && <p className="text-[11px] text-amber-300">La subcontrata no tiene un móvil válido: WhatsApp te dejará elegir el contacto.</p>}
+          <p className="text-xs text-slate-400">Enlace directo, sin usuario ni contraseña. Caduca el {new Date(link.expires_at).toLocaleDateString('es-ES')}. Podrás volver a copiarlo o reenviarlo desde la partida hasta que el trabajo esté finalizado.</p>
+          <EnlaceEnvio link={link} />
           <div className="flex justify-end"><button type="button" onClick={onClose} className={btnGhost}>Hecho</button></div>
         </div>
       </div>

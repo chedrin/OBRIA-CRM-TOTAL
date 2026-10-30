@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link2, Loader2, Copy, MessageCircle, Ban } from 'lucide-react';
+import { Link2, Loader2, Ban, Send, ChevronUp, CheckCircle2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
-import EnviarEnlaceCorreo from './EnviarEnlaceCorreo';
+import EnlaceEnvio, { avisoReenvio } from './EnlaceEnvio';
 import { api, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 
 // Enlaces mágicos para subcontratas: se crean aquí y se mandan por WhatsApp con un toque.
+// Se pueden volver a copiar y reenviar hasta que el trabajo esté certificado al 100 %.
 export default function EnlacesPanel() {
   const { obras = [], subcontractors = [] } = useApp() || {};
   const showNotification = useNotify();
@@ -13,6 +14,8 @@ export default function EnlacesPanel() {
   const [result, setResult] = useState(null);
   const [tokens, setTokens] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(null); // { id, link } del enlace que se está reenviando
+  const [resending, setResending] = useState(null);
 
   useEffect(() => {
     api('/api/sub-tokens').then(setTokens).catch((e) => showNotification(e.message, 'error'));
@@ -42,7 +45,7 @@ export default function EnlacesPanel() {
         }
       });
       setResult(data);
-      setTokens((prev) => [data, ...prev]);
+      setTokens((prev) => [{ ...data, can_resend: true, same_link: true }, ...prev]);
     } catch (err) {
       showNotification(err.message, 'error');
     } finally {
@@ -54,18 +57,30 @@ export default function EnlacesPanel() {
     if (!window.confirm('¿Anular este enlace? La subcontrata ya no podrá usarlo.')) return;
     try {
       await api(`/api/sub-tokens/${id}/revoke`, { method: 'POST' });
-      setTokens((prev) => prev.map((t) => (t.id === id ? { ...t, revoked_at: new Date().toISOString() } : t)));
+      setTokens((prev) => prev.map((t) => (t.id === id ? { ...t, revoked_at: new Date().toISOString(), can_resend: false } : t)));
+      if (open?.id === id) setOpen(null);
     } catch (err) {
       showNotification(err.message, 'error');
     }
   };
 
-  const copy = async (text) => {
+  const resend = async (t) => {
+    if (open?.id === t.id) {
+      setOpen(null);
+      return;
+    }
+    if (!t.same_link && !window.confirm('Este enlace no se puede recuperar: se generará uno nuevo y el anterior dejará de funcionar. ¿Continuar?')) return;
+    setResending(t.id);
     try {
-      await navigator.clipboard.writeText(text);
-      showNotification('Enlace copiado');
-    } catch {
-      showNotification('No se pudo copiar: selecciónalo a mano', 'error');
+      const link = await api(`/api/sub-tokens/${t.id}/resend`, { method: 'POST', body: { days: form.days } });
+      setOpen({ id: t.id, link });
+      setTokens((prev) => prev.map((x) => (x.id === t.id ? { ...x, expires_at: link.expires_at, same_link: true, work_pct: link.work_pct } : x)));
+      const aviso = avisoReenvio(link);
+      if (aviso) showNotification(aviso.text, aviso.type);
+    } catch (err) {
+      showNotification(err.message, 'error');
+    } finally {
+      setResending(null);
     }
   };
 
@@ -98,14 +113,8 @@ export default function EnlacesPanel() {
 
         {result && (
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 space-y-2">
-            <p className="text-xs text-emerald-400 font-bold">Enlace listo. Guárdalo o envíalo ahora: por seguridad no se puede volver a mostrar.</p>
-            <code className="block text-xs text-white break-all">{result.url}</code>
-            <div className="flex flex-wrap gap-2">
-              <a href={result.whatsappUrl} target="_blank" rel="noreferrer" className={btnPrimary}><MessageCircle className="w-4 h-4" /> Enviar por WhatsApp</a>
-              <button type="button" onClick={() => copy(result.url)} className={btnGhost}><Copy className="w-4 h-4" /> Copiar enlace</button>
-              <button type="button" onClick={() => copy(result.mensaje)} className={btnGhost}><Copy className="w-4 h-4" /> Copiar mensaje</button>
-            </div>
-            <EnviarEnlaceCorreo key={result.id} link={result} />
+            <p className="text-xs text-emerald-400 font-bold">Enlace listo. Podrás volver a copiarlo o reenviarlo desde la lista hasta que el trabajo esté finalizado.</p>
+            <EnlaceEnvio key={result.id} link={result} showMessage={false} />
           </div>
         )}
       </form>
@@ -118,22 +127,35 @@ export default function EnlacesPanel() {
           <ul className="space-y-2">
             {tokens.map((t) => {
               const expired = new Date(t.expires_at) < new Date();
-              const state = t.revoked_at ? 'Anulado' : expired ? 'Caducado' : 'Activo';
+              const state = t.revoked_at ? 'Anulado' : t.finished ? 'Finalizado' : expired ? 'Caducado' : 'Activo';
+              const isOpen = open?.id === t.id;
               return (
-                <li key={t.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-3 justify-between">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-bold text-white">{t.subcontractor_name}</span>
-                    <span className="block text-xs text-slate-400">{[t.obra_label, t.task_label].filter(Boolean).join(' · ') || 'Sin obra'}</span>
-                    <span className="block text-[11px] text-slate-500">
-                      Caduca el {fmtDate(t.expires_at)} · {t.use_count ? `usado ${t.use_count} veces, último ${fmtDateTime(t.last_used_at)}` : 'sin usar'}
+                <li key={t.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-3 justify-between">
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-white">{t.subcontractor_name}</span>
+                      <span className="block text-xs text-slate-400">{[t.obra_label, t.task_label].filter(Boolean).join(' · ') || 'Sin obra'}</span>
+                      <span className="block text-[11px] text-slate-500">
+                        Caduca el {fmtDate(t.expires_at)} · {t.use_count ? `usado ${t.use_count} veces, último ${fmtDateTime(t.last_used_at)}` : 'sin usar'}
+                        {t.work_pct != null && ` · certificado ${t.work_pct} %`}
+                      </span>
                     </span>
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className={`text-[11px] font-bold ${state === 'Activo' ? 'text-emerald-400' : 'text-slate-500'}`}>{state}</span>
-                    {state === 'Activo' && (
-                      <button onClick={() => revoke(t.id)} className="text-xs text-rose-400 flex items-center gap-1"><Ban className="w-3.5 h-3.5" /> Anular</button>
-                    )}
-                  </span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className={`text-[11px] font-bold flex items-center gap-1 ${state === 'Activo' || state === 'Finalizado' ? 'text-emerald-400' : state === 'Caducado' ? 'text-amber-400' : 'text-slate-500'}`}>
+                        {state === 'Finalizado' && <CheckCircle2 className="w-3.5 h-3.5" />}{state}
+                      </span>
+                      {t.can_resend && (
+                        <button onClick={() => resend(t)} disabled={resending === t.id} className={`${btnGhost} !py-1 !text-xs`}>
+                          {resending === t.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
+                          {isOpen ? 'Ocultar' : expired ? 'Reactivar y reenviar' : 'Copiar o reenviar'}
+                        </button>
+                      )}
+                      {state === 'Activo' && (
+                        <button onClick={() => revoke(t.id)} className="text-xs text-rose-400 flex items-center gap-1"><Ban className="w-3.5 h-3.5" /> Anular</button>
+                      )}
+                    </span>
+                  </div>
+                  {isOpen && <EnlaceEnvio link={open.link} />}
                 </li>
               );
             })}
