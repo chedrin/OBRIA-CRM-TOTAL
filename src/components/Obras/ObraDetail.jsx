@@ -25,6 +25,7 @@ import {
   PlusCircle,
   Download,
   ChevronDown,
+  Send,
   PencilRuler
 } from 'lucide-react';
 import CroquisEditorModal from '../Croquis/CroquisEditorModal';
@@ -35,6 +36,7 @@ import TaskProgressSelector from '../PortalObrero/TaskProgressSelector';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
+import NuevoPedidoModal from '../Avisos/NuevoPedidoModal';
 
 export default function ObraDetail({ obraId, onBack }) {
   const {
@@ -105,6 +107,8 @@ export default function ObraDetail({ obraId, onBack }) {
 
   // New Material State
   const [showNewMaterialModal, setShowNewMaterialModal] = useState(false);
+  // Materiales que se van a pedir al proveedor (null: modal cerrado).
+  const [pedidoMateriales, setPedidoMateriales] = useState(null);
   const [materialForm, setMaterialForm] = useState({
     concepto: '',
     cantidad: 1,
@@ -983,6 +987,16 @@ export default function ObraDetail({ obraId, onBack }) {
               </h3>
               <p className="text-xs text-slate-400">Alimentado por los audios de obreros, pedidos y mediciones de obra</p>
             </div>
+            <div className="flex flex-wrap gap-2 justify-end">
+            {(obra.necesidadesMateriales || []).some((m) => m.estado === 'pendiente') && (
+              <button
+                onClick={() => setPedidoMateriales((obra.necesidadesMateriales || []).filter((m) => m.estado === 'pendiente'))}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition"
+              >
+                <Send className="w-4 h-4" />
+                <span>Pedir pendientes</span>
+              </button>
+            )}
             <button
               onClick={() => setShowNewMaterialModal(true)}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition"
@@ -990,6 +1004,7 @@ export default function ObraDetail({ obraId, onBack }) {
               <Plus className="w-4 h-4" />
               <span>Añadir Material</span>
             </button>
+            </div>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow">
@@ -1023,7 +1038,16 @@ export default function ObraDetail({ obraId, onBack }) {
                           {mat.estado}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        {mat.estado !== 'recibido' && (
+                          <button
+                            onClick={() => setPedidoMateriales([mat])}
+                            title="Pedir este material a un proveedor por correo"
+                            className="mr-2 px-2.5 py-1 rounded-lg text-xs font-bold border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 inline-flex items-center gap-1"
+                          >
+                            <Send className="w-3.5 h-3.5" /> Pedir
+                          </button>
+                        )}
                         <select
                           value={mat.estado}
                           onChange={(e) => updateMaterialStatus(obra.id, mat.id, e.target.value)}
@@ -1478,6 +1502,25 @@ export default function ObraDetail({ obraId, onBack }) {
       )}
 
       {/* Modal Nuevo Material */}
+      {pedidoMateriales && (
+        <NuevoPedidoModal
+          initial={{
+            title: `Pedir material · ${[obra.codigo, obra.titulo].filter(Boolean).join(' - ')}`,
+            obraIds: [obra.id],
+            items: pedidoMateriales.map((m) => ({ material: m.concepto || '', cantidad: String(m.cantidad ?? ''), unidad: m.unidad || '' })),
+            supplierName: pedidoMateriales.length === 1 ? pedidoMateriales[0].proveedor : ''
+          }}
+          onClose={() => setPedidoMateriales(null)}
+          onDone={({ orders = [] }) => {
+            // Solo pasan a "pedido" si el correo salió; los borradores se revisan en Avisos y Pedidos.
+            if (orders.some((o) => o.status === 'enviado')) {
+              pedidoMateriales.forEach((m) => updateMaterialStatus(obra.id, m.id, 'pedido'));
+            }
+            setPedidoMateriales(null);
+          }}
+        />
+      )}
+
       {showNewMaterialModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">

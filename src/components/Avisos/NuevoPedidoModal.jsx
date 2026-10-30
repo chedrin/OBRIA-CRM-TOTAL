@@ -8,23 +8,36 @@ import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 /**
  * "Nuevo pedido": pedir suministros a uno o varios proveedores para una o varias obras.
  * Crea la necesidad y un correo por proveedor; se envían en el acto o se dejan en borrador para revisarlos.
+ * `initial` precarga obras, materiales y proveedor (p. ej. desde las necesidades calculadas de una obra).
  */
-export default function NuevoPedidoModal({ onClose, onDone }) {
+export default function NuevoPedidoModal({ onClose, onDone, initial = {} }) {
   const { obras = [] } = useApp() || {};
   const showNotification = useNotify();
   const [suppliers, setSuppliers] = useState([]);
-  const [obraIds, setObraIds] = useState([]);
+  const [obraIds, setObraIds] = useState(initial.obraIds || []);
   const [obraSearch, setObraSearch] = useState('');
   const [supplierIds, setSupplierIds] = useState([]);
-  const [items, setItems] = useState([emptyItem()]);
-  const [form, setForm] = useState({ kind: 'pedido', needed_by: '', delivery_address: '', site_contact_name: '', site_contact_phone: '', notes: '', urgency: 'normal' });
+  const [items, setItems] = useState(initial.items?.length ? initial.items : [emptyItem()]);
+  const [form, setForm] = useState(() => {
+    const first = obras.find((o) => o.id === initial.obraIds?.[0]);
+    return { kind: 'pedido', needed_by: '', delivery_address: first?.direccion || '', site_contact_name: '', site_contact_phone: '', notes: '', urgency: 'normal' };
+  });
   const [addressTouched, setAddressTouched] = useState(false);
   const [busy, setBusy] = useState('');
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   useEffect(() => {
-    api('/api/suppliers').then((list) => setSuppliers(list.filter((s) => s.is_active))).catch((e) => showNotification(e.message, 'error'));
-  }, [showNotification]);
+    api('/api/suppliers')
+      .then((list) => {
+        const active = list.filter((s) => s.is_active);
+        setSuppliers(active);
+        // Proveedor ya indicado en la obra: se marca si coincide con uno dado de alta.
+        const wanted = String(initial.supplierName || '').trim().toLowerCase();
+        const match = wanted && active.find((s) => s.name.trim().toLowerCase() === wanted);
+        if (match) setSupplierIds((prev) => (prev.length ? prev : [match.id]));
+      })
+      .catch((e) => showNotification(e.message, 'error'));
+  }, [showNotification, initial.supplierName]);
 
   // Obras en curso primero; el buscador filtra por código, título o dirección.
   const obraList = useMemo(() => {
@@ -78,7 +91,7 @@ export default function NuevoPedidoModal({ onClose, onDone }) {
       <div role="dialog" aria-modal="true" aria-label="Nuevo pedido"
         className="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 space-y-4 my-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-black text-white">Nuevo pedido a proveedores</h3>
+          <h3 className="text-lg font-black text-white">{initial.title || 'Nuevo pedido a proveedores'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Cerrar"><X className="w-5 h-5" /></button>
         </div>
 
