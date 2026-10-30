@@ -22,6 +22,7 @@ import EmitirFacturaModal from './EmitirFacturaModal';
 import { descargarFacturae, descargarLibroExpedidas, getResumenTrimestral, descargarFacturasExcel } from '../../services/facturacionService';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
+import { textoFactura, coincideBusqueda, tipoDeFactura } from '../../utils/buscarFacturas';
 
 const eur = (v) => Number(v || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -64,6 +65,7 @@ function totalEfectivo(f) {
 export default function FacturasList() {
   const {
     facturas,
+    obras = [],
     updateFacturaStatus,
     setPdfModalData,
     presupuestos,
@@ -81,6 +83,11 @@ export default function FacturasList() {
   const [filterAeat, setFilterAeat] = useState(''); // '', aceptado, aceptado_con_errores, rechazado, pendiente, sin_registro, anulada
   const [filterPeriodo, setFilterPeriodo] = useState('todos'); // todos | 2027-1T ...
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterObra, setFilterObra] = useState('');
+  const [filterCliente, setFilterCliente] = useState('');
+  const [filterTipo, setFilterTipo] = useState(''); // '', certificacion, unica, ordinaria, rectificativa
+  const [importeMin, setImporteMin] = useState('');
+  const [importeMax, setImporteMax] = useState('');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [vista, setVistaState] = useState(leerVista);
@@ -108,18 +115,48 @@ export default function FacturasList() {
   const registradas = facturas.filter(f => f.aeat?.estado === 'aceptado').length;
   const sinEnviar = facturas.filter(f => f.aeat?.estado === 'pendiente').length;
 
-  const q = searchQuery.toLowerCase();
+  // Nombre de la obra de cada factura (por la obra enlazada; si no, por su título).
+  const obraDe = (f) => {
+    const obra = f.obraId ? obras.find(o => o.id === f.obraId) : null;
+    return obra ? [obra.codigo, obra.titulo || obra.nombre].filter(Boolean).join(' - ') : '';
+  };
+  const textos = useMemo(() => new Map(facturas.map(f => [f.id, textoFactura(f, {
+    obraNombre: obraDe(f),
+    presupuestoNumero: f.presupuestoId ? presupuestos.find(p => p.id === f.presupuestoId)?.numero : ''
+  })])), [facturas, obras, presupuestos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const opcionesObra = useMemo(() => {
+    const mapa = new Map();
+    for (const f of facturas) {
+      const clave = f.obraId || '';
+      if (clave && !mapa.has(clave)) mapa.set(clave, obraDe(f) || f.obraTitulo || clave);
+    }
+    return [...mapa.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [facturas, obras]); // eslint-disable-line react-hooks/exhaustive-deps
+  const opcionesCliente = useMemo(() => [...new Set(facturas.map(f => f.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [facturas]);
+  const hayFiltros = searchQuery || filterObra || filterCliente || filterTipo || importeMin || importeMax || desde || hasta
+    || filterAeat || filterEstado !== 'todas' || filterPeriodo !== 'todos';
+  const limpiarFiltros = () => {
+    setSearchQuery(''); setFilterObra(''); setFilterCliente(''); setFilterTipo(''); setImporteMin(''); setImporteMax('');
+    setDesde(''); setHasta(''); setFilterAeat(''); setFilterEstado('todas'); setFilterPeriodo('todos');
+  };
+
   const filteredFacturas = facturas.filter(fac => {
     const matchesEstado = filterEstado === 'todas'
       || (filterEstado === 'problemas' ? conProblemas.includes(fac) : fac.estadoCobro === filterEstado && !fac.anulada);
     const matchesPeriodo = filterPeriodo === 'todos' || `${fac.ano}-${fac.trimestre}` === filterPeriodo;
-    const matchesSearch = [fac.numero, fac.cliente, fac.obraTitulo, fac.cifNif].some(t => String(t || '').toLowerCase().includes(q));
+    const matchesSearch = !searchQuery || coincideBusqueda(textos.get(fac.id) || '', searchQuery);
+    const total = Number(fac.totalFactura || 0);
+    const matchesImporte = (importeMin === '' || total >= Number(importeMin)) && (importeMax === '' || total <= Number(importeMax));
+    const matchesObra = !filterObra || fac.obraId === filterObra;
+    const matchesCliente = !filterCliente || fac.cliente === filterCliente;
+    const matchesTipo = !filterTipo || tipoDeFactura(fac) === filterTipo;
     const matchesFechas = (!desde || fac.fechaEmision >= desde) && (!hasta || fac.fechaEmision <= hasta);
     const matchesAeat = !filterAeat
       || (filterAeat === 'anulada' ? fac.anulada
         : filterAeat === 'sin_registro' ? !fac.aeat
           : fac.aeat?.estado === filterAeat);
-    return matchesEstado && matchesPeriodo && matchesSearch && matchesFechas && matchesAeat;
+    return matchesEstado && matchesPeriodo && matchesSearch && matchesFechas && matchesAeat
+      && matchesImporte && matchesObra && matchesCliente && matchesTipo;
   });
 
   /** Botones de cada factura; en las vistas de lista van sin texto (con su título al pasar el ratón). */
@@ -398,11 +435,12 @@ export default function FacturasList() {
 
       {/* Search and Filters Bar */}
       <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="relative w-full md:w-80">
+        <div className="relative w-full md:w-96">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar por factura, cliente, NIF u obra..."
+            placeholder="Buscar cualquier dato: nº, cliente, NIF, obra, concepto, fecha, importe, CSV..."
+            title="Escribe una o varias palabras: salen las facturas que las tienen todas (en cualquier dato)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-400"
@@ -457,6 +495,37 @@ export default function FacturasList() {
             })}
           </select>
         </div>
+      </div>
+
+      {/* Filtros por obra, cliente, tipo e importe */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <select value={filterObra} onChange={(e) => setFilterObra(e.target.value)} aria-label="Obra" className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 font-semibold max-w-[16rem]">
+          <option value="">Todas las obras</option>
+          {opcionesObra.map(([id, nombre]) => <option key={id} value={id}>{nombre}</option>)}
+        </select>
+        <select value={filterCliente} onChange={(e) => setFilterCliente(e.target.value)} aria-label="Cliente" className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 font-semibold max-w-[16rem]">
+          <option value="">Todos los clientes</option>
+          {opcionesCliente.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={filterTipo} onChange={(e) => setFilterTipo(e.target.value)} aria-label="Tipo de factura" className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 font-semibold">
+          <option value="">Todos los tipos</option>
+          <option value="certificacion">Certificaciones</option>
+          <option value="unica">Facturas únicas (100 %)</option>
+          <option value="ordinaria">Otras facturas</option>
+          <option value="rectificativa">Rectificativas</option>
+        </select>
+        <label className="flex items-center gap-1.5 text-slate-400">
+          Total desde
+          <input type="number" step="0.01" value={importeMin} onChange={(e) => setImporteMin(e.target.value)} placeholder="0" className="w-24 bg-slate-800 border border-slate-700 text-white rounded-xl px-2 py-1.5" />
+        </label>
+        <label className="flex items-center gap-1.5 text-slate-400">
+          hasta
+          <input type="number" step="0.01" value={importeMax} onChange={(e) => setImporteMax(e.target.value)} placeholder="∞" className="w-24 bg-slate-800 border border-slate-700 text-white rounded-xl px-2 py-1.5" />
+          €
+        </label>
+        {hayFiltros && (
+          <button type="button" onClick={limpiarFiltros} className="ml-auto px-3 py-1.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white">Quitar todos los filtros</button>
+        )}
       </div>
 
       {/* Fechas, modo de vista y Excel */}
