@@ -5,17 +5,9 @@ import { calcularIvaObra, getObraFiscal, guardarObraFiscal } from '../../service
 import ModalOverlay from '../Common/ModalOverlay';
 import BarraFacturacion from './BarraFacturacion';
 import { facturacionPresupuestos, MARGEN_LIMITE } from '../../utils/facturadoPresupuesto';
+import { siguienteCertificacion, etiquetaCertificacion } from '../../utils/certificaciones';
 
 const inputClass = 'w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white text-xs sm:text-sm focus:outline-none focus:border-emerald-400';
-
-const CERTIFICACIONES = [
-  { pct: 40, texto: 'Certificación 1 (Anticipo 40% Inicio Obra)' },
-  { pct: 40, texto: 'Certificación 2 (Avance 40% Tras Instalaciones)' },
-  { pct: 20, texto: 'Certificación Final 20% (Fin de Obra y Llaves)' },
-  { pct: 100, texto: 'Factura Ordinaria Completa 100%' }
-];
-
-const RESTO = 'Certificación final (resto pendiente de facturar)';
 
 const DATOS_OBRA_INICIALES = {
   tipoObra: 'reforma_vivienda',
@@ -41,8 +33,12 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
   const estados = useMemo(() => facturacionPresupuestos(presupuestos, facturas), [presupuestos, facturas]);
   const estado = pres ? estados.get(pres.id) : null;
   const pendientePct = estado?.total ? Math.round((estado.pendiente / estado.total) * 10000) / 100 : 100;
-  const [concepto, setConcepto] = useState(CERTIFICACIONES[0].texto);
+  // Certificaciones: cada una una sola vez y en orden; antes de la primera, se puede hacer una factura única del 100 %.
+  const sig = useMemo(() => (pres ? siguienteCertificacion(pres, facturas, estado?.pendiente ?? null) : null), [pres, facturas, estado]);
+  const [unica, setUnica] = useState(false);
   const [pct, setPct] = useState(40);
+  const importeFijo = Boolean(unica || sig?.base !== null);
+  const concepto = !sig ? '' : unica ? etiquetaCertificacion({ unica: true }) : etiquetaCertificacion(sig);
   const [cliente, setCliente] = useState({});
   const [obra, setObra] = useState(DATOS_OBRA_INICIALES);
   const [fiscal, setFiscal] = useState(null);
@@ -63,6 +59,7 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
       clienteProvincia: pres.provincia || ''
     });
     setManual(null);
+    setUnica(false);
     // No proponer más de lo que queda por facturar.
     const queda = estados.get(pres.id);
     if (queda?.total) {
@@ -91,16 +88,21 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
   const isp = manual ? manual.isp : Boolean(fiscal?.isp);
   const irpfPct = Number(fiscal?.irpfPct ?? empresa?.irpfPorDefectoPct ?? 0);
   const importes = useMemo(() => {
-    // El resto pendiente se factura exacto, sin redondear el porcentaje.
-    const base = estado && estado.pendiente > 0 && Math.abs(pct - pendientePct) < 0.005
+    // Factura única: el 100 %. Plan fijo: el importe de la certificación. Si no, el porcentaje
+    // elegido (el resto pendiente se factura exacto, sin redondear el porcentaje).
+    let base;
+    if (unica) base = Number(estado?.total ?? pres?.baseImponible ?? 0);
+    else if (sig?.base !== null && sig?.base !== undefined) base = sig.base;
+    else base = estado && estado.pendiente > 0 && Math.abs(pct - pendientePct) < 0.005
       ? estado.pendiente
       : Math.round((Number(pres?.baseImponible || 0) * pct) / 100 * 100) / 100;
     const cuota = isp ? 0 : Math.round(base * ivaPct) / 100;
     const irpf = Math.round(base * irpfPct) / 100;
     return { base, cuota, irpf, total: base + cuota - irpf };
-  }, [pres, pct, ivaPct, isp, irpfPct, estado, pendientePct]);
+  }, [pres, pct, ivaPct, isp, irpfPct, estado, pendientePct, unica, sig]);
+  const pctMostrado = importeFijo && estado?.total ? Math.round((importes.base / estado.total) * 10000) / 100 : pct;
   const excede = Boolean(estado) && importes.base > estado.pendiente + MARGEN_LIMITE;
-  const yaFacturado = Boolean(estado?.completo);
+  const yaFacturado = Boolean(estado?.completo) || Boolean(sig?.cerrado && !unica);
 
   const setC = (field) => (e) => setCliente(c => ({ ...c, [field]: e.target.value }));
   const setO = (field) => (e) => setObra(o => ({ ...o, [field]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
@@ -110,10 +112,13 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
     if (!pres || emitiendo || excede || yaFacturado || importes.base <= 0) return;
     setEmitiendo(true);
     const motivo = manual ? `IVA fijado a mano: ${isp ? 'inversión del sujeto pasivo' : `${ivaPct} %`}.` : fiscal?.motivo || '';
-    const factura = await convertPresupuestoToFactura(pres.id, concepto, Number(pct), {
+    const factura = await convertPresupuestoToFactura(pres.id, concepto, Number(pctMostrado), {
       ...cliente,
       clienteTipo: cliente.clienteTipo === 'empresa' ? 'empresa' : 'particular',
-      descripcion: `${concepto} · ${pres.obraTitulo || pres.numero}`,
+      // El servidor pone delante "Certificación N de M (...)" o "Factura única (100 %)".
+      descripcion: pres.obraTitulo || pres.numero,
+      certificacion: unica ? undefined : sig?.n,
+      facturaUnica: unica,
       ivaPct,
       isp,
       irpfPct,
@@ -177,27 +182,54 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
 
         <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <legend className="text-slate-300 font-bold mb-2">Qué se factura</legend>
-          <div>
-            <label className="text-slate-400 block mb-1">Concepto</label>
-            <select
-              value={concepto}
-              onChange={(e) => {
-                setConcepto(e.target.value);
-                const c = CERTIFICACIONES.find(x => x.texto === e.target.value);
-                if (c) setPct(c.pct);
-                if (e.target.value === RESTO) setPct(pendientePct);
-              }}
-              className={inputClass}
-            >
-              {CERTIFICACIONES.map(c => (
-                <option key={c.texto} value={c.texto} disabled={Boolean(estado) && c.pct > pendientePct + 0.005}>{c.texto}</option>
-              ))}
-              {estado?.facturado > 0 && !yaFacturado && <option value={RESTO}>{RESTO} ({pendientePct.toLocaleString('es-ES')} %)</option>}
-            </select>
-          </div>
+          {sig && (
+            <div className="sm:col-span-2 space-y-2">
+              <label className="text-slate-400 block">Certificación</label>
+              {sig.plan.fijo ? (
+                <ol className="space-y-1.5">
+                  {sig.plan.items.map(c => {
+                    const emitida = sig.emitidas.get(c.n);
+                    const siguiente = !unica && !sig.cerrado && c.n === sig.n;
+                    return (
+                      <li key={c.n} className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs ${siguiente ? 'border-amber-500/50 bg-amber-500/10 text-amber-200 font-semibold' : 'border-slate-800 bg-slate-950 text-slate-400'}`}>
+                        <span>{c.n}. {c.pct.toLocaleString('es-ES')} % · {c.texto}</span>
+                        <span className={`font-semibold ${emitida ? 'text-emerald-300' : siguiente ? 'text-amber-300' : 'text-slate-500'}`}>
+                          {emitida ? `Facturada · ${emitida.numero}` : siguiente ? 'Es la que toca' : 'Después de la anterior'}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              ) : (
+                <p className="text-[11px] text-slate-400">
+                  Las condiciones de pago de este presupuesto no fijan porcentajes: elige el importe de cada certificación. Se numeran en orden; toca la certificación {sig.n}
+                  {sig.emitidas.size > 0 && ` (ya facturadas: ${[...sig.emitidas.entries()].map(([n, f]) => `${n} · ${f.numero}`).join(', ')})`}.
+                </p>
+              )}
+              {sig.unicaPermitida && (
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setUnica(false)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${!unica ? 'bg-emerald-600 text-white border-emerald-500' : 'border-slate-700 text-slate-300'}`}>
+                    Certificación {sig.n}
+                  </button>
+                  <button type="button" onClick={() => setUnica(true)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${unica ? 'bg-emerald-600 text-white border-emerald-500' : 'border-slate-700 text-slate-300'}`}>
+                    Factura única del 100 %
+                  </button>
+                </div>
+              )}
+              {sig.cerrado && !yaFacturado && <p className="text-xs text-emerald-300">Todas las certificaciones de este presupuesto están facturadas.</p>}
+              <p className="text-xs text-slate-300">Concepto: <strong className="text-white">{concepto}</strong></p>
+            </div>
+          )}
           <div>
             <label className="text-slate-400 block mb-1">Porcentaje del presupuesto (%)</label>
-            <input type="number" min="0.01" max={pendientePct} step="0.01" value={pct} onChange={(e) => setPct(Math.min(Math.max(Number(e.target.value) || 0, 0), 100))} className={inputClass} />
+            <input
+              type="number" min="0.01" max={pendientePct} step="0.01"
+              value={pctMostrado}
+              readOnly={importeFijo}
+              onChange={(e) => setPct(Math.min(Math.max(Number(e.target.value) || 0, 0), 100))}
+              className={`${inputClass} ${importeFijo ? 'opacity-70 cursor-not-allowed' : ''}`}
+            />
+            {importeFijo && <p className="text-[11px] text-slate-500 mt-1">{unica ? 'La factura única es el 100 % del presupuesto.' : sig?.ultima ? 'Última certificación: lo que queda pendiente.' : 'Importe fijado por las condiciones de pago del presupuesto.'}</p>}
             {excede && (
               <p className="text-[11px] text-rose-300 mt-1">Supera lo pendiente de facturar: como máximo {pendientePct.toLocaleString('es-ES')} % ({eur(estado.pendiente)} € de base).</p>
             )}
@@ -348,7 +380,7 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
             pres={pres}
             cliente={cliente}
             concepto={concepto}
-            pct={pct}
+            pct={pctMostrado}
             importes={importes}
             ivaPct={ivaPct}
             irpfPct={irpfPct}
