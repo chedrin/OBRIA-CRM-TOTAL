@@ -14,6 +14,7 @@ import {
   BadgeCheck
 } from 'lucide-react';
 import { useUiPreferences } from '../../context/UiPreferencesContext';
+import BarraFacturacion from '../Facturas/BarraFacturacion';
 
 // Estados del ciclo de vida del presupuesto agrupados para el Kanban.
 export const PRESUPUESTO_COLUMNAS = [
@@ -61,6 +62,7 @@ export function RevisionBadge({ pres }) {
 
 // Acciones de un presupuesto. "icon" = solo iconos (tablas); "full" = con texto (tarjetas).
 function Acciones({ pres, size = 'full', handlers, nowrap = false }) {
+  const facturadoEntero = Boolean(handlers.facturacionDe?.(pres)?.completo);
   const aceptable = !['aceptado', 'firmado', 'facturado'].includes(pres.estado);
   const iconOnly = size === 'icon';
   const base = `inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition active:scale-95 ${iconOnly ? 'w-8 h-8' : 'px-2.5 py-1.5'}`;
@@ -99,9 +101,14 @@ function Acciones({ pres, size = 'full', handlers, nowrap = false }) {
         {!iconOnly && <span>Enviar</span>}
       </button>
       {handlers.onFacturar && (
-        <button onClick={() => handlers.onFacturar(pres)} title="Pasar a factura" className={`${base} bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20`}>
+        <button
+          onClick={() => handlers.onFacturar(pres)}
+          disabled={facturadoEntero}
+          title={facturadoEntero ? 'Ya está facturado al 100 %' : 'Pasar a factura'}
+          className={`${base} bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed`}
+        >
           <Receipt className="w-3.5 h-3.5" />
-          {!iconOnly && <span>Facturar</span>}
+          {!iconOnly && <span>{facturadoEntero ? 'Facturado' : 'Facturar'}</span>}
         </button>
       )}
     </div>
@@ -145,6 +152,9 @@ function VistaKanban({ items, handlers }) {
                     <span className="text-[10px] text-slate-500">{pres.partidas?.length || 0} partidas</span>
                     <span className="text-sm font-black text-white tabular-nums">{eur(pres.totalConIva)}</span>
                   </div>
+                  {handlers.facturacionDe?.(pres)?.facturado > 0 && (
+                    <BarraFacturacion estado={handlers.facturacionDe(pres)} compacta className="mt-2" />
+                  )}
                   <div className="mt-2.5 pt-2.5 border-t border-slate-800">
                     <Acciones pres={pres} size="icon" handlers={handlers} />
                   </div>
@@ -165,7 +175,8 @@ const COLUMNAS_TABLA = [
   { id: 'cliente', label: 'Cliente', get: p => (p.cliente || '').toLowerCase() },
   { id: 'estado', label: 'Estado', get: p => PRESUPUESTO_COLUMNAS.indexOf(columnaDe(p.estado)) },
   { id: 'baseImponible', label: 'Base', get: p => Number(p.baseImponible || 0), num: true },
-  { id: 'totalConIva', label: 'Total', get: p => Number(p.totalConIva || 0), num: true }
+  { id: 'totalConIva', label: 'Total', get: p => Number(p.totalConIva || 0), num: true },
+  { id: 'facturado', label: 'Facturado', get: () => 0, noSort: true }
 ];
 
 function VistaTabla({ items, handlers, compact, sort, onSort }) {
@@ -179,6 +190,7 @@ function VistaTabla({ items, handlers, compact, sort, onSort }) {
               {visibles.map(col => {
                 const active = sort.by === col.id;
                 const SortIcon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown;
+                if (col.noSort) return <th key={col.id} className="px-3 py-2.5 font-bold whitespace-nowrap">{col.label}</th>;
                 return (
                   <th key={col.id} className={`px-3 py-2.5 font-bold whitespace-nowrap ${col.num ? 'text-right' : ''}`}>
                     <button type="button" onClick={() => onSort(col.id)} className={`inline-flex items-center gap-1 hover:text-slate-200 transition ${active ? 'text-slate-200' : ''}`}>
@@ -201,6 +213,10 @@ function VistaTabla({ items, handlers, compact, sort, onSort }) {
                   if (col.id === 'cliente') return <td key={col.id} className="px-3 py-3 text-slate-300 max-w-[12rem] truncate">{pres.cliente}</td>;
                   if (col.id === 'estado') return <td key={col.id} className="px-3 py-3"><div className="flex flex-wrap items-center gap-1"><EstadoBadge estado={pres.estado} /><RevisionBadge pres={pres} /></div></td>;
                   if (col.id === 'baseImponible') return <td key={col.id} className="px-3 py-3 text-right text-slate-300 tabular-nums whitespace-nowrap">{eur(pres.baseImponible)}</td>;
+                  if (col.id === 'facturado') {
+                    const estado = handlers.facturacionDe?.(pres);
+                    return <td key={col.id} className="px-3 py-2 min-w-[11rem]">{estado?.facturado > 0 ? <BarraFacturacion estado={estado} compacta /> : <span className="text-slate-600">—</span>}</td>;
+                  }
                   return <td key={col.id} className="px-3 py-3 text-right font-bold text-white tabular-nums whitespace-nowrap">{eur(pres.totalConIva)}</td>;
                 })}
                 <td className="px-3 py-2">

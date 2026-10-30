@@ -38,6 +38,8 @@ import AiImprovementControl from '../Common/AiImprovementControl';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 import NuevoPedidoModal from '../Avisos/NuevoPedidoModal';
 import ModalOverlay from '../Common/ModalOverlay';
+import BarraFacturacion from '../Facturas/BarraFacturacion';
+import { facturacionObra } from '../../utils/facturadoPresupuesto';
 import { AnimatePresence } from 'motion/react';
 
 export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
@@ -52,6 +54,7 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
     users,
     presupuestos,
     facturas,
+    facturacionActivada,
     facturasProveedores,
     basePrecios,
     updateObraBasePrecioItem,
@@ -201,6 +204,7 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   };
   const croquisPlanObra = obra.croquis?.plan?.rooms?.length ? normalizarCroquis(obra.croquis.plan) : null;
   const obraFacturas = facturas.filter(f => f.obraId === obra.id);
+  const estadoFacturacionObra = facturacionActivada ? facturacionObra(obra, presupuestos, facturas) : null;
   const obraFacturasProveedores = (facturasProveedores || []).filter(f => f.obraId === obra.id);
   const totalFacturadoObra = obraFacturas.reduce((s, f) => s + f.totalFactura, 0);
   const totalCobradoObra = obraFacturas.filter(f => f.estadoCobro === 'cobrada').reduce((s, f) => s + f.totalFactura, 0);
@@ -1322,6 +1326,13 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
               <div>
                 <h3 className="font-bold text-white text-base">Facturas y Certificaciones Emitidas</h3>
                 <p className="text-xs text-slate-400">Total facturado: {totalFacturadoObra.toLocaleString('es-ES')} € (Cobrado: {totalCobradoObra.toLocaleString('es-ES')} €)</p>
+                {estadoFacturacionObra?.total > 0 && (
+                  <BarraFacturacion
+                    estado={estadoFacturacionObra}
+                    titulo={`Facturado de ${estadoFacturacionObra.presupuestos === 1 ? 'su presupuesto' : `sus ${estadoFacturacionObra.presupuestos} presupuestos`} (base imponible)`}
+                    className="mt-2 max-w-md"
+                  />
+                )}
               </div>
               <button
                 onClick={() => setActiveTab('facturas')}

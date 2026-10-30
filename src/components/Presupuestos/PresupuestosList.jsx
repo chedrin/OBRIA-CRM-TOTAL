@@ -8,6 +8,7 @@ import PresupuestosListado from './PresupuestosListado';
 import ViewModeSwitcher from '../Common/ViewModeSwitcher';
 import SendDocumentModal from '../Common/SendDocumentModal';
 import EmitirFacturaModal from '../Facturas/EmitirFacturaModal';
+import { facturacionPresupuestos } from '../../utils/facturadoPresupuesto';
 import { generateExecutionPlanFromBudget } from '../../services/obraBudgetSyncService';
 
 export default function PresupuestosList() {
@@ -17,6 +18,7 @@ export default function PresupuestosList() {
     registrarNuevaAceptacion,
     addObra,
     facturacionActivada,
+    facturas = [],
     setPdfModalData,
     setActiveTab,
     showNotification
@@ -29,12 +31,19 @@ export default function PresupuestosList() {
   const [quoteToSend, setQuoteToSend] = useState(null);
   const [presupuestoAObra, setPresupuestoAObra] = useState(null); // presupuesto pendiente de confirmar como obra
 
+  // Lo facturado de cada presupuesto (solo cuenta con la facturación legal activada).
+  const estadosFacturacion = facturacionActivada ? facturacionPresupuestos(presupuestos, facturas) : new Map();
+
   if (viewMode === 'new_ai') {
     return <PresupuestoGeneratorAI onCancel={() => setViewMode('list')} onCreated={() => setViewMode('list')} />;
   }
 
   // Sin la facturación activada el botón Facturar se ve igual, pero explica qué falta y lleva a Ajustes.
   const facturar = (pres) => {
+    if (facturacionActivada && estadosFacturacion.get(pres.id)?.completo) {
+      showNotification(`El presupuesto ${pres.numero} ya está facturado al 100 %. Para cambiar un importe, emite una rectificativa desde la factura.`, 'error');
+      return;
+    }
     if (facturacionActivada) {
       setShowConvertModal(pres);
       return;
@@ -62,6 +71,7 @@ export default function PresupuestosList() {
           quoteId={selectedQuoteId}
           onBack={() => setViewMode('list')}
           onFacturar={facturar}
+          estadoFacturacion={estadosFacturacion.get(selectedQuoteId) || null}
         />
         {emitirFacturaModal}
       </>
@@ -149,7 +159,8 @@ export default function PresupuestosList() {
           },
           onPdf: (pres) => setPdfModalData({ type: 'presupuesto', data: pres }),
           onEnviar: (pres) => setQuoteToSend(pres),
-          onFacturar: facturar
+          onFacturar: facturar,
+          facturacionDe: (pres) => estadosFacturacion.get(pres.id)
         }}
       />}
 

@@ -3,6 +3,8 @@ import { Receipt, AlertTriangle, FileCheck2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { calcularIvaObra, getObraFiscal, guardarObraFiscal } from '../../services/facturacionService';
 import ModalOverlay from '../Common/ModalOverlay';
+import BarraFacturacion from './BarraFacturacion';
+import { facturacionPresupuestos, MARGEN_LIMITE } from '../../utils/facturadoPresupuesto';
 
 const inputClass = 'w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white text-xs sm:text-sm focus:outline-none focus:border-emerald-400';
 
@@ -12,6 +14,8 @@ const CERTIFICACIONES = [
   { pct: 20, texto: 'Certificación Final 20% (Fin de Obra y Llaves)' },
   { pct: 100, texto: 'Factura Ordinaria Completa 100%' }
 ];
+
+const RESTO = 'Certificación final (resto pendiente de facturar)';
 
 const DATOS_OBRA_INICIALES = {
   tipoObra: 'reforma_vivienda',
@@ -29,10 +33,14 @@ const eur = (v) => Number(v || 0).toLocaleString('es-ES', { minimumFractionDigit
  * cliente, IVA según el tipo de obra (con su motivo legal) y vista previa de importes.
  */
 export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = null, onClose, onEmitida }) {
-  const { convertPresupuestoToFactura, facturacion } = useApp();
+  const { convertPresupuestoToFactura, facturacion, facturas = [] } = useApp();
   const empresa = facturacion?.empresa;
   const [presId, setPresId] = useState(presupuestoInicial?.id || presupuestos[0]?.id || '');
   const pres = presupuestos.find(p => p.id === presId) || null;
+  // Lo ya facturado de cada presupuesto (facturas vigentes, con rectificativas y sin anuladas).
+  const estados = useMemo(() => facturacionPresupuestos(presupuestos, facturas), [presupuestos, facturas]);
+  const estado = pres ? estados.get(pres.id) : null;
+  const pendientePct = estado?.total ? Math.round((estado.pendiente / estado.total) * 10000) / 100 : 100;
   const [concepto, setConcepto] = useState(CERTIFICACIONES[0].texto);
   const [pct, setPct] = useState(40);
   const [cliente, setCliente] = useState({});
@@ -55,6 +63,12 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
       clienteProvincia: pres.provincia || ''
     });
     setManual(null);
+    // No proponer más de lo que queda por facturar.
+    const queda = estados.get(pres.id);
+    if (queda?.total) {
+      const restoPct = Math.round((queda.pendiente / queda.total) * 10000) / 100;
+      if (restoPct < pct) setPct(restoPct);
+    }
     if (pres.obraId) {
       getObraFiscal(pres.obraId).then(r => {
         if (r.ok && r.data?.obra?.datosFiscales && Object.keys(r.data.obra.datosFiscales).length) {
@@ -77,18 +91,23 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
   const isp = manual ? manual.isp : Boolean(fiscal?.isp);
   const irpfPct = Number(fiscal?.irpfPct ?? empresa?.irpfPorDefectoPct ?? 0);
   const importes = useMemo(() => {
-    const base = Math.round((Number(pres?.baseImponible || 0) * pct) / 100 * 100) / 100;
+    // El resto pendiente se factura exacto, sin redondear el porcentaje.
+    const base = estado && estado.pendiente > 0 && Math.abs(pct - pendientePct) < 0.005
+      ? estado.pendiente
+      : Math.round((Number(pres?.baseImponible || 0) * pct) / 100 * 100) / 100;
     const cuota = isp ? 0 : Math.round(base * ivaPct) / 100;
     const irpf = Math.round(base * irpfPct) / 100;
     return { base, cuota, irpf, total: base + cuota - irpf };
-  }, [pres, pct, ivaPct, isp, irpfPct]);
+  }, [pres, pct, ivaPct, isp, irpfPct, estado, pendientePct]);
+  const excede = Boolean(estado) && importes.base > estado.pendiente + MARGEN_LIMITE;
+  const yaFacturado = Boolean(estado?.completo);
 
   const setC = (field) => (e) => setCliente(c => ({ ...c, [field]: e.target.value }));
   const setO = (field) => (e) => setObra(o => ({ ...o, [field]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!pres || emitiendo) return;
+    if (!pres || emitiendo || excede || yaFacturado || importes.base <= 0) return;
     setEmitiendo(true);
     const motivo = manual ? `IVA fijado a mano: ${isp ? 'inversión del sujeto pasivo' : `${ivaPct} %`}.` : fiscal?.motivo || '';
     const factura = await convertPresupuestoToFactura(pres.id, concepto, Number(pct), {
@@ -99,6 +118,7 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
       isp,
       irpfPct,
       ivaMotivo: motivo,
+      baseImponible: importes.base,
       fechaOperacion: fechaOperacion || undefined
     });
     if (factura && pres.obraId) {
@@ -138,9 +158,20 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
             <label className="text-slate-400 block mb-1 font-medium">Presupuesto</label>
             <select value={presId} onChange={(e) => setPresId(e.target.value)} className={inputClass}>
               {presupuestos.map(p => (
-                <option key={p.id} value={p.id}>{p.numero} - {p.obraTitulo} ({p.totalConIva?.toLocaleString('es-ES')} €)</option>
+                <option key={p.id} value={p.id}>
+                  {p.numero} - {p.obraTitulo} ({p.totalConIva?.toLocaleString('es-ES')} €){estados.get(p.id)?.completo ? ' · facturado al 100 %' : estados.get(p.id)?.facturado ? ` · facturado ${estados.get(p.id).pct.toLocaleString('es-ES')} %` : ''}
+                </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {estado && (
+          <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+            <BarraFacturacion estado={estado} titulo={`Facturación del presupuesto ${pres.numero} (base ${eur(estado.total)} €)`} />
+            {yaFacturado && (
+              <p className="text-xs text-emerald-300">Este presupuesto ya está facturado entero. Para cambiar un importe, emite una rectificativa desde la factura.</p>
+            )}
           </div>
         )}
 
@@ -154,15 +185,22 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
                 setConcepto(e.target.value);
                 const c = CERTIFICACIONES.find(x => x.texto === e.target.value);
                 if (c) setPct(c.pct);
+                if (e.target.value === RESTO) setPct(pendientePct);
               }}
               className={inputClass}
             >
-              {CERTIFICACIONES.map(c => <option key={c.texto} value={c.texto}>{c.texto}</option>)}
+              {CERTIFICACIONES.map(c => (
+                <option key={c.texto} value={c.texto} disabled={Boolean(estado) && c.pct > pendientePct + 0.005}>{c.texto}</option>
+              ))}
+              {estado?.facturado > 0 && !yaFacturado && <option value={RESTO}>{RESTO} ({pendientePct.toLocaleString('es-ES')} %)</option>}
             </select>
           </div>
           <div>
             <label className="text-slate-400 block mb-1">Porcentaje del presupuesto (%)</label>
-            <input type="number" min="1" max="100" step="0.01" value={pct} onChange={(e) => setPct(Math.min(Math.max(Number(e.target.value) || 0, 0), 100))} className={inputClass} />
+            <input type="number" min="0.01" max={pendientePct} step="0.01" value={pct} onChange={(e) => setPct(Math.min(Math.max(Number(e.target.value) || 0, 0), 100))} className={inputClass} />
+            {excede && (
+              <p className="text-[11px] text-rose-300 mt-1">Supera lo pendiente de facturar: como máximo {pendientePct.toLocaleString('es-ES')} % ({eur(estado.pendiente)} € de base).</p>
+            )}
           </div>
           <div>
             <label className="text-slate-400 block mb-1">Fecha de realización de la obra (si no es hoy)</label>
@@ -297,7 +335,7 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
 
         <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
           <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 text-xs">Cancelar</button>
-          <button type="submit" disabled={emitiendo || !pres || importes.base <= 0} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20">
+          <button type="submit" disabled={emitiendo || !pres || importes.base <= 0 || excede || yaFacturado} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20">
             {emitiendo ? 'Emitiendo…' : 'Emitir factura (VeriFactu)'}
           </button>
         </div>

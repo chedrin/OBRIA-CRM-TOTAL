@@ -1366,7 +1366,8 @@ export function AppProvider({ children }) {
       descripcion: datos.descripcion || `${tipoFactura} · ${pres.obraTitulo || pres.numero}`,
       obraId: pres.obraId || null,
       presupuestoId: pres.id,
-      baseImponible: Number(((pres.baseImponible || 0) * factor).toFixed(2)),
+      presupuestoBase: Number(pres.baseImponible || 0),
+      baseImponible: datos.baseImponible ?? Number(((pres.baseImponible || 0) * factor).toFixed(2)),
       lineas: factor === 1 && Array.isArray(pres.partidas)
         ? pres.partidas.map(p => ({ concepto: p.concepto, cantidad: p.cantidad, unidad: p.unidad, precio: p.precioVenta, importe: p.total }))
         : [],
@@ -1390,7 +1391,9 @@ export function AppProvider({ children }) {
   };
 
   const rectificarFactura = async (facturaId, datos) => {
-    const result = await rectificarFacturaApi(facturaId, datos);
+    const original = facturasLegales.find(f => f.id === facturaId);
+    const pres = original?.presupuestoId ? presupuestos.find(p => p.id === original.presupuestoId) : null;
+    const result = await rectificarFacturaApi(facturaId, { ...datos, presupuestoBase: pres ? Number(pres.baseImponible || 0) : undefined });
     if (!result.ok) {
       showNotification(`No se emitió la rectificativa: ${result.error}`, 'error');
       return null;
