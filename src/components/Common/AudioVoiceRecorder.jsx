@@ -63,6 +63,7 @@ export default function AudioVoiceRecorder({
   const speechEndedRef = useRef(null);
   const speechDoneRef = useRef(true);
   const lastAudioRef = useRef(null);
+  const maxMicVolumeRef = useRef(0);
 
   const aiConfig = empresaConfig?.aiConfig || {};
   const hasRealOpenAiKey =
@@ -106,6 +107,15 @@ export default function AudioVoiceRecorder({
 
   // Algunos navegadores aceptan el dictado pero nunca devuelven texto: se avisa a los pocos segundos.
   useEffect(() => {
+    // Micrófono mudo (nivel 0% todo el rato): ni el dictado ni la IA tienen nada que oír.
+    if (isRecording && recordSeconds >= 4 && analyserRef.current && maxMicVolumeRef.current === 0 && liveStatus !== 'no-audio') {
+      setLiveStatus('no-audio');
+      return;
+    }
+    if (liveStatus === 'no-audio' && maxMicVolumeRef.current > 0) {
+      const hasDictation = window.SpeechRecognition || window.webkitSpeechRecognition;
+      setLiveStatus(!hasDictation ? 'unsupported' : liveTextRef.current ? 'listening' : 'silent');
+    }
     if (isRecording && recordSeconds >= 5 && liveStatus === 'listening' && !liveTextRef.current) setLiveStatus('silent');
     if (liveStatus === 'silent' && liveTextRef.current) setLiveStatus('listening');
   }, [isRecording, recordSeconds, liveStatus]);
@@ -140,6 +150,7 @@ export default function AudioVoiceRecorder({
         const avg = sum / dataArray.length;
         const volPct = Math.min(100, Math.round((avg / 128) * 100));
         setMicVolume(volPct);
+        if (volPct > maxMicVolumeRef.current) maxMicVolumeRef.current = volPct;
 
         for (let i = 0; i < barCount; i++) {
           const dataIndex = Math.floor((i / barCount) * dataArray.length);
@@ -253,6 +264,7 @@ export default function AudioVoiceRecorder({
       // 2. Transcripción en vivo con el reconocimiento de voz del navegador: el texto sale según se habla.
       // Chrome corta la sesión tras unos segundos de silencio, así que se reanuda mientras siga la grabación.
       liveTextRef.current = '';
+      maxMicVolumeRef.current = 0;
       recordingActiveRef.current = true;
       speechDoneRef.current = false;
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -611,7 +623,9 @@ export default function AudioVoiceRecorder({
 
         {isRecording && liveStatus && liveStatus !== 'listening' && (
           <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-            {liveStatus === 'silent'
+            {liveStatus === 'no-audio'
+              ? 'El micrófono no está recibiendo sonido (nivel 0%). Elige el micrófono correcto en chrome://settings/content/microphone, comprueba en Windows (Configuración > Sonido > Entrada) que no está silenciado y cierra Teams o Zoom si lo están usando.'
+              : liveStatus === 'silent'
               ? 'El navegador aún no ha escrito nada de lo que dices. Si estás hablando, su dictado en directo no funciona aquí (prueba Chrome o Edge actualizados). Al parar se transcribirá con la IA.'
               : liveStatus === 'unsupported'
               ? 'Este navegador no escribe el texto mientras hablas (pasa en Firefox, Brave y algunos móviles). Usa Chrome o Edge para verlo en directo; al parar se transcribirá con la IA.'
