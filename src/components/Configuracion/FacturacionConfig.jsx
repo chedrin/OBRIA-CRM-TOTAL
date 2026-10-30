@@ -5,6 +5,7 @@ import {
   saveEmpresaFacturacion, verificarCadenaVerifactu, subirCertificado, quitarCertificado,
   listarEnvios, enviarAhora, getDeclaracionResponsable
 } from '../../services/facturacionService';
+import HistorialEnviosModal from './HistorialEnviosModal';
 
 const EMPTY = {
   razonSocial: '',
@@ -68,6 +69,7 @@ export default function FacturacionConfig() {
   const [cert, setCert] = useState({ file: null, password: '' });
   const [subiendo, setSubiendo] = useState(false);
   const [envios, setEnvios] = useState(null);
+  const [verHistorial, setVerHistorial] = useState(false);
   const [declaracion, setDeclaracion] = useState(null);
 
   useEffect(() => {
@@ -174,6 +176,11 @@ export default function FacturacionConfig() {
     }
     setEnvios(result.data);
   };
+
+  // Los últimos envíos se ven al entrar, sin tener que pulsar nada.
+  useEffect(() => {
+    if (empresa?.id) cargarEnvios();
+  }, [empresa?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEnviarAhora = async () => {
     const result = await enviarAhora();
@@ -401,7 +408,7 @@ export default function FacturacionConfig() {
               <span>Envíos a la AEAT</span>
             </h3>
             <div className="flex gap-2">
-              <button type="button" onClick={cargarEnvios} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs">Ver detalle</button>
+              <button type="button" onClick={() => setVerHistorial(true)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs">Ver detalle y filtrar</button>
               <button type="button" onClick={handleEnviarAhora} disabled={!empresa.envioAeatActivo} className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs">Enviar ahora</button>
             </div>
           </div>
@@ -491,6 +498,8 @@ export default function FacturacionConfig() {
           </div>
         )}
       </div>
+
+      {verHistorial && <HistorialEnviosModal onClose={() => setVerHistorial(false)} />}
     </div>
   );
 }
