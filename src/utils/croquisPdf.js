@@ -15,7 +15,10 @@ import {
   cotasGenerales,
   limitesPlano,
   resumenSuperficies,
-  formatoM2
+  formatoM2,
+  areaConSigno,
+  centroide,
+  esRectangulo
 } from './croquisPlano';
 
 const ESCALAS = [20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
@@ -98,6 +101,12 @@ export function buildCroquisPdf({ plan, cabecera = {}, empresaConfig = {} }) {
   const oy = MARCO.y + 10 + (util.h - (maxY - minY) * k) / 2;
   const T = ([x, y]) => [ox + (x - minX) * k, oy + (y - minY) * k];
   const linea = (p, q) => { const a = T(p), c = T(q); doc.line(a[0], a[1], c[0], c[1]); };
+  // Polígono cerrado (estancias de cualquier forma y cortes de muro inclinados).
+  const poligono = (pts, estilo) => {
+    const [x0, y0] = T(pts[0]);
+    const deltas = pts.slice(1).map((p, i) => { const a = T(pts[i]), b = T(p); return [b[0] - a[0], b[1] - a[1]]; });
+    doc.lines(deltas, x0, y0, [1, 1], estilo, true);
+  };
   const fuentePt = (metros, min, max) => Math.max(min, Math.min(max, metros * k * PT_POR_MM));
 
   // Texto centrado en un punto y girado (ángulo del editor: horario, con y hacia abajo).
@@ -108,11 +117,11 @@ export function buildCroquisPdf({ plan, cabecera = {}, empresaConfig = {} }) {
     doc.text(str, px - Math.cos(rad) * ancho / 2, py - Math.sin(rad) * ancho / 2, { angle: -anguloEditor });
   };
 
-  // Suelo con trama de 50 cm
+  // Suelo (con trama de 50 cm en las estancias rectangulares)
   plan.rooms.forEach(r => {
-    const [x, y] = T([r.x, r.y]);
     doc.setFillColor(...rgb(r.color));
-    doc.rect(x, y, r.width * k, r.height * k, 'F');
+    poligono(r.points, 'F');
+    if (!esRectangulo(r)) return;
     doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.08);
     for (let gx = 0.5; gx < r.width; gx += 0.5) linea([r.x + gx, r.y], [r.x + gx, r.y + r.height]);
@@ -123,16 +132,15 @@ export function buildCroquisPdf({ plan, cabecera = {}, empresaConfig = {} }) {
   doc.setDrawColor(30, 41, 59);
   doc.setLineWidth(Math.max(0.5, GROSOR_MURO * k));
   doc.setLineJoin('miter');
-  plan.rooms.forEach(r => { const [x, y] = T([r.x, r.y]); doc.rect(x, y, r.width * k, r.height * k, 'S'); });
+  plan.rooms.forEach(r => poligono(r.points, 'S'));
 
   // Huecos: corte del muro + símbolo
   plan.openings.forEach(op => {
     const room = plan.rooms.find(r => r.id === op.roomId);
     if (!room) return;
     const f = formasHueco(room, op);
-    const xs = f.hueco.map(p => T(p)[0]), ys = f.hueco.map(p => T(p)[1]);
     doc.setFillColor(255, 255, 255);
-    doc.rect(Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 'F');
+    poligono(f.hueco, 'F');
     doc.setDrawColor(30, 41, 59);
     f.lineas.forEach((l, i) => { doc.setLineWidth(op.type === 'door' && i === 2 ? 0.35 : 0.18); linea(l[0], l[1]); });
     doc.setDrawColor(100, 116, 139);
@@ -148,11 +156,12 @@ export function buildCroquisPdf({ plan, cabecera = {}, empresaConfig = {} }) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(fuentePt(fs, 5, 10));
     doc.setTextColor(30, 41, 59);
-    textoGirado(r.name, [r.x + r.width / 2, r.y + r.height / 2 - fs * 0.2]);
+    const [cx, cy] = centroide(r.points);
+    textoGirado(r.name, [cx, cy - fs * 0.2]);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(fuentePt(fs * 0.85, 4.5, 8.5));
     doc.setTextColor(100, 116, 139);
-    textoGirado(formatoM2(r.width * r.height), [r.x + r.width / 2, r.y + r.height / 2 + fs * 1.05]);
+    textoGirado(formatoM2(Math.abs(areaConSigno(r.points))), [cx, cy + fs * 1.05]);
   });
 
   // Cotas
