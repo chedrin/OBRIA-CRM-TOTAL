@@ -30,7 +30,7 @@ import {
 import CroquisEditorModal from '../Croquis/CroquisEditorModal';
 import CroquisLienzo from '../Croquis/CroquisLienzo';
 import { buildCroquisPdf } from '../../utils/croquisPdf';
-import { normalizarCroquis } from '../../utils/croquisPlano';
+import { normalizarCroquis, resumenSuperficies } from '../../utils/croquisPlano';
 import TaskProgressSelector from '../PortalObrero/TaskProgressSelector';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
@@ -193,6 +193,7 @@ export default function ObraDetail({ obraId, onBack }) {
     obraTitulo: `${obra.codigo ? `${obra.codigo} · ` : ''}${obra.titulo}`,
     direccion: obra.direccion
   };
+  const croquisPlanObra = obra.croquis?.plan?.rooms?.length ? normalizarCroquis(obra.croquis.plan) : null;
   const obraFacturas = facturas.filter(f => f.obraId === obra.id);
   const obraFacturasProveedores = (facturasProveedores || []).filter(f => f.obraId === obra.id);
   const totalFacturadoObra = obraFacturas.reduce((s, f) => s + f.totalFactura, 0);
@@ -341,7 +342,7 @@ export default function ObraDetail({ obraId, onBack }) {
 
       {/* Main Obra Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
           <div className="space-y-2">
             <h1 className="text-2xl sm:text-3xl font-black text-white">{obra.titulo}</h1>
             <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-slate-300">
@@ -365,8 +366,9 @@ export default function ObraDetail({ obraId, onBack }) {
             )}
           </div>
 
-          {/* Quick Metrics Badge & Planificación IA */}
-          <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800 shrink-0">
+          {/* Métricas y Planificación IA arriba; debajo, el croquis de la obra si lo tiene */}
+          <div className="flex flex-col gap-3 shrink-0 lg:max-w-[46rem]">
+          <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
             <div className="flex items-center gap-4">
               <div className="text-center px-2">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold block">Presupuesto</span>
@@ -402,6 +404,23 @@ export default function ObraDetail({ obraId, onBack }) {
                 </div>
               );
             })()}
+          </div>
+
+          {obra.croquis?.plan?.rooms?.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowCroquis(true)}
+              title="Abrir el croquis en el editor"
+              aria-label="Abrir el croquis de la obra"
+              className="group relative rounded-xl overflow-hidden border border-slate-800 hover:border-amber-500/60 transition-colors"
+              style={{ background: '#ffffff' }}
+            >
+              <CroquisLienzo plan={croquisPlanObra} soloLectura mostrarCotas={false} alto="11rem" />
+              <span className="absolute top-1.5 left-2 text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-white/85 rounded px-1.5 py-0.5">
+                Croquis · {resumenSuperficies(croquisPlanObra).util.toLocaleString('es-ES')} m² útiles
+              </span>
+            </button>
+          )}
           </div>
         </div>
 
@@ -1061,7 +1080,7 @@ export default function ObraDetail({ obraId, onBack }) {
             </div>
             {obra.croquis?.plan?.rooms?.length > 0 ? (
               <div className="rounded-xl overflow-hidden border border-slate-800 max-w-2xl" style={{ background: '#ffffff' }}>
-                <CroquisLienzo plan={normalizarCroquis(obra.croquis.plan)} soloLectura />
+                <CroquisLienzo plan={croquisPlanObra} soloLectura />
               </div>
             ) : (
               <p className="text-xs text-slate-400">Sin croquis. Se copia aquí al aceptar un presupuesto que lo tenga, o puedes crearlo desde las medidas.</p>
