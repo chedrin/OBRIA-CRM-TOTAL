@@ -16,13 +16,16 @@ import {
 } from 'lucide-react';
 import { transcribeAudio } from '../../services/aiAudioTextService';
 import { useApp } from '../../context/AppContext';
+import ModalOverlay from './ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function AudioVoiceRecorder({
   onTranscriptChange,
   onTranscriptionComplete,
   initialTranscript = '',
   placeholder = 'La transcripción del audio aparecerá aquí en tiempo real y podrás editarla antes de generar partidas...',
-  title = 'Captura de Voz con Inteligencia Artificial (Whisper)'
+  title = 'Captura de Voz con Inteligencia Artificial (Whisper)',
+  hideHeader = false
 }) {
   const { empresaConfig, showNotification, setActiveTab } = useApp();
 
@@ -36,8 +39,9 @@ export default function AudioVoiceRecorder({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState(initialTranscript);
-  const [liveSpeechText, setLiveSpeechText] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  // Estado de la transcripción en vivo del navegador: null | 'listening' | 'unsupported' | código de error.
+  const [liveStatus, setLiveStatus] = useState(null);
   const [micVolume, setMicVolume] = useState(0); // 0 to 100%
   const [micError, setMicError] = useState(null); // 'insecure_context' | 'permission_denied' | 'no_hardware' | null
   const [showKeyGuideModal, setShowKeyGuideModal] = useState(false);
@@ -56,6 +60,12 @@ export default function AudioVoiceRecorder({
   const recognitionRef = useRef(null);
   const audioPlayerRef = useRef(null);
   const mediaElementSourceRef = useRef(null);
+  const liveTextRef = useRef('');
+  const recordingActiveRef = useRef(false);
+  const speechEndedRef = useRef(null);
+  const speechDoneRef = useRef(true);
+  const lastAudioRef = useRef(null);
+  const maxMicVolumeRef = useRef(0);
 
   const aiConfig = empresaConfig?.aiConfig || {};
   const hasRealOpenAiKey =
@@ -90,11 +100,27 @@ export default function AudioVoiceRecorder({
 
   useEffect(() => {
     return () => {
+      recordingActiveRef.current = false;
       stopAudioTracks();
       if (timerRef.current) clearInterval(timerRef.current);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
   }, [stopAudioTracks]);
+
+  // Algunos navegadores aceptan el dictado pero nunca devuelven texto: se avisa a los pocos segundos.
+  useEffect(() => {
+    // Micrófono mudo (nivel 0% todo el rato): ni el dictado ni la IA tienen nada que oír.
+    if (isRecording && recordSeconds >= 4 && analyserRef.current && maxMicVolumeRef.current === 0 && liveStatus !== 'no-audio') {
+      setLiveStatus('no-audio');
+      return;
+    }
+    if (liveStatus === 'no-audio' && maxMicVolumeRef.current > 0) {
+      const hasDictation = window.SpeechRecognition || window.webkitSpeechRecognition;
+      setLiveStatus(!hasDictation ? 'unsupported' : liveTextRef.current ? 'listening' : 'silent');
+    }
+    if (isRecording && recordSeconds >= 5 && liveStatus === 'listening' && !liveTextRef.current) setLiveStatus('silent');
+    if (liveStatus === 'silent' && liveTextRef.current) setLiveStatus('listening');
+  }, [isRecording, recordSeconds, liveStatus]);
 
   // Audio Visualization Loop
   useEffect(() => {
@@ -126,6 +152,7 @@ export default function AudioVoiceRecorder({
         const avg = sum / dataArray.length;
         const volPct = Math.min(100, Math.round((avg / 128) * 100));
         setMicVolume(volPct);
+        if (volPct > maxMicVolumeRef.current) maxMicVolumeRef.current = volPct;
 
         for (let i = 0; i < barCount; i++) {
           const dataIndex = Math.floor((i / barCount) * dataArray.length);
@@ -191,7 +218,6 @@ export default function AudioVoiceRecorder({
   // Start Live Microphone Recording
   const handleStartRecording = async () => {
     setMicError(null);
-    setLiveSpeechText('');
 
     // Check secure context for local IP network
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -237,31 +263,48 @@ export default function AudioVoiceRecorder({
         console.warn('AudioContext visualization warning:', audioCtxErr);
       }
 
-      // 2. Initialize browser SpeechRecognition for live speech-to-text
-      let fullSpeech = '';
+      // 2. Transcripción en vivo con el reconocimiento de voz del navegador: el texto sale según se habla.
+      // Chrome corta la sesión tras unos segundos de silencio, así que se reanuda mientras siga la grabación.
+      liveTextRef.current = '';
+      maxMicVolumeRef.current = 0;
+      recordingActiveRef.current = true;
+      speechDoneRef.current = false;
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      setLiveStatus(SpeechRecognition ? 'listening' : 'unsupported');
       if (SpeechRecognition) {
         try {
+          let committed = '';
+          let sessionText = '';
+          let blocked = false;
           const recognition = new SpeechRecognition();
           recognition.lang = 'es-ES';
           recognition.continuous = true;
           recognition.interimResults = true;
           recognition.onresult = (event) => {
-            let interim = '';
-            for (let i = 0; i < event.results.length; i++) {
-              interim += event.results[i][0].transcript + ' ';
-            }
-            fullSpeech = interim;
-            setLiveSpeechText(interim);
-            setTranscript(interim);
-            notifyTranscript(interim, null);
+            sessionText = Array.from(event.results).map(r => r[0].transcript.trim()).filter(Boolean).join(' ');
+            const full = [committed, sessionText].filter(Boolean).join(' ');
+            liveTextRef.current = full;
+            setTranscript(full);
+            notifyTranscript(full, null);
           };
           recognition.onerror = (e) => {
-            console.warn('SpeechRecognition interim event:', e?.error);
+            if (['not-allowed', 'service-not-allowed', 'language-not-supported'].includes(e?.error)) blocked = true;
+            if (e?.error && !['no-speech', 'aborted'].includes(e.error)) setLiveStatus(e.error);
+            console.warn('SpeechRecognition:', e?.error);
+          };
+          recognition.onend = () => {
+            committed = [committed, sessionText].filter(Boolean).join(' ');
+            sessionText = '';
+            if (recordingActiveRef.current && !blocked) {
+              try { recognition.start(); return; } catch (e) {}
+            }
+            speechDoneRef.current = true;
+            speechEndedRef.current?.();
           };
           recognition.start();
           recognitionRef.current = recognition;
         } catch (speechErr) {
+          setLiveStatus('start-failed');
           console.warn('SpeechRecognition not available or failed:', speechErr);
         }
       }
@@ -283,14 +326,31 @@ export default function AudioVoiceRecorder({
         const ext = /mp4|aac|m4a/.test(mimeType) ? 'm4a' : /ogg/.test(mimeType) ? 'ogg' : 'webm';
         const fileName = `Grabacion_${new Date().toLocaleTimeString().replace(/:/g, '-')}.${ext}`;
         const audioBlob = new File(audioChunksRef.current, fileName, { type: mimeType });
+        lastAudioRef.current = audioBlob;
         const previewUrl = URL.createObjectURL(audioBlob);
         setAudioPreview({
           url: previewUrl,
           name: fileName,
           size: `${(audioBlob.size / 1024).toFixed(1)} KB`
         });
+        // Se esperan las últimas palabras del reconocimiento en vivo (como mucho 1,5 s).
+        if (recognitionRef.current && !speechDoneRef.current) {
+          await new Promise(resolve => {
+            speechEndedRef.current = resolve;
+            setTimeout(resolve, 1500);
+          });
+          speechEndedRef.current = null;
+        }
         stopAudioTracks();
-        await processAudioTranscription(audioBlob, 'microphone', fullSpeech);
+        const liveText = liveTextRef.current.trim();
+        if (liveText.length > 3) {
+          // Lo dicho ya está escrito tal cual: se entrega al momento, sin esperar al servidor.
+          setTranscript(liveText);
+          notifyTranscript(liveText, audioBlob);
+          showNotification('🎙️ Transcripción lista. Si alguna palabra no cuadra, pulsa "Transcribir de nuevo con IA".');
+          return;
+        }
+        await processAudioTranscription(audioBlob, 'microphone');
       };
 
       mediaRecorder.start(250);
@@ -318,6 +378,7 @@ export default function AudioVoiceRecorder({
   // Stop Recording
   const handleStopRecording = () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    recordingActiveRef.current = false;
 
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) {}
@@ -385,7 +446,8 @@ export default function AudioVoiceRecorder({
       }
     }, 200);
 
-    await processAudioTranscription(file, 'file', liveSpeechText);
+    lastAudioRef.current = file;
+    await processAudioTranscription(file, 'file');
   };
 
   const handleDiscardAudio = () => {
@@ -395,6 +457,7 @@ export default function AudioVoiceRecorder({
       } catch (e) {}
     }
     setAudioPreview(null);
+    lastAudioRef.current = null;
     mediaElementSourceRef.current = null;
     setIsSimulatedRecording(false);
     setTranscript('');
@@ -441,9 +504,10 @@ export default function AudioVoiceRecorder({
   };
 
   return (
-    <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+    <div className="bg-slate-950 p-3 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
       
       {/* 1. Header: Title & AI Cloud Engine Status */}
+      {!hideHeader && (
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/80 pb-3">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
@@ -459,18 +523,19 @@ export default function AudioVoiceRecorder({
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            Transcripción con IA (Whisper / Gemini)
+            Texto en directo · IA de respaldo
           </span>
         </div>
       </div>
+      )}
 
       {/* 2. Recording Waveform Canvas & Control Buttons */}
-      <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
+      <div className="@container bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-800 space-y-3">
         
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col @xl:flex-row items-center gap-4">
           
           {/* Left: Dynamic Real Sound Waves */}
-          <div className="w-full lg:w-1/2 space-y-1.5">
+          <div className="w-full @xl:flex-1 min-w-0 space-y-1.5">
             <div className="bg-slate-950 rounded-xl p-2.5 border border-slate-800 flex flex-col justify-center">
               <canvas
                 ref={canvasRef}
@@ -510,7 +575,7 @@ export default function AudioVoiceRecorder({
           </div>
 
           {/* Right: Actions */}
-          <div className="flex flex-wrap items-center justify-end gap-2 w-full lg:w-auto shrink-0">
+          <div className="flex flex-wrap items-center justify-center @xl:justify-end gap-2 w-full @xl:w-auto shrink-0">
             
             {isRecording || isSimulatedRecording ? (
               <button
@@ -558,6 +623,22 @@ export default function AudioVoiceRecorder({
 
         </div>
 
+        {isRecording && liveStatus && liveStatus !== 'listening' && (
+          <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+            {liveStatus === 'no-audio'
+              ? 'El micrófono no está recibiendo sonido (nivel 0%). Elige el micrófono correcto en chrome://settings/content/microphone, comprueba en Windows (Configuración > Sonido > Entrada) que no está silenciado y cierra Teams o Zoom si lo están usando.'
+              : liveStatus === 'silent'
+              ? 'El navegador aún no ha escrito nada de lo que dices. Si estás hablando, su dictado en directo no funciona aquí (prueba Chrome o Edge actualizados). Al parar se transcribirá con la IA.'
+              : liveStatus === 'unsupported'
+              ? 'Este navegador no escribe el texto mientras hablas (pasa en Firefox, Brave y algunos móviles). Usa Chrome o Edge para verlo en directo; al parar se transcribirá con la IA.'
+              : liveStatus === 'network'
+              ? 'El navegador no puede conectar con su servicio de dictado (error de red). Al parar se transcribirá con la IA.'
+              : liveStatus === 'not-allowed' || liveStatus === 'service-not-allowed'
+              ? 'El navegador ha bloqueado el dictado en directo. Revisa el permiso de micrófono del candado 🔒. Al parar se transcribirá con la IA.'
+              : `El dictado en directo del navegador ha fallado (${liveStatus}). Al parar se transcribirá con la IA.`}
+          </p>
+        )}
+
         {/* Audio Player Preview (if audio was recorded or uploaded) */}
         {audioPreview && (
           <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs animate-in fade-in">
@@ -572,6 +653,16 @@ export default function AudioVoiceRecorder({
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={() => lastAudioRef.current && processAudioTranscription(lastAudioRef.current, 'retry')}
+                disabled={isTranscribing || !lastAudioRef.current}
+                className="px-2.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shrink-0 disabled:opacity-50"
+                title="Vuelve a transcribir este audio en el servidor con Whisper o Gemini, también literal"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Transcribir de nuevo con IA</span>
+              </button>
               <audio
                 ref={audioPlayerRef}
                 src={audioPreview.url}
@@ -702,8 +793,9 @@ export default function AudioVoiceRecorder({
       </div>
 
       {/* 4. Modal Guía: Cómo activar Whisper y la IA con API Key */}
+      <AnimatePresence>
       {showKeyGuideModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-amber-500/40 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
             
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -779,8 +871,9 @@ export default function AudioVoiceRecorder({
             </div>
 
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

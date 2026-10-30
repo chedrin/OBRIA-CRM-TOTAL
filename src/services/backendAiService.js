@@ -141,10 +141,20 @@ export async function transcribeAudioViaBackend(audioBlobOrFiles, customApiKey =
   if (customApiKey) form.append('apiKey', customApiKey);
   if (clientAiKeysJson()) form.append('apiKeys', clientAiKeysJson());
 
-  const res = await fetch(`${BACKEND_BASE_URL}/ai/transcribe`, {
-    method: 'POST',
-    body: form
-  });
+  // Sin tiempo máximo, un servidor dormido o una IA saturada dejaban la pantalla esperando minutos.
+  let res;
+  try {
+    res = await fetch(`${BACKEND_BASE_URL}/ai/transcribe`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(120000)
+    });
+  } catch (err) {
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      throw new Error('El servidor de transcripción no ha respondido en 2 minutos. Inténtalo de nuevo en un momento.');
+    }
+    throw err;
+  }
 
   const rawText = await res.text();
   let data = {};

@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { NAV_SECTIONS, NAV_TONES } from './navigation/navConfig';
+import { NAV_SECTIONS, NAV_TONES, sectionOfTab } from './navigation/navConfig';
 import {
   HardHat,
-  LogOut,
   X,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ExternalLink,
   Copy,
   Check,
@@ -42,13 +42,22 @@ export default function Sidebar({
     facturas = [],
     mensajesInbox = [],
     subcontratasPresupuestos = [],
-    currentUser,
-    logout,
     showNotification,
     facturacionActivada
   } = useApp();
 
   const [copiedLink, setCopiedLink] = useState(false);
+  // Acordeón: solo una sección abierta; por defecto la de la página activa.
+  const [openSection, setOpenSection] = useState(() => sectionOfTab(activeTab));
+
+  useEffect(() => {
+    const section = sectionOfTab(activeTab);
+    if (section) setOpenSection(section);
+  }, [activeTab]);
+
+  const toggleSection = (sectionId) => {
+    setOpenSection(current => (current === sectionId ? null : sectionId));
+  };
 
   const badges = {
     obras: {
@@ -94,18 +103,11 @@ export default function Sidebar({
     window.location.hash = '#empleados';
   };
 
-  const handleLogout = () => {
-    if (window.confirm('¿Deseas cerrar la sesión del panel administrativo?')) logout();
-  };
-
-  const initial = currentUser?.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'A';
-  const roleLabel = currentUser?.role === 'admin' ? 'Director de obra' : currentUser?.role || 'Admin';
-
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-200 select-none">
 
       {/* Marca */}
-      <div className={`h-16 px-4 border-b border-slate-800 flex items-center shrink-0 ${collapsed ? 'justify-center px-2' : 'justify-between'}`}>
+      <div className={`h-16 border-b border-slate-800 flex items-center shrink-0 ${collapsed ? 'justify-center gap-1 px-1.5' : 'justify-between gap-2 px-4'}`}>
         <button
           type="button"
           onClick={() => handleSelectTab('dashboard')}
@@ -124,6 +126,16 @@ export default function Sidebar({
         </button>
 
         <button
+          onClick={onToggleCollapse}
+          className="hidden lg:flex items-center justify-center w-7 h-7 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition border border-slate-700/60 shrink-0"
+          title={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
+          aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
+          aria-expanded={!collapsed}
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+
+        <button
           onClick={onCloseMobile}
           className="lg:hidden p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
           aria-label="Cerrar menú"
@@ -133,84 +145,147 @@ export default function Sidebar({
       </div>
 
       {/* Navegación */}
-      <nav aria-label="Menú principal" className={`flex-1 overflow-y-auto py-4 space-y-5 ${collapsed ? 'px-2' : 'px-3'}`}>
-        {NAV_SECTIONS.map((section) => (
-          <div key={section.title}>
-            {!collapsed ? (
-              <h3 className="px-3 mb-1.5 text-[10px] font-bold tracking-[0.12em] text-slate-500 uppercase">
-                {section.title}
-              </h3>
-            ) : (
-              <div className="mx-3 mb-2 border-t border-slate-800" />
-            )}
+      <nav aria-label="Menú principal" className={`flex-1 overflow-y-auto py-4 space-y-2.5 ${collapsed ? 'px-2' : 'px-3'}`}>
+        {NAV_SECTIONS.map((section) => {
+          const items = section.items.filter((item) => item.id !== 'facturas' || facturacionActivada);
+          const sectionTone = NAV_TONES[section.tone];
+          const SectionIcon = section.icon;
+          const isOpen = openSection === section.id;
+          const hasActive = items.some((item) => item.id === activeTab);
+          const pending = items.reduce((sum, item) => sum + (badges[item.id]?.value || 0), 0);
+          const panelId = `nav-seccion-${section.id}`;
 
-            <div className="space-y-0.5">
-              {section.items.filter((item) => item.id !== 'facturas' || facturacionActivada).map((item) => {
-                const Icon = item.icon;
-                const tone = NAV_TONES[item.tone];
-                const isActive = activeTab === item.id;
-                const badge = badges[item.id];
+          return (
+            <div
+              key={section.id}
+              className={`rounded-2xl border transition-colors duration-200 ${isOpen ? sectionTone.blockOpen : sectionTone.block}`}
+            >
+              {/* Cabecera de la sección */}
+              <button
+                type="button"
+                onClick={() => toggleSection(section.id)}
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                title={collapsed ? section.title : undefined}
+                className={`group relative w-full flex items-center gap-3 rounded-2xl text-left focus:outline-none focus-visible:ring-2 ${sectionTone.ring} ${
+                  collapsed ? 'justify-center p-2' : 'px-2.5 py-2'
+                }`}
+              >
+                <span
+                  className={`relative w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-all duration-200 ${
+                    hasActive ? `${sectionTone.tileActive} shadow-md` : `${sectionTone.tile} group-hover:scale-105`
+                  }`}
+                >
+                  <SectionIcon className="w-[18px] h-[18px] stroke-[2.2]" />
+                  {collapsed && !isOpen && pending > 0 && (
+                    <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${sectionTone.bar} ring-2 ring-slate-900`} />
+                  )}
+                </span>
 
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleSelectTab(item.id)}
-                    aria-current={isActive ? 'page' : undefined}
-                    title={collapsed ? `${item.label} · ${item.desc}` : undefined}
-                    className={`group relative w-full flex items-center gap-3 rounded-xl text-left transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 ${tone.ring} ${
-                      collapsed ? 'justify-center p-2' : 'px-2 py-1.5'
-                    } ${
-                      isActive
-                        ? 'bg-slate-800 shadow-sm'
-                        : 'hover:bg-slate-800/70 hover:translate-x-0.5'
-                    }`}
-                  >
-                    {/* Indicador del módulo activo */}
-                    <span
-                      className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full ${tone.bar} transition-all duration-300 ease-out ${
-                        isActive ? 'h-6 opacity-100' : 'h-0 opacity-0'
-                      } ${collapsed ? '-left-2' : '-left-3'}`}
-                    />
-
-                    <span
-                      className={`relative w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-all duration-200 ${
-                        isActive ? `${tone.tileActive} shadow-md` : `${tone.tile} group-hover:scale-105`
-                      }`}
-                    >
-                      <Icon className="w-[18px] h-[18px] stroke-[2.1]" />
-                      {collapsed && badge?.value > 0 && (
-                        <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${tone.bar} ring-2 ring-slate-900`} />
-                      )}
+                {!collapsed && (
+                  <>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13px] font-extrabold uppercase tracking-[0.06em] text-white leading-tight truncate">
+                        {section.title}
+                      </span>
+                      <span className="block text-[11px] leading-tight text-slate-500 truncate mt-0.5">
+                        {items.length} {items.length === 1 ? 'apartado' : 'apartados'}
+                      </span>
                     </span>
-
-                    {!collapsed && (
-                      <span className="flex-1 min-w-0">
-                        <span className={`block text-[13px] leading-tight truncate ${isActive ? 'font-bold text-white' : 'font-semibold text-slate-200 group-hover:text-white'}`}>
-                          {item.label}
-                        </span>
-                        <span className="block text-[11px] leading-tight text-slate-500 truncate mt-0.5">
-                          {item.desc}
-                        </span>
-                      </span>
+                    {!isOpen && pending > 0 && (
+                      <NavBadge value={pending} tone={section.tone} active={false} title="Pendientes en esta sección" />
                     )}
+                    <ChevronDown
+                      className={`w-4 h-4 text-slate-500 shrink-0 transition-transform duration-200 group-hover:text-slate-300 ${isOpen ? 'rotate-180' : ''}`}
+                    />
+                  </>
+                )}
 
-                    {!collapsed && badge && (
-                      <NavBadge value={badge.value} tone={item.tone} active={isActive} title={badge.title} />
-                    )}
+                {collapsed && (
+                  <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xl border border-slate-700 whitespace-nowrap opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 pointer-events-none transition-all duration-150 z-50">
+                    {section.title}
+                  </span>
+                )}
+              </button>
 
-                    {/* Tooltip en modo contraído */}
-                    {collapsed && (
-                      <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xl border border-slate-700 whitespace-nowrap opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 pointer-events-none transition-all duration-150 z-50">
-                        {item.label}
-                        {badge?.value ? ` · ${badge.value}` : ''}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              {/* Subsecciones (se despliegan hacia abajo) */}
+              <div
+                id={panelId}
+                className={`grid transition-[grid-template-rows] duration-300 ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+              >
+                <div className={`min-h-0 ${isOpen ? '' : 'overflow-hidden'}`} inert={!isOpen}>
+                  <div className={`space-y-0.5 pb-1.5 ${collapsed ? 'px-0 pt-1 border-t border-slate-800 mx-1.5' : 'px-1.5'}`}>
+                    {items.map((item) => {
+                      const Icon = item.icon;
+                      const tone = NAV_TONES[item.tone];
+                      const isActive = activeTab === item.id;
+                      const badge = badges[item.id];
+
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => handleSelectTab(item.id)}
+                          aria-current={isActive ? 'page' : undefined}
+                          title={collapsed ? `${item.label} · ${item.desc}` : undefined}
+                          className={`group relative w-full flex items-center gap-2.5 rounded-xl text-left transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 ${tone.ring} ${
+                            collapsed ? 'justify-center p-1.5' : 'px-2 py-1.5'
+                          } ${
+                            isActive
+                              ? 'bg-slate-800 shadow-sm'
+                              : 'hover:bg-slate-800/70 hover:translate-x-0.5'
+                          }`}
+                        >
+                          {/* Indicador del módulo activo */}
+                          {!collapsed && (
+                            <span
+                              className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full ${tone.bar} transition-all duration-300 ease-out ${
+                                isActive ? 'h-5 opacity-100' : 'h-0 opacity-0'
+                              }`}
+                            />
+                          )}
+
+                          <span
+                            className={`relative w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 transition-all duration-200 ${
+                              isActive ? `${tone.tileActive} shadow-md` : `${tone.tile} group-hover:scale-105`
+                            }`}
+                          >
+                            <Icon className="w-4 h-4 stroke-[2.1]" />
+                            {collapsed && badge?.value > 0 && (
+                              <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${tone.bar} ring-2 ring-slate-900`} />
+                            )}
+                          </span>
+
+                          {!collapsed && (
+                            <span className="flex-1 min-w-0">
+                              <span className={`block text-[13px] leading-tight truncate ${isActive ? 'font-bold text-white' : 'font-semibold text-slate-200 group-hover:text-white'}`}>
+                                {item.label}
+                              </span>
+                              <span className="block text-[11px] leading-tight text-slate-500 truncate mt-0.5">
+                                {item.desc}
+                              </span>
+                            </span>
+                          )}
+
+                          {!collapsed && badge && (
+                            <NavBadge value={badge.value} tone={item.tone} active={isActive} title={badge.title} />
+                          )}
+
+                          {/* Tooltip en modo contraído */}
+                          {collapsed && (
+                            <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xl border border-slate-700 whitespace-nowrap opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 pointer-events-none transition-all duration-150 z-50">
+                              {item.label}
+                              {badge?.value ? ` · ${badge.value}` : ''}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Acceso al Portal Obrero */}
         {!collapsed && (
@@ -249,44 +324,6 @@ export default function Sidebar({
         )}
       </nav>
 
-      {/* Sesión */}
-      <div className={`p-3 border-t border-slate-800 shrink-0 ${collapsed ? 'px-2' : ''}`}>
-        <div className={`flex items-center gap-2.5 rounded-xl transition ${collapsed ? 'flex-col' : 'p-1.5 hover:bg-slate-800/70'}`}>
-          <div
-            className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0"
-            title={collapsed ? `${currentUser?.fullName || 'Administrador'} (${roleLabel})` : undefined}
-          >
-            {initial}
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white truncate">{currentUser?.fullName || 'Administrador'}</p>
-              <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                {roleLabel}
-              </p>
-            </div>
-          )}
-          <button
-            onClick={handleLogout}
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition shrink-0"
-            title="Cerrar sesión"
-            aria-label="Cerrar sesión"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-
-        <button
-          onClick={onToggleCollapse}
-          className={`hidden lg:flex mt-2 w-full items-center gap-2 text-[11px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-slate-800/70 rounded-lg py-1.5 transition ${collapsed ? 'justify-center' : 'px-2'}`}
-          title={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
-          aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
-          aria-expanded={!collapsed}
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <><ChevronLeft className="w-4 h-4" /><span>Contraer menú</span></>}
-        </button>
-      </div>
     </div>
   );
 

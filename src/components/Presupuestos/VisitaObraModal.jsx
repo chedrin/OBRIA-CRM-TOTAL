@@ -22,6 +22,8 @@ import confetti from 'canvas-confetti';
 import { transcribeAudio } from '../../services/aiAudioTextService';
 import AudioVoiceRecorder from '../Common/AudioVoiceRecorder';
 import AiImprovementControl from '../Common/AiImprovementControl';
+import EscaneoLidarSubida from '../Croquis/EscaneoLidarSubida';
+import { textoMedicionesEscaneo } from '../../utils/escaneoLidar';
 
 export const TIPOS_CLIENTE = [
   { id: 'particular', label: 'Particular' },
@@ -99,6 +101,9 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   const [complementaryText, setComplementaryText] = useState('');
   const [notesRefinedText, setNotesRefinedText] = useState('');
   const [medicion, setMedicion] = useState({ largo: '', ancho: '', alto: '', zona: '' });
+  // Croquis sacado del escaneo LiDAR: se guarda con el presupuesto generado.
+  const [croquisEscaneo, setCroquisEscaneo] = useState(null);
+  const lidarActivo = Boolean(empresaConfig?.escaneoLidar?.activo);
 
   // Documents State (PDF, Word, Excel)
   const [documentos, setDocumentos] = useState([]);
@@ -217,6 +222,34 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
     setComplementaryText(prev => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n${line}` : line));
     setNotesRefinedText('');
     setMedicion({ largo: '', ancho: '', alto: '', zona: '' });
+  };
+
+  // Escaneo LiDAR: sus mediciones van a las anotaciones y su planta queda como croquis del presupuesto.
+  const handleUsarEscaneo = (res) => {
+    if (res.formato === 'imagen') {
+      setCapturas(prev => [{
+        id: `cap-lidar-${Date.now()}`,
+        tipo: 'foto_estado',
+        titulo: `Plano del escaneo LiDAR (${res.nombreArchivo})`,
+        url: URL.createObjectURL(res.imagen),
+        file: res.imagen,
+        isLocalBlob: true,
+        notas: 'Plano acotado exportado del escaneo LiDAR: sus cotas son medidas reales.'
+      }, ...prev]);
+      showNotification('Plano del escaneo añadido a las fotos para la IA.');
+      return;
+    }
+    const lineas = textoMedicionesEscaneo(res.plan, res.nombreArchivo);
+    setComplementaryText(prev => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n\n${lineas}` : lineas));
+    setNotesRefinedText('');
+    setCroquisEscaneo({
+      plan: res.plan,
+      mediciones: res.mediciones,
+      notas: `Croquis del escaneo LiDAR «${res.nombreArchivo}».`,
+      origen: 'lidar',
+      actualizado: new Date().toISOString()
+    });
+    showNotification(`Mediciones de ${res.plan.rooms.length} estancias añadidas. El croquis se guardará con el presupuesto.`);
   };
 
   const handleDocumentUpload = (e) => {
@@ -367,6 +400,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
       audioTranscripcion: finalAudioText,
       audioBlob: audioFile,
       capturas: realUploadedCapturas,
+      croquis: croquisEscaneo,
       medidasNotas: (finalNotesText ? `${finalNotesText}${docsSummary}\n\nCalidades solicitadas: ${calidades}.` : `Medidas tomadas in situ con distanciómetro láser.${docsSummary}\nCalidades: ${calidades}.`),
       documentos
     };
@@ -410,20 +444,20 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
         : 'bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col text-slate-100 transform transition-all duration-200 ease-out scale-100'}>
         
         {/* Header */}
-        <div className={`p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 rounded-t-3xl ${inline ? '' : 'sticky top-0 z-10'}`}>
+        <div className={`p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 rounded-t-3xl ${inline ? '' : 'sticky top-0 z-10'}`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
               <Sparkles className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black text-white">🚀 Asistente de Presupuestación IA 360°</h2>
-                <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
+                <h2 className="text-base sm:text-lg font-black text-white">Asistente de Presupuestación IA 360°</h2>
+                <span className="hidden sm:inline text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
                   Multimodal AI
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Captura unificada en campo: fotografías, grabación de voz, anotaciones, mediciones y JSON estructurado.
+                Datos del cliente, dictado de la visita, notas, medidas y fotos en un solo paso.
               </p>
             </div>
           </div>
@@ -588,7 +622,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
         )}
 
         {!isProcessing && !generatedQuoteResult && (
-          <div className="p-5 sm:p-6 space-y-6 flex-1">
+          <div className="p-3 sm:p-6 space-y-6 flex-1">
             {pipelineError && (
               <div className="p-4 rounded-2xl border border-rose-500/50 bg-rose-500/10 text-rose-200 text-xs flex gap-3">
                 <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
@@ -817,7 +851,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
             <div className="space-y-4">
               <div className="space-y-2">
                 <AudioVoiceRecorder
-                  title="🎤 Grabación o Subida de Audio"
+                  title="Grabación o subida de audio"
                   initialTranscript={audioTranscript}
                   placeholder="Pulsa 'Grabar con Micrófono' o 'Añadir Audio': la explicación de la obra se transcribe aquí tal cual se dice. Si quieres, pulsa después 'Mejorar Transcripción con IA'..."
                   onTranscriptChange={(text, blob) => {
@@ -828,7 +862,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                   }}
                 />
 
-                <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-2xl space-y-2">
+                <div className="px-1">
                   <AiImprovementControl
                     value={audioTranscript}
                     onAccept={(improved) => {
@@ -846,7 +880,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>📝 Anotaciones, Mensajes de WhatsApp o Correo</span>
+                    <span>Anotaciones, mensajes de WhatsApp o correo</span>
                   </span>
                   {complementaryText && (
                     <button
@@ -886,7 +920,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                     <Sliders className="w-3.5 h-3.5 text-blue-400" />
-                    <span>📏 Mediciones y Unidades de Obra In Situ</span>
+                    <span>Mediciones en obra</span>
                   </span>
                   <button
                     type="button"
@@ -897,6 +931,17 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                     <span>Añadir a anotaciones</span>
                   </button>
                 </div>
+                {lidarActivo && (
+                  <div className="space-y-1.5 pb-2 border-b border-slate-800">
+                    <EscaneoLidarSubida onUsar={handleUsarEscaneo} textoUsar="Añadir mediciones y croquis" />
+                    {croquisEscaneo && (
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 rounded-xl px-3 py-1.5">
+                        <span>📐 Croquis del escaneo listo ({croquisEscaneo.plan.rooms.length} estancias): se guardará con el presupuesto.</span>
+                        <button type="button" onClick={() => setCroquisEscaneo(null)} className="text-slate-400 hover:text-white" aria-label="Quitar croquis del escaneo"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                   <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <label className="text-[10px] text-slate-400 block font-semibold">Largo (m)</label>
@@ -951,10 +996,10 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
 
               {/* Adjuntar Documentos PDF, Word, Excel */}
               <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>📄 Documentos Adicionales (PDF, Word, Excel, Planos)</span>
+                    <span>Documentos (PDF, Word, Excel, planos)</span>
                   </span>
                   <input
                     type="file"
@@ -1010,7 +1055,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                   </div>
                   <div>
                     <h3 className="font-bold text-white text-xs sm:text-sm flex items-center gap-2">
-                      <span>2. Evidencias Visuales de Obra (Archivos Subidos)</span>
+                      <span>Fotos de la obra</span>
                       <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
                         {capturas.length === 0 ? '0 fotos subidas' : `${capturas.length} ${capturas.length === 1 ? 'foto subida' : 'fotos subidas'}`}
                       </span>
@@ -1099,8 +1144,8 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
 
         {/* Footer Actions - Positioned Bottom Right as required by AGENTS.md */}
         {!isProcessing && !generatedQuoteResult && wizardStep === 2 && paramsValidated && (
-          <div className={`p-5 border-t border-slate-800 bg-slate-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 rounded-b-3xl ${inline ? 'sticky bottom-0 z-10' : 'sticky bottom-0'}`}>
-            <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+          <div className="sticky bottom-0 z-10 px-4 sm:px-5 py-3 border-t border-slate-800 bg-slate-950 shadow-[0_-8px_20px_-12px_rgba(0,0,0,0.35)] flex flex-col sm:flex-row items-center justify-between gap-3 rounded-b-3xl">
+            <div className="hidden sm:flex text-[11px] text-slate-400 items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
               <span>Base Oficial de Precios ({basePrecios.length} partidas)</span>
             </div>
@@ -1120,7 +1165,8 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
                 className="flex-1 sm:flex-initial px-6 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95 transition"
               >
                 <Sparkles className="w-4 h-4 fill-slate-950" />
-                <span>🚀 Generar Presupuesto con IA</span>
+                <span className="sm:hidden">Generar con IA</span>
+                <span className="hidden sm:inline">Generar Presupuesto con IA</span>
               </button>
             </div>
           </div>

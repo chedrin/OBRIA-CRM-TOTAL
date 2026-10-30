@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import { flattenPlan } from '../../utils/avanceObra';
 import EnlaceEnvio from '../Avisos/EnlaceEnvio';
+import ModalOverlay from '../Common/ModalOverlay';
 
 /**
  * Asignación rápida de ejecutores: una fase completa (se hereda en todas sus
@@ -74,7 +75,7 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
 
   if (link) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
+      <ModalOverlay className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
         <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-black text-white flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Asignada a {link.subcontractor_name}</h3>
@@ -84,7 +85,7 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
           <EnlaceEnvio link={link} />
           <div className="flex justify-end"><button type="button" onClick={onClose} className={btnGhost}>Hecho</button></div>
         </div>
-      </div>
+      </ModalOverlay>
     );
   }
 
@@ -93,7 +94,7 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
     : subcontractors.map((s) => ({ id: s.id, label: s.nombreComercial || s.razonSocial || s.id }));
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
+    <ModalOverlay className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
       <form onSubmit={submit} className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex justify-between items-center">
           <h3 className="font-black text-white flex items-center gap-2"><UserPlus className="w-4 h-4 text-amber-400" /> Asignar ejecutor</h3>
@@ -172,6 +173,6 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

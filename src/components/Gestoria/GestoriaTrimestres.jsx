@@ -8,6 +8,8 @@ import {
   Send,
   PackageCheck
 } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function GestoriaTrimestres() {
   const {
@@ -589,8 +591,9 @@ export default function GestoriaTrimestres() {
       )}
 
       {/* Modal Añadir Factura Gasto */}
+      <AnimatePresence>
       {showAddGastoModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -705,8 +708,9 @@ export default function GestoriaTrimestres() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

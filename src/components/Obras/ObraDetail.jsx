@@ -37,8 +37,10 @@ import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 import NuevoPedidoModal from '../Avisos/NuevoPedidoModal';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
-export default function ObraDetail({ obraId, onBack }) {
+export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   const {
     obras,
     updateObra,
@@ -67,7 +69,7 @@ export default function ObraDetail({ obraId, onBack }) {
 
   const obra = obras.find(o => o.id === obraId);
   const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, documentos, catalogo_precios, equipo
-  const [showCroquis, setShowCroquis] = useState(false);
+  const [showCroquis, setShowCroquis] = useState(abrirCroquis);
   const [expandedFases, setExpandedFases] = useState({});
   const [editingFase, setEditingFase] = useState(null); // copia de la fase en edición
 
@@ -419,7 +421,7 @@ export default function ObraDetail({ obraId, onBack }) {
               className="group relative rounded-xl overflow-hidden border border-slate-800 hover:border-amber-500/60 transition-colors"
               style={{ background: '#ffffff' }}
             >
-              <CroquisLienzo plan={croquisPlanObra} soloLectura mostrarCotas={false} alto="11rem" />
+              <CroquisLienzo plan={croquisPlanObra} soloLectura mostrarCotas={false} alto="11rem" ajustado />
               <span className="absolute top-1.5 left-2 text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-white/85 rounded px-1.5 py-0.5">
                 Croquis · {resumenSuperficies(croquisPlanObra).util.toLocaleString('es-ES')} m² útiles
               </span>
@@ -1413,8 +1415,9 @@ export default function ObraDetail({ obraId, onBack }) {
       )}
 
       {/* Modal Nuevo Parte Diario */}
+      <AnimatePresence>
       {showNewDiarioModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-bold text-white">Nuevo Parte en Diario de Obra</h3>
             <form onSubmit={handleSaveDiario} className="space-y-3 text-xs sm:text-sm">
@@ -1498,8 +1501,9 @@ export default function ObraDetail({ obraId, onBack }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Nuevo Material */}
       {pedidoMateriales && (
@@ -1521,8 +1525,9 @@ export default function ObraDetail({ obraId, onBack }) {
         />
       )}
 
+      <AnimatePresence>
       {showNewMaterialModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-bold text-white">Añadir Necesidad de Material</h3>
             <form onSubmit={handleSaveMaterial} className="space-y-3 text-xs sm:text-sm">
@@ -1599,8 +1604,9 @@ export default function ObraDetail({ obraId, onBack }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Editar / Añadir Partida de Catálogo de la Obra */}
       {showNewPriceModal && (
@@ -1615,8 +1621,9 @@ export default function ObraDetail({ obraId, onBack }) {
       )}
 
       {/* Modal Asignar Nueva Tarea (Realtime Dispatch) */}
+      <AnimatePresence>
       {showNewTaskModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
@@ -1688,12 +1695,14 @@ export default function ObraDetail({ obraId, onBack }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Enviar Aviso Técnico / Instrucción */}
+      <AnimatePresence>
       {showNewAlertModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-amber-500/40 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
@@ -1775,8 +1784,9 @@ export default function ObraDetail({ obraId, onBack }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {showCroquis && (
         <CroquisEditorModal

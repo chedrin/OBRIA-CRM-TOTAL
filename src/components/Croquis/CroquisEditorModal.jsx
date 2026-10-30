@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import CroquisLienzo, { reajustarHuecos } from './CroquisLienzo';
+import EscaneoLidarSubida from './EscaneoLidarSubida';
 import { generateCroquisViaBackend } from '../../services/backendAiService';
 import { buildCroquisPdf } from '../../utils/croquisPdf';
 import {
@@ -58,6 +59,7 @@ import {
   resumenSuperficies,
   textoMediciones
 } from '../../utils/croquisPlano';
+import ModalOverlay from '../Common/ModalOverlay';
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400';
 const btnCls = 'px-2.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700';
@@ -107,6 +109,7 @@ const esCampoDeTexto = (el) => el && (el.tagName === 'INPUT' || el.tagName === '
  */
 export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = null, contexto = {}, cabecera = {}, onGuardar, onClose }) {
   const { empresaConfig, showNotification } = useApp();
+  const lidarActivo = Boolean(empresaConfig?.escaneoLidar?.activo);
   const planInicial = useMemo(() => (croquis?.plan ? normalizarCroquis(croquis.plan) : null), [croquis]);
 
   const [vista, setVista] = useState(planInicial?.rooms.length ? 'editor' : 'datos');
@@ -342,6 +345,29 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
 
   const medicionesTexto = textoMediciones(filas);
 
+  // Escaneo LiDAR: con medidas, el plano sale tal cual (medidas fijas); una imagen del plano va a la IA como foto.
+  const usarEscaneo = async (res) => {
+    if (res.formato === 'imagen') {
+      if (fotos.length >= MAX_FOTOS) {
+        showNotification(`Ya hay ${MAX_FOTOS} fotos: quita alguna para añadir el plano.`, 'error');
+        return;
+      }
+      const file = await reducirFoto(res.imagen);
+      setFotos(prev => [{ id: nuevoId('foto'), file, url: URL.createObjectURL(file), nombre: res.nombreArchivo }, ...prev]);
+      const aviso = `La foto «${res.nombreArchivo}» es el plano exportado de un escaneo LiDAR: copia su distribución y sus cotas exactamente.`;
+      setNotas(prev => (prev.includes(aviso) ? prev : [prev.trim(), aviso].filter(Boolean).join('\n')));
+      showNotification('Plano añadido a las fotos. Pulsa «Generar croquis 2D con IA».');
+      return;
+    }
+    if (plan.rooms.length && !window.confirm('Ya hay un croquis. ¿Sustituirlo por el del escaneo? (Podrás deshacerlo.)')) return;
+    setError('');
+    reiniciarPlan(res.plan);
+    setFilas(res.mediciones.length ? res.mediciones : [filaVacia()]);
+    setVista('editor');
+    setZoom(1);
+    showNotification(`Croquis del escaneo: ${res.plan.rooms.length} estancias con sus medidas fijas. Revisa nombres y huecos.`);
+  };
+
   const generarConIa = async () => {
     if (!medicionesTexto && !notas.trim() && !fotos.length) {
       setError('Añade al menos las medidas de una estancia (largo y ancho), alguna nota o fotos.');
@@ -409,7 +435,7 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
   const sup = resumenSuperficies(plan);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-stretch justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="croquis-titulo">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-stretch justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="croquis-titulo">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-[1500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100">
 
         {/* Cabecera */}
@@ -446,6 +472,18 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
               <div className="bg-red-500/10 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl flex gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /><span className="whitespace-pre-wrap">{error}</span>
               </div>
+            )}
+
+            {lidarActivo ? (
+              <section className="space-y-2 bg-slate-950/60 border border-cyan-500/20 rounded-2xl p-3">
+                <div>
+                  <h4 className="text-sm font-bold text-white">Escaneo LiDAR</h4>
+                  <p className="text-[11px] text-slate-400">Con un escaneo del iPhone o iPad Pro el croquis sale con las medidas reales, sin IA, y rellena las mediciones de abajo.</p>
+                </div>
+                <EscaneoLidarSubida onUsar={usarEscaneo} textoUsar="Dibujar el croquis con el escaneo" />
+              </section>
+            ) : (
+              <p className="text-[11px] text-slate-500">¿Tienes un escaneo LiDAR de la vivienda? Activa su subida en Ajustes › Escaneo LiDAR.</p>
             )}
 
             <section className="space-y-2">
@@ -623,7 +661,7 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
           </div>
         )}
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

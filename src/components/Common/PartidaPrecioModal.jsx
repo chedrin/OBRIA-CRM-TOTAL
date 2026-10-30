@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import AiImprovementControl from './AiImprovementControl';
+import ModalOverlay from './ModalOverlay';
 
 // Formulario único para dar de alta o editar una partida de un catálogo de precios unitarios
 // (base de precios de la empresa o catálogo propio de una obra). Todos los campos son editables.
@@ -89,7 +90,7 @@ export default function PartidaPrecioModal({
   const inputClass = 'w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 my-8">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 className="text-base font-bold text-white">
@@ -236,6 +237,6 @@ export default function PartidaPrecioModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

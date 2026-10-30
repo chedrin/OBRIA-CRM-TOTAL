@@ -3,9 +3,10 @@ import { useApp } from '../../context/AppContext';
 import { ShieldCheck, AlertTriangle, CheckCircle2, Link2, KeyRound, Send, FileSignature, Rocket } from 'lucide-react';
 import {
   saveEmpresaFacturacion, verificarCadenaVerifactu, subirCertificado, quitarCertificado,
-  listarEnvios, enviarAhora, getDeclaracionResponsable
+  listarEnvios, enviarAhora
 } from '../../services/facturacionService';
 import HistorialEnviosModal from './HistorialEnviosModal';
+import { DeclaracionResponsableContenido } from '../Common/DeclaracionResponsable';
 
 const EMPTY = {
   razonSocial: '',
@@ -70,7 +71,7 @@ export default function FacturacionConfig() {
   const [subiendo, setSubiendo] = useState(false);
   const [envios, setEnvios] = useState(null);
   const [verHistorial, setVerHistorial] = useState(false);
-  const [declaracion, setDeclaracion] = useState(null);
+  const [verDeclaracionSistema, setVerDeclaracionSistema] = useState(false);
 
   useEffect(() => {
     setForm(empresa ? { ...EMPTY, ...empresa } : { ...EMPTY });
@@ -192,12 +193,6 @@ export default function FacturacionConfig() {
     }
     await recargarFacturacion();
     await cargarEnvios();
-  };
-
-  const verDeclaracion = async () => {
-    const result = await getDeclaracionResponsable();
-    if (result.ok) setDeclaracion(result.data.declaracion);
-    else showNotification(result.error, 'error');
   };
 
   const certificado = empresa?.certificado;
@@ -460,14 +455,14 @@ export default function FacturacionConfig() {
           </h3>
           <ul className="text-xs text-slate-400 list-disc pl-5 space-y-1">
             <li className={certificado && !certificado.error ? 'text-emerald-300' : ''}>Certificado electrónico subido.</li>
-            <li className={empresa.productorCompleto ? 'text-emerald-300' : ''}>Declaración responsable completa (datos del productor en el servidor).</li>
+            <li className={empresa.declaracionCompleta ? 'text-emerald-300' : ''}>Declaración responsable completa (datos del productor, fecha y lugar en el servidor).</li>
             <li className={empresa.ultimoEnvio?.estado === 'Correcto' ? 'text-emerald-300' : ''}>Al menos un envío correcto al entorno de pruebas de la AEAT.</li>
             <li>Revisado con tu gestoría: series, IVA de tus obras y fecha en la que dejas tu programa anterior.</li>
           </ul>
           <button
             type="button"
             onClick={handleProduccion}
-            disabled={saving || !certificado || certificado.error || !empresa.productorCompleto}
+            disabled={saving || !certificado || certificado.error || !empresa.declaracionCompleta}
             className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs"
           >
             Pasar a producción
@@ -481,22 +476,10 @@ export default function FacturacionConfig() {
             <FileSignature className="w-4 h-4 text-violet-400" />
             <span>Declaración responsable del sistema</span>
           </h3>
-          <button type="button" onClick={verDeclaracion} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs">Ver</button>
+          <button type="button" onClick={() => setVerDeclaracionSistema(v => !v)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs">{verDeclaracionSistema ? 'Ocultar' : 'Ver'}</button>
         </div>
-        {declaracion && (
-          <div className="text-xs text-slate-300 space-y-2">
-            {!declaracion.completa && (
-              <Aviso tipo="warn">Faltan datos del productor en el servidor: {declaracion.faltan.join(', ')}.</Aviso>
-            )}
-            <p><strong>Sistema:</strong> {declaracion.sistema.nombre} · código {declaracion.sistema.codigo} · versión {declaracion.sistema.version}</p>
-            <p><strong>Componentes:</strong> {declaracion.sistema.componentes}</p>
-            <p><strong>Solo VERI*FACTU:</strong> sí · <strong>Varios obligados tributarios:</strong> sí</p>
-            <p><strong>Firma de los registros:</strong> {declaracion.sistema.firma}</p>
-            <p><strong>Productor:</strong> {declaracion.productor.nombre || '—'} · NIF {declaracion.productor.nif || '—'} · {declaracion.productor.direccion || '—'}</p>
-            <p className="text-slate-400">{declaracion.declaracion}</p>
-            {(declaracion.fecha || declaracion.lugar) && <p>En {declaracion.lugar || '—'}, a {declaracion.fecha || '—'}.</p>}
-          </div>
-        )}
+        <p className="text-[11px] text-slate-500">Todos los usuarios la pueden consultar y descargar en PDF desde el pie de página: "Cumplimiento legal (VERI*FACTU)".</p>
+        {verDeclaracionSistema && <DeclaracionResponsableContenido />}
       </div>
 
       {verHistorial && <HistorialEnviosModal onClose={() => setVerHistorial(false)} />}

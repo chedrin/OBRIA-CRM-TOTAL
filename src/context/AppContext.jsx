@@ -2241,7 +2241,7 @@ export function AppProvider({ children }) {
       estadoProcesado: false
     };
     setMensajesInbox(prev => [msg, ...prev]);
-    showNotification('Nuevo mensaje recibido y analizado por IA');
+    showNotification('Mensaje guardado en la bandeja.');
     return msg;
   };
 

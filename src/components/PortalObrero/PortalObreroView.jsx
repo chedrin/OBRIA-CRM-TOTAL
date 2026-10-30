@@ -26,6 +26,8 @@ import TaskProgressSelector from './TaskProgressSelector';
 import AvisosTecnicosModal from './AvisosTecnicosModal';
 import PedirMaterialModal from './PedirMaterialModal';
 import MisTajos from './MisTajos';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 // Foto del operario; si no hay o no carga (sin conexión), sus iniciales.
 function FotoObrero({ obrero }) {
@@ -793,8 +795,9 @@ export default function PortalObreroView() {
       </div>
 
       {/* Modal Subir Foto del Avance */}
+      <AnimatePresence>
       {showPhotoModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Camera className="w-4 h-4 text-amber-400" />
@@ -847,12 +850,14 @@ export default function PortalObreroView() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Nota de Voz desde el Móvil */}
+      <AnimatePresence>
       {showVoiceModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Mic className="w-4 h-4 text-amber-400" />
@@ -892,12 +897,14 @@ export default function PortalObreroView() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Imputar Horas & Consumo de Stock */}
+      <AnimatePresence>
       {showHorasModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-400" />
@@ -953,8 +960,9 @@ export default function PortalObreroView() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Pedir material o avisar de una incidencia a la oficina */}
       <PedirMaterialModal

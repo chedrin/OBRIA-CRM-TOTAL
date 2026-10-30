@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import ObraDetail from './ObraDetail';
+import CroquisLienzo from '../Croquis/CroquisLienzo';
+import { normalizarCroquis } from '../../utils/croquisPlano';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import ViewModeSwitcher from '../Common/ViewModeSwitcher';
@@ -18,6 +20,8 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function ObrasList() {
   const {
@@ -31,6 +35,7 @@ export default function ObrasList() {
   const { viewMode } = useUiPreferences();
   const [filterState, setFilterState] = useState('todas'); // todas, en_curso, presupuestada, finalizada
   const [searchQuery, setSearchQuery] = useState('');
+  const [abrirCroquis, setAbrirCroquis] = useState(false); // la ficha se abrió desde la miniatura del croquis
   const [showNewModal, setShowNewModal] = useState(false);
   const [modalStep, setModalStep] = useState(1); // 1: Seleccionar Presupuesto de origen, 2: Confirmar/Editar Datos de la Obra
   const [selectedPresupuestoId, setSelectedPresupuestoIdForm] = useState('');
@@ -121,7 +126,7 @@ export default function ObrasList() {
   };
 
   if (selectedObraId) {
-    return <ObraDetail obraId={selectedObraId} onBack={() => setSelectedObraId(null)} />;
+    return <ObraDetail obraId={selectedObraId} abrirCroquis={abrirCroquis} onBack={() => { setSelectedObraId(null); setAbrirCroquis(false); }} />;
   }
 
   const filteredObras = obras.filter(obra => {
@@ -254,17 +259,35 @@ export default function ObrasList() {
                   </span>
                 </div>
 
-                <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition">{obra.titulo}</h3>
-                
-                <div className="space-y-1 text-xs text-slate-400 mt-2">
-                  <p className="flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Cliente: <strong className="text-slate-300">{obra.cliente}</strong></span>
-                  </p>
-                  <p className="flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="truncate">{obra.direccion}</span>
-                  </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition">{obra.titulo}</h3>
+
+                    <div className="space-y-1 text-xs text-slate-400 mt-2">
+                      <p className="flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Cliente: <strong className="text-slate-300">{obra.cliente}</strong></span>
+                      </p>
+                      <p className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-slate-500" />
+                        <span className="truncate">{obra.direccion}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Miniatura del croquis: abre la obra con el editor del croquis */}
+                  {obra.croquis?.plan?.rooms?.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setAbrirCroquis(true); setSelectedObraId(obra.id); }}
+                      title="Abrir el croquis en el editor"
+                      aria-label={`Abrir el croquis de ${obra.titulo}`}
+                      className="w-36 shrink-0 rounded-lg overflow-hidden border border-slate-800 hover:border-amber-500/60 transition-colors"
+                      style={{ background: '#ffffff' }}
+                    >
+                      <CroquisLienzo plan={normalizarCroquis(obra.croquis.plan)} soloLectura mostrarCotas={false} alto="5.5rem" ajustado />
+                    </button>
+                  )}
                 </div>
 
                 {/* Progress Bar */}
@@ -349,8 +372,9 @@ export default function ObrasList() {
       )}
 
       {/* Modal Nueva Obra con Selección de Presupuesto */}
+      <AnimatePresence>
       {showNewModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
@@ -574,8 +598,9 @@ export default function ObrasList() {
               </form>
             )}
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

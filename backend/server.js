@@ -374,7 +374,7 @@ function geminiFastThinking(modelId) {
   return null;
 }
 
-async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json", fast = false }) {
+async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json", fast = false, timeoutMs = FAST_AI_TIMEOUT_MS, liteFirst = true }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!effectiveKey) {
     throw aiError("Falta la clave GEMINI_API_KEY.");
@@ -382,9 +382,9 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
 
   // En modo rápido solo se prueban 2 modelos, una vuelta y con tiempo máximo: si Gemini no contesta pronto,
   // se pasa al siguiente proveedor en vez de encadenar esperas.
-  const allModels = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL, { fast });
+  const allModels = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL, { fast, liteFirst });
   const modelsToTry = fast ? allModels.slice(0, 2) : allModels;
-  const signalFor = () => (fast ? AbortSignal.timeout(FAST_AI_TIMEOUT_MS) : undefined);
+  const signalFor = () => (fast ? AbortSignal.timeout(timeoutMs) : undefined);
 
   const baseUrl = `https://generativelanguage.googleapis.com/v1beta`;
   const bodyPayload = {
@@ -525,12 +525,14 @@ function replaceSavedGeminiModel(oldModel, newModel) {
   }
 }
 
-async function geminiModelsToTry(apiKey, preferredModel, { fast = false } = {}) {
+async function geminiModelsToTry(apiKey, preferredModel, { fast = false, liteFirst = true } = {}) {
   const { models, lite = [], unavailable } = await listGeminiModelsCached(apiKey);
   if (fast) {
     // Texto corto: primero el modelo ligero (responde en 1-3 s); si falla, el modelo elegido en Ajustes.
     // Si no se pudo leer la lista de modelos, se usa el alias estable de Google para flash-lite.
-    const quick = [lite[0] || "gemini-flash-lite-latest", preferredModel, ...models.slice(0, 1)].filter(m => m && !unavailable.has(m));
+    // Con audio (liteFirst: false) el modelo ligero oye peor y llega a responder "sin voz": se usa el elegido.
+    const liteModel = liteFirst ? [lite[0] || "gemini-flash-lite-latest"] : [];
+    const quick = [...liteModel, preferredModel, ...models.slice(0, 1)].filter(m => m && !unavailable.has(m));
     if (quick.length) return [...new Set(quick)];
   }
   const candidates = models.length
@@ -893,6 +895,8 @@ function buildPriceBaseText(items) {
   }).join("\n");
 }
 
+let whisperNoCreditUntil = 0;
+
 // Transcripción de Audio Robusta: Whisper (OpenAI) si hay clave; si no, o si falla, Gemini.
 async function transcribeAudioUnified({ audioFile, config }) {
   const provider = (config.provider || "google").toLowerCase();
@@ -908,7 +912,14 @@ async function transcribeAudioUnified({ audioFile, config }) {
 
   let lastError = null;
   let heardNothing = false;
+  const failures = [];
   for (const engine of attempts) {
+    // Sin saldo en OpenAI: no se insiste en Whisper durante unos minutos y se usa Gemini.
+    if (engine === "openai" && Date.now() < whisperNoCreditUntil) {
+      if (attempts.length > 1) continue;
+      failures.push("openai: sin saldo en OpenAI (Whisper)");
+      continue;
+    }
     try {
       const text = engine === "openai"
         ? await transcribeWithWhisper(audioFile, openAiKey)
@@ -917,10 +928,12 @@ async function transcribeAudioUnified({ audioFile, config }) {
       heardNothing = true;
     } catch (err) {
       lastError = err;
-      console.warn(`[Transcripción] Falló con ${engine}:`, err.message);
+      failures.push(`${engine}: ${err.detail || err.message}`);
+      console.warn(`[Transcripción] Falló con ${engine}:`, err.detail || err.message);
     }
   }
   if (heardNothing) return "";
+  if (failures.length) throw aiError(failures.join(" | "));
   if (lastError) throw lastError;
   throw new Error("No hay ninguna clave de IA para transcribir audio (GEMINI_API_KEY u OPENAI_API_KEY).");
 }
@@ -958,7 +971,8 @@ async function transcribeWithWhisper(audioFile, apiKey) {
       "Content-Type": `multipart/form-data; boundary=${boundary}`,
       "Authorization": `Bearer ${apiKey}`
     },
-    body: Buffer.concat(bodyParts)
+    body: Buffer.concat(bodyParts),
+    signal: AbortSignal.timeout(90000)
   });
 
   const rawText = await res.text();
@@ -971,7 +985,12 @@ async function transcribeWithWhisper(audioFile, apiKey) {
 
   if (!res.ok) {
     console.error(`[Whisper Error] ${res.status}:`, data);
-    throw new Error(USER_FRIENDLY_AI_ERROR);
+    const code = `${data?.error?.code || ""} ${data?.error?.type || ""}`;
+    if (res.status === 429 && /quota|credit|billing/i.test(code + (data?.error?.message || ""))) {
+      whisperNoCreditUntil = Date.now() + 10 * 60 * 1000;
+      throw aiError("Sin saldo en OpenAI: Whisper no puede transcribir hasta que se añada crédito en platform.openai.com/settings/organization/billing.");
+    }
+    throw aiError(`Whisper HTTP ${res.status}: ${String(data?.error?.message || "").slice(0, 160)}`);
   }
 
   return cleanTranscript(data.text);
@@ -995,7 +1014,12 @@ async function transcribeWithGemini(audioFile, apiKey, model) {
     contents: [{ role: "user", parts: [{ text: "Transcribe literalmente este audio." }, fileToPart(audioFile)] }],
     temperature: 0,
     maxTokens: 8192,
-    responseMimeType: null
+    responseMimeType: null,
+    // Transcribir no necesita razonar: modo rápido (razonamiento bajo, 2 modelos, sin esperas encadenadas)
+    // y un tiempo máximo según la duración aproximada del audio.
+    fast: true,
+    liteFirst: false,
+    timeoutMs: Math.min(90000, 25000 + Math.round((audioFile.buffer?.length || 0) / 1048576) * 15000)
   });
   return cleanTranscript(rawText);
 }

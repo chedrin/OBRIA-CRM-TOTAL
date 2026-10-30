@@ -295,6 +295,7 @@ async function empresaCompleta(company) {
   return toAppCompany(company, ajustes, {
     certificado,
     productorCompleto: productor.completo,
+    declaracionCompleta: declaracionResponsable().completa,
     registros: await contarRegistros(company.id, company.verifactu_entorno)
   });
 }
@@ -479,6 +480,10 @@ const handlers = {
       const falta = !productor.completo
         ? `faltan los datos del productor del software en el servidor (${productor.faltan.join(", ")})`
         : (!cert || cert.error) ? "falta subir el certificado electrónico de la empresa" : null;
+      const declaracion = declaracionResponsable();
+      if (!falta && !declaracion.completa && quiereProduccion && current?.verifactu_entorno !== "produccion") {
+        throw httpError(409, `No se puede pasar a producción: la declaración responsable está incompleta (${declaracion.faltan.join(", ")}).`);
+      }
       if (falta && quiereProduccion && current?.verifactu_entorno !== "produccion") throw httpError(409, `No se puede pasar a producción: ${falta}.`);
       if (falta) {
         quiereEnvio = false;
@@ -880,7 +885,9 @@ export async function handleFacturacionRoutes(req, res, pathname, searchParams =
     if (ruta === null) throw httpError(404, "Ruta de facturación no encontrada.");
     if (ruta === "") throw httpError(405, "Método no permitido.");
     if (!isSupabaseReady()) throw httpError(503, "La facturación necesita Supabase configurado en el servidor.");
-    if (!req.user || req.user.role !== "admin") throw httpError(403, "Solo administradores.");
+    // La declaración responsable tiene que poder consultarla cualquier usuario del sistema (art. 15.3 Orden HAC/1177/2024).
+    if (!req.user) throw httpError(401, "Inicia sesión.");
+    if (ruta !== "declaracion" && req.user.role !== "admin") throw httpError(403, "Solo administradores.");
     const result = await handlers[ruta]({ req, res, user: req.user, params, searchParams });
     if (result === undefined) return true; // ya respondido (descargas)
     if (result.status && result.body) sendJson(res, result.status, result.body);
