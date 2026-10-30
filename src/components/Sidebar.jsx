@@ -3,7 +3,6 @@ import { useApp } from '../context/AppContext';
 import { NAV_SECTIONS, NAV_TONES, sectionOfTab } from './navigation/navConfig';
 import {
   HardHat,
-  LogOut,
   X,
   ChevronLeft,
   ChevronRight,
@@ -43,8 +42,6 @@ export default function Sidebar({
     facturas = [],
     mensajesInbox = [],
     subcontratasPresupuestos = [],
-    currentUser,
-    logout,
     showNotification,
     facturacionActivada
   } = useApp();
@@ -105,13 +102,6 @@ export default function Sidebar({
     e.stopPropagation();
     window.location.hash = '#empleados';
   };
-
-  const handleLogout = () => {
-    if (window.confirm('¿Deseas cerrar la sesión del panel administrativo?')) logout();
-  };
-
-  const initial = currentUser?.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'A';
-  const roleLabel = currentUser?.role === 'admin' ? 'Director de obra' : currentUser?.role || 'Admin';
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-200 select-none">
@@ -324,37 +314,11 @@ export default function Sidebar({
         )}
       </nav>
 
-      {/* Sesión */}
-      <div className={`p-3 border-t border-slate-800 shrink-0 ${collapsed ? 'px-2' : ''}`}>
-        <div className={`flex items-center gap-2.5 rounded-xl transition ${collapsed ? 'flex-col' : 'p-1.5 hover:bg-slate-800/70'}`}>
-          <div
-            className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0"
-            title={collapsed ? `${currentUser?.fullName || 'Administrador'} (${roleLabel})` : undefined}
-          >
-            {initial}
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white truncate">{currentUser?.fullName || 'Administrador'}</p>
-              <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                {roleLabel}
-              </p>
-            </div>
-          )}
-          <button
-            onClick={handleLogout}
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition shrink-0"
-            title="Cerrar sesión"
-            aria-label="Cerrar sesión"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-
+      {/* Contraer menú */}
+      <div className={`hidden lg:block p-3 border-t border-slate-800 shrink-0 ${collapsed ? 'px-2' : ''}`}>
         <button
           onClick={onToggleCollapse}
-          className={`hidden lg:flex mt-2 w-full items-center gap-2 text-[11px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-slate-800/70 rounded-lg py-1.5 transition ${collapsed ? 'justify-center' : 'px-2'}`}
+          className={`flex w-full items-center gap-2 text-[11px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-slate-800/70 rounded-lg py-1.5 transition ${collapsed ? 'justify-center' : 'px-2'}`}
           title={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
           aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
           aria-expanded={!collapsed}
