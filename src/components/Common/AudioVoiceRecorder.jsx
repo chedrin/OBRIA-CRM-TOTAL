@@ -22,7 +22,8 @@ export default function AudioVoiceRecorder({
   onTranscriptionComplete,
   initialTranscript = '',
   placeholder = 'La transcripción del audio aparecerá aquí en tiempo real y podrás editarla antes de generar partidas...',
-  title = 'Captura de Voz con Inteligencia Artificial (Whisper)'
+  title = 'Captura de Voz con Inteligencia Artificial (Whisper)',
+  hideHeader = false
 }) {
   const { empresaConfig, showNotification, setActiveTab } = useApp();
 
@@ -444,6 +445,7 @@ export default function AudioVoiceRecorder({
     <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
       
       {/* 1. Header: Title & AI Cloud Engine Status */}
+      {!hideHeader && (
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800/80 pb-3">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
@@ -463,14 +465,15 @@ export default function AudioVoiceRecorder({
           </span>
         </div>
       </div>
+      )}
 
       {/* 2. Recording Waveform Canvas & Control Buttons */}
-      <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
+      <div className="@container bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
         
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col @xl:flex-row items-center justify-between gap-4">
           
           {/* Left: Dynamic Real Sound Waves */}
-          <div className="w-full lg:w-1/2 space-y-1.5">
+          <div className="w-full @xl:w-1/2 space-y-1.5">
             <div className="bg-slate-950 rounded-xl p-2.5 border border-slate-800 flex flex-col justify-center">
               <canvas
                 ref={canvasRef}
@@ -510,7 +513,7 @@ export default function AudioVoiceRecorder({
           </div>
 
           {/* Right: Actions */}
-          <div className="flex flex-wrap items-center justify-end gap-2 w-full lg:w-auto shrink-0">
+          <div className="flex flex-wrap items-center justify-center @xl:justify-end gap-2 w-full @xl:w-auto shrink-0">
             
             {isRecording || isSimulatedRecording ? (
               <button
