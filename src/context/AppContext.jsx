@@ -1367,6 +1367,9 @@ export function AppProvider({ children }) {
       obraId: pres.obraId || null,
       presupuestoId: pres.id,
       presupuestoBase: Number(pres.baseImponible || 0),
+      condicionesPago: pres.condicionesPago || '',
+      certificacion: datos.certificacion,
+      facturaUnica: datos.facturaUnica === true,
       baseImponible: datos.baseImponible ?? Number(((pres.baseImponible || 0) * factor).toFixed(2)),
       lineas: factor === 1 && Array.isArray(pres.partidas)
         ? pres.partidas.map(p => ({ concepto: p.concepto, cantidad: p.cantidad, unidad: p.unidad, precio: p.precioVenta, importe: p.total }))

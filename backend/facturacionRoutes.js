@@ -42,6 +42,7 @@ import { estadoCertificado, guardarCertificado, MAX_PFX_BYTES } from "./verifact
 import { datosProductor, declaracionResponsable } from "./verifactu/sistema.js";
 import { getAppRecord } from "./notificaciones.js";
 import { baseFacturadaPorPresupuesto, estadoFacturacion, MARGEN_LIMITE } from "../src/utils/facturadoPresupuesto.js";
+import { siguienteCertificacion, etiquetaCertificacion } from "../src/utils/certificaciones.js";
 import { enviarPendientesEmpresa } from "./verifactu/envio.js";
 import { calcularFiscalidadObra } from "./verifactu/fiscalidadObra.js";
 import { generarFacturae } from "./verifactu/facturae.js";
@@ -377,6 +378,53 @@ async function comprobarLimitePresupuesto(company, presupuestoId, nueva, baseEnv
         ? `Solo quedan ${eur(estado.pendiente)} € por facturar.`
         : "Ya está facturado entero: para cambiar el importe emite una rectificativa."));
   }
+}
+
+/**
+ * Certificaciones de un presupuesto: cada una se factura una sola vez y en orden (la 2 no sin
+ * la 1). El número lo decide el servidor y va al principio del concepto. Con un plan fijo
+ * (condiciones de pago que suman 100 %) el importe de cada certificación es el del plan y la
+ * última es lo que quede pendiente. Devuelve el texto con el que empieza el concepto.
+ */
+async function certificacionPresupuesto(company, presupuestoId, body, base) {
+  const guardado = await getAppRecord("presupuestos", presupuestoId).catch(() => null);
+  const presupuesto = {
+    id: presupuestoId,
+    baseImponible: Number(guardado?.baseImponible ?? body.presupuestoBase ?? 0),
+    condicionesPago: guardado ? guardado.condicionesPago : body.condicionesPago
+  };
+  const rows = await run(getAdminClient().from("invoices").select("*")
+    .eq("company_id", company.id).eq("entorno", company.verifactu_entorno).eq("status", "ISSUED")
+    .eq("presupuesto_id", presupuestoId));
+  const facturas = rows.map((r) => toAppInvoice(r));
+  const facturado = baseFacturadaPorPresupuesto(facturas).get(presupuestoId) || 0;
+  const pendiente = Math.max(presupuesto.baseImponible - facturado, 0);
+  const sig = siguienteCertificacion(presupuesto, facturas, pendiente);
+  const numero = (f) => f?.numero ? ` (${f.numero})` : "";
+
+  if (body.facturaUnica === true) {
+    if (!sig.unicaPermitida) {
+      throw httpError(409, "Este presupuesto ya tiene certificaciones facturadas: no se puede emitir una factura única del 100 %. Factura la siguiente certificación.");
+    }
+    if (Math.abs(base - presupuesto.baseImponible) > MARGEN_LIMITE) {
+      throw httpError(409, `La factura única tiene que ser el 100 % del presupuesto (${eur(presupuesto.baseImponible)} € de base).`);
+    }
+    return etiquetaCertificacion({ unica: true });
+  }
+  if (sig.cerrado) {
+    throw httpError(409, "Todas las certificaciones de este presupuesto ya están facturadas. Para cambiar un importe, emite una rectificativa.");
+  }
+  const pedida = Number(body.certificacion);
+  if (Number.isInteger(pedida) && pedida > 0 && pedida !== sig.n) {
+    if (sig.emitidas.has(pedida)) {
+      throw httpError(409, `La certificación ${pedida} ya está facturada${numero(sig.emitidas.get(pedida))}. Toca la certificación ${sig.n}.`);
+    }
+    throw httpError(409, `Las certificaciones van en orden: antes de la ${pedida} hay que facturar la certificación ${sig.n}.`);
+  }
+  if (sig.base !== null && Math.abs(base - sig.base) > MARGEN_LIMITE) {
+    throw httpError(409, `La certificación ${sig.n}${sig.total ? ` de ${sig.total}` : ""} es de ${eur(sig.base)} € de base (${sig.ultima ? "lo pendiente del presupuesto" : `${sig.item.pct} %`}), no de ${eur(base)} €.`);
+  }
+  return etiquetaCertificacion(sig);
 }
 
 async function emitir(draft, user) {
@@ -802,10 +850,11 @@ const handlers = {
 
     const emitida = await enCola(company.id, async () => {
       await comprobarLimitePresupuesto(company, presupuestoId, { id: "nueva", baseImponible: importes.base_imponible }, body.presupuestoBase);
+      const etiqueta = presupuestoId ? await certificacionPresupuesto(company, presupuestoId, body, importes.base_imponible) : "";
       return emitir({
         company_id: company.id,
         tipo_factura: "F1",
-        descripcion: clip(body.descripcion, 500),
+        descripcion: clip([etiqueta, clip(body.descripcion, 500)].filter(Boolean).join(" · "), 500),
         cliente_nombre: clienteNombre,
         cliente_nif: nif.nif,
         ...cliente,
