@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import BarraProgreso from './Common/BarraProgreso';
 import { useApp } from '../context/AppContext';
 import EmptyState from './Common/EmptyState';
@@ -27,10 +28,18 @@ const clickable = (fn) => ({
 
 const eur = (n) => `${(n || 0).toLocaleString('es-ES')} €`;
 
+// Animación de entrada escalonada: el contenedor reparte el retraso y cada tarjeta sube y aparece.
+const lista = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.25, ease: [0.16, 1, 0.3, 1] } },
+};
+const elevar = { y: -3, transition: { duration: 0.15 } };
+
 // Tarjeta de indicador: título, icono, cifra principal y una línea de detalle.
 function KpiCard({ label, icon: Icon, iconClass, value, valueClass = 'text-white', hint, hintClass = 'text-slate-400', footer }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm hover:border-slate-700 transition min-w-0">
+    <motion.div variants={item} whileHover={elevar} className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl shadow-sm hover:border-slate-700 transition-colors min-w-0">
       <div className="flex items-center justify-between gap-2 text-slate-400 mb-2 sm:mb-3">
         <span className="text-xs font-medium leading-tight">{label}</span>
         <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 ${iconClass}`}>
@@ -44,14 +53,14 @@ function KpiCard({ label, icon: Icon, iconClass, value, valueClass = 'text-white
       <div className="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] sm:text-xs">
         {footer}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 // Tarjeta lateral con cabecera (icono, título y un único enlace de acceso al módulo).
 function Widget({ icon: Icon, iconClass, title, action, onAction, actionClass = 'text-amber-400', children }) {
   return (
-    <section className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-sm space-y-3">
+    <motion.section variants={item} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-sm space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconClass}`}>
@@ -66,7 +75,7 @@ function Widget({ icon: Icon, iconClass, title, action, onAction, actionClass = 
         )}
       </div>
       {children}
-    </section>
+    </motion.section>
   );
 }
 
@@ -122,7 +131,7 @@ export default function Dashboard() {
     <div className="space-y-6">
 
       {/* Indicadores */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <motion.div variants={lista} initial="hidden" animate="show" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <KpiCard
           label="Obras en curso"
           icon={HardHat}
@@ -157,7 +166,7 @@ export default function Dashboard() {
           hint="por procesar"
           footer={<><span className="text-slate-400">Subcontratas nuevas</span><span className="font-semibold text-indigo-400">{subPresPendientes.length} presupuestos</span></>}
         />
-      </div>
+      </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -183,17 +192,20 @@ export default function Dashboard() {
             </EmptyState>
           )}
 
-          <div className="space-y-3">
+          <motion.div variants={lista} initial="hidden" animate="show" className="space-y-3">
             {obras.map((obra) => {
               const pct = obra.progreso || 0;
               const isEnCurso = obra.estado === 'en_curso';
               const isFinalizada = obra.estado === 'finalizada';
 
               return (
-                <div
+                <motion.div
                   key={obra.id}
+                  variants={item}
+                  whileHover={elevar}
+                  whileTap={{ scale: 0.99 }}
                   {...clickable(() => handleOpenObra(obra.id))}
-                  className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 block w-full text-left bg-slate-900 border border-slate-800 hover:border-amber-500/40 p-4 sm:p-5 rounded-2xl transition shadow-sm hover:shadow-md group"
+                  className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 block w-full text-left bg-slate-900 border border-slate-800 hover:border-amber-500/40 p-4 sm:p-5 rounded-2xl transition-[border-color,box-shadow] shadow-sm hover:shadow-md group"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                     <div className="min-w-0">
@@ -248,14 +260,14 @@ export default function Dashboard() {
                       <span>Entrega: {obra.fechaEntregaCliente || obra.fechaFinEstimada}</span>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
-          </div>
+          </motion.div>
         </section>
 
         {/* Columna lateral: un acceso por módulo */}
-        <div className="space-y-4">
+        <motion.div variants={lista} initial="hidden" animate="show" className="space-y-4">
 
           <Widget icon={Clock} iconClass="bg-amber-500/20 text-amber-400" title="Planificación IA">
             {endingObra ? (
@@ -369,7 +381,7 @@ export default function Dashboard() {
             </button>
           </Widget>
 
-        </div>
+        </motion.div>
 
       </div>
     </div>

@@ -19,6 +19,7 @@ import {
 } from '../../services/documentDispatchService';
 import { renderEmail } from '../../utils/emailTemplates';
 import { documentPdfAttachment } from '../../utils/documentPdf';
+import ModalOverlay from './ModalOverlay';
 
 const eur = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -168,7 +169,7 @@ function SendDocumentModalContent({
   };
 
   return (
-    <div
+    <ModalOverlay
       ref={backdropRef}
       onClick={handleBackdropClick}
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto transition-all duration-200 ease-out"
@@ -355,6 +356,6 @@ function SendDocumentModalContent({
         </div>
 
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

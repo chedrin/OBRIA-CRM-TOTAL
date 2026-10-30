@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { SAMPLE_REFERENCE_BUDGET_IDS } from '../../services/referenceBudgetService';
 import confetti from 'canvas-confetti';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 const TIPOS_OBRA_PRESETS = [
   'Reforma Integral Vivienda',
@@ -375,8 +377,9 @@ export default function PresupuestosModeloConfig() {
       </div>
 
       {/* Modal Confirm Upload */}
+      <AnimatePresence>
       {showUploadModal && stagedFile && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-extrabold text-white text-base flex items-center gap-2">
@@ -453,12 +456,14 @@ export default function PresupuestosModeloConfig() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Preview / Inspect Extracted Text */}
+      <AnimatePresence>
       {previewBudget && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
               <div className="flex items-center gap-2.5">
@@ -525,8 +530,9 @@ export default function PresupuestosModeloConfig() {
               </div>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

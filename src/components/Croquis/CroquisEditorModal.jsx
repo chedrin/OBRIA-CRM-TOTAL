@@ -59,6 +59,7 @@ import {
   resumenSuperficies,
   textoMediciones
 } from '../../utils/croquisPlano';
+import ModalOverlay from '../Common/ModalOverlay';
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400';
 const btnCls = 'px-2.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700';
@@ -434,7 +435,7 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
   const sup = resumenSuperficies(plan);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-stretch justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="croquis-titulo">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-stretch justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="croquis-titulo">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-[1500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100">
 
         {/* Cabecera */}
@@ -660,7 +661,7 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
           </div>
         )}
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

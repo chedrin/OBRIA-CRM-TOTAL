@@ -13,6 +13,8 @@ import {
   HardHat,
   MessageSquare
 } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function GestionUsuarios() {
   const {
@@ -628,8 +630,9 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
       )}
 
       {/* MODAL: ALTA NUEVO OBRERO */}
+      <AnimatePresence>
       {showAddObreroModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
@@ -796,12 +799,14 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
 
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* MODAL: RESET PASSWORD */}
+      <AnimatePresence>
       {showResetModal && selectedUserForReset && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-3xl p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-black text-white text-sm flex items-center gap-2">
@@ -860,12 +865,14 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* MODAL: ALTA NUEVO ADMINISTRADOR */}
+      <AnimatePresence>
       {showAddAdminModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-3xl p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-black text-white text-sm flex items-center gap-2">
@@ -944,12 +951,14 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* MODAL CONFIRMACIÓN: CREDENCIALES GENERADAS */}
+      <AnimatePresence>
       {createdCredentialsModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-emerald-500/40 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5">
             <div className="text-center space-y-2">
               <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/30">
@@ -1036,8 +1045,9 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

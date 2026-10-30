@@ -23,6 +23,8 @@ import confetti from 'canvas-confetti';
 import { processScopeWithAI } from '../../services/aiAudioTextService';
 import { transcribeAudio } from '../../services/aiAudioTextService';
 import AiImprovementControl from '../Common/AiImprovementControl';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
   const {
@@ -658,8 +660,9 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
       </div>
 
       {/* Modal Presupuestos Modelo / RAG Reference Training */}
+      <AnimatePresence>
       {showReferenceModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
@@ -683,8 +686,9 @@ export default function PresupuestoGeneratorAI({ onCancel, onCreated }) {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

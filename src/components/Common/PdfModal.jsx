@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, Printer, Download, FileText } from 'lucide-react';
 import { describeDocument, buildDocumentPdf, documentQrDataUrl } from '../../utils/documentPdf';
+import ModalOverlay from './ModalOverlay';
 
 const eur = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -43,7 +44,7 @@ export default function PdfModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh]">
         
         {/* Top Controls */}
@@ -289,6 +290,6 @@ export default function PdfModal() {
         </div>
 
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

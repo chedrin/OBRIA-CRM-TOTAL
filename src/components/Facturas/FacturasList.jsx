@@ -20,6 +20,8 @@ import {
 import SendDocumentModal from '../Common/SendDocumentModal';
 import EmitirFacturaModal from './EmitirFacturaModal';
 import { descargarFacturae, descargarLibroExpedidas, getResumenTrimestral, descargarFacturasExcel } from '../../services/facturacionService';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 const eur = (v) => Number(v || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -675,8 +677,9 @@ export default function FacturasList() {
       )}
 
       {/* Modal Factura Rectificativa */}
+      <AnimatePresence>
       {facturaARectificar && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleRectificarSubmit} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4 text-xs sm:text-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white">Rectificar {facturaARectificar.numero}</h3>
@@ -743,12 +746,14 @@ export default function FacturasList() {
               </button>
             </div>
           </form>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Anular */}
+      <AnimatePresence>
       {facturaAAnular && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleAnularSubmit} className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4 text-xs sm:text-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white">Anular {facturaAAnular.numero}</h3>
@@ -782,8 +787,9 @@ export default function FacturasList() {
               </button>
             </div>
           </form>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Enviar Factura por Email / WhatsApp */}
       <SendDocumentModal

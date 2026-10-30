@@ -11,6 +11,7 @@ import { STATUS, applyCertifiedToObra } from '../../utils/avanceObra';
 import useNotify from '../Avisos/useNotify';
 import AsignacionRapida from './AsignacionRapida';
 import { EnlaceAsignacionModal } from '../Avisos/EnlaceEnvio';
+import ModalOverlay from '../Common/ModalOverlay';
 
 // Panel del jefe de obra: árbol Fase > Partidas con el avance reportado por obreros y
 // subcontratas, el planificado según las fechas asignadas y el certificado (validado).
@@ -357,7 +358,7 @@ function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex justify-end" onClick={onClose}>
+    <ModalOverlay className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex justify-end" onClick={onClose}>
       <aside className="w-full max-w-md h-full bg-slate-900 border-l border-slate-700 overflow-y-auto p-4 space-y-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -464,6 +465,6 @@ function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, o
           </ol>
         </section>
       </aside>
-    </div>
+    </ModalOverlay>
   );
 }

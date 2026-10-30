@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
 
 export default function LoginAdminModal({ isOpen, onClose, onSwitchToWorker }) {
   const { login, logout } = useApp();
@@ -43,7 +44,7 @@ export default function LoginAdminModal({ isOpen, onClose, onSwitchToWorker }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 relative">
         
         {onClose && (
@@ -133,6 +134,6 @@ export default function LoginAdminModal({ isOpen, onClose, onSwitchToWorker }) {
         )}
 
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { History, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { listarEnvios, descargarEnviosExcel } from '../../services/facturacionService';
+import ModalOverlay from '../Common/ModalOverlay';
 
 const inputClass = 'bg-slate-800 border border-slate-700 rounded-xl p-2 text-white text-xs focus:outline-none focus:border-sky-400';
 const fecha = (iso) => (iso ? new Date(iso).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '');
@@ -71,7 +72,7 @@ export default function HistorialEnviosModal({ onClose }) {
   const cuenta = (estado) => registros.filter(r => r.estado_envio === estado).length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm overflow-y-auto">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm overflow-y-auto">
       <div className="min-h-full flex items-start justify-center p-3 sm:p-6">
         <div className="bg-slate-900 border border-slate-700 w-full max-w-5xl rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 text-xs">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -182,6 +183,6 @@ export default function HistorialEnviosModal({ onClose }) {
           <p className="text-[11px] text-slate-500">Se muestran hasta 500 filas; el Excel incluye hasta 5000 con los mismos filtros. Las fechas de las facturas son las de su registro en la aplicación.</p>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

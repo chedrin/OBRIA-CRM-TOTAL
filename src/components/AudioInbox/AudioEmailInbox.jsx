@@ -19,6 +19,8 @@ import {
   X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 // Pantalla única: nueva entrada (audio o texto) + contexto → resultado de la IA, y debajo la bandeja.
 
@@ -578,8 +580,9 @@ export default function AudioEmailInbox() {
       </section>
 
       {/* Modal: añadir a presupuesto existente */}
+      <AnimatePresence>
       {showInsertModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-base font-bold text-white">Añadir partidas a un presupuesto</h3>
             <label className="block text-xs">
@@ -614,8 +617,9 @@ export default function AudioEmailInbox() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
     </div>
   );
 }

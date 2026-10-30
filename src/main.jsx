@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { MotionConfig } from 'motion/react';
 import App from './App.jsx';
 import SubcontrataPortal from './components/PortalSubcontrata/SubcontrataPortal.jsx';
 import { registerServiceWorker } from './services/pushService';
@@ -13,6 +14,9 @@ if (!isSubcontractorLink) registerServiceWorker();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {isSubcontractorLink ? <SubcontrataPortal /> : <App />}
+    {/* reducedMotion="user": sin animaciones si el sistema pide reducir movimiento. */}
+    <MotionConfig reducedMotion="user">
+      {isSubcontractorLink ? <SubcontrataPortal /> : <App />}
+    </MotionConfig>
   </React.StrictMode>
 );

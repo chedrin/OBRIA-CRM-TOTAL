@@ -7,6 +7,8 @@ import {
   X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function PwaInstallPrompt({ onInstalled }) {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -117,8 +119,9 @@ export default function PwaInstallPrompt({ onInstalled }) {
       </div>
 
       {/* Modal Guía para iOS (Safari) o navegadores sin prompt automático */}
+      <AnimatePresence>
       {showIOSModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 sm:p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-3xl p-5 shadow-2xl space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2.5">
@@ -195,8 +198,9 @@ export default function PwaInstallPrompt({ onInstalled }) {
               Entendido, voy a añadirla
             </button>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
     </>
   );
 }
