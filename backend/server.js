@@ -1736,6 +1736,35 @@ ${catalogText ? `BASE DE PRECIOS DE LA EMPRESA (coste de gremio, margen de la em
 
       // Presupuesto de un gremio (PDF, imagen o texto): extrae sus partidas con el precio de coste
       // para revisarlas y aplicarlas a la base de precios con el margen de la empresa.
+      // Respuesta de un proveedor pegada en Avisos y Pedidos: saca fecha de entrega, importe y estado.
+      if (req.method === "POST" && pathname === "/api/ai/supplier-reply/extract") {
+        const reply = String(fields.texto || "").slice(0, 20000).trim();
+        if (reply.length < 5) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Pega primero el correo de respuesta del proveedor." }));
+          return;
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        const pedido = String(fields.pedido || "").slice(0, 4000);
+        const systemInstruction = `Eres el responsable de compras de una constructora española. Lees la respuesta de un proveedor a un pedido de material y extraes los datos clave. No inventes nada: si un dato no aparece, déjalo en null.
+Devuelve SOLO un JSON válido:
+{"estado":"confirmado|parcial|rechazado|pendiente","fecha_entrega":"AAAA-MM-DD o null","importe":número sin IVA o null,"notas":"resumen breve en español: qué sirven, qué falta, condiciones, portes, forma de pago"}
+- "confirmado": servirán todo. "parcial": solo parte o con cambios. "rechazado": no pueden servirlo. "pendiente": no queda claro.
+- Fechas relativas ("mañana", "el jueves") se calculan desde hoy, ${today}. Si dan un plazo ("en 3 días"), calcula la fecha.
+- "importe": total del pedido sin IVA; si solo dan precio con IVA, quítale el 21 % y dilo en "notas".`;
+        const userPrompt = `${pedido ? `PEDIDO ENVIADO:\n${pedido}\n\n` : ""}RESPUESTA DEL PROVEEDOR:\n"""\n${reply}\n"""`;
+        const aiConfig = configWithRequestKey(currentConfig, fields);
+        const raw = await callActiveProvider({ config: aiConfig, systemInstruction, userPrompt, temperature: 0.1, maxTokens: 1024, fast: true });
+        let parsed = {};
+        try { parsed = JSON.parse(cleanJsonOutput(raw)); } catch { parsed = {}; }
+        const estado = ["confirmado", "parcial", "rechazado", "pendiente"].includes(parsed.estado) ? parsed.estado : "pendiente";
+        const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.fecha_entrega || "")) ? parsed.fecha_entrega : null;
+        const importe = Number.isFinite(Number(parsed.importe)) && parsed.importe !== null && parsed.importe !== "" ? Number(parsed.importe) : null;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ estado, fecha_entrega: fecha, importe, notas: String(parsed.notas || "").slice(0, 2000) }));
+        return;
+      }
+
       if (req.method === "POST" && pathname === "/api/ai/price-sources/extract") {
         const startTime = performance.now();
         const providedText = String(fields.texto || fields.text || "").slice(0, 30000);

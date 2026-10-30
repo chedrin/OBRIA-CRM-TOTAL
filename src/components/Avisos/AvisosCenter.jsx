@@ -1,18 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, BellOff, BellRing, CheckCheck, Package, Users, Link2, ClipboardCheck, Inbox } from 'lucide-react';
+import { Bell, BellOff, BellRing, CheckCheck, Package, Users, Link2, ClipboardCheck, Inbox, Truck, Plus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
 import { useNotifications, CATEGORY_STYLE } from '../../context/NotificationsContext';
 import { getPushStatus, enablePush, disablePush } from '../../services/pushService';
-import { fmtDateTime, inputCls, btnGhost } from '../../services/avisosApi';
+import { fmtDateTime, inputCls, btnGhost, btnPrimary } from '../../services/avisosApi';
 import NecesidadesPanel from './NecesidadesPanel';
 import ProveedoresPanel from './ProveedoresPanel';
 import EnlacesPanel from './EnlacesPanel';
 import PartesPanel from './PartesPanel';
+import PedidosPanel from './PedidosPanel';
+import NuevoPedidoModal from './NuevoPedidoModal';
 
 const TABS = [
   { id: 'avisos', label: 'Avisos', icon: Inbox },
   { id: 'necesidades', label: 'Necesidades y pedidos', icon: Package },
+  { id: 'pedidos', label: 'Pedidos a proveedores', icon: Truck },
   { id: 'partes', label: 'Partes de subcontratas', icon: ClipboardCheck },
   { id: 'enlaces', label: 'Enlaces a subcontratas', icon: Link2 },
   { id: 'proveedores', label: 'Proveedores', icon: Users }
@@ -144,6 +147,14 @@ export default function AvisosCenter() {
   const { target, setTarget, openNotification } = useNotifications();
   const [tab, setTab] = useState('avisos');
   const [focusId, setFocusId] = useState(null);
+  const [showNuevoPedido, setShowNuevoPedido] = useState(false);
+  const [needsKey, setNeedsKey] = useState(0);
+
+  const openNeed = (id) => {
+    setTab('necesidades');
+    setFocusId(id);
+    setNeedsKey((k) => k + 1);
+  };
 
   // Llegada desde un aviso, un toast o una notificación push.
   useEffect(() => {
@@ -167,14 +178,27 @@ export default function AvisosCenter() {
             );
           })}
         </div>
-        <PushToggle />
+        <div className="flex flex-wrap items-center gap-2">
+          <PushToggle />
+          <button onClick={() => setShowNuevoPedido(true)} className={btnPrimary}>
+            <Plus className="w-4 h-4" /> Nuevo pedido
+          </button>
+        </div>
       </div>
 
       {tab === 'avisos' && <AvisosList onOpen={openNotification} />}
-      {tab === 'necesidades' && <NecesidadesPanel focusId={focusId} />}
+      {tab === 'necesidades' && <NecesidadesPanel key={needsKey} focusId={focusId} />}
+      {tab === 'pedidos' && <PedidosPanel onOpenNeed={openNeed} />}
       {tab === 'partes' && <PartesPanel focusId={focusId} />}
       {tab === 'enlaces' && <EnlacesPanel />}
       {tab === 'proveedores' && <ProveedoresPanel />}
+
+      {showNuevoPedido && (
+        <NuevoPedidoModal
+          onClose={() => setShowNuevoPedido(false)}
+          onDone={({ need }) => { setShowNuevoPedido(false); openNeed(need.id); }}
+        />
+      )}
     </div>
   );
 }

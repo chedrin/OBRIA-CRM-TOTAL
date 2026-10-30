@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import BotonVolver from '../Common/BotonVolver';
-import { Plus, Trash2, FileText, Loader2, Phone, CalendarClock, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, FileText, Loader2, Phone, CalendarClock, Send, Image as ImageIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
 import { api, NEED_CATEGORIES, NEED_STATUS, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import PedidoBorrador from './PedidoBorrador';
+import PedidosEnviados from './PedidosEnviados';
 
 const categoryLabel = (value) => NEED_CATEGORIES.find((c) => c.value === value)?.label || value;
-const emptyItem = () => ({ material: '', cantidad: '', unidad: '' });
+export const emptyItem = () => ({ material: '', cantidad: '', unidad: '' });
 
-function ItemsEditor({ items, setItems }) {
+export function ItemsEditor({ items, setItems }) {
   const update = (i, key, value) => setItems(items.map((it, j) => (j === i ? { ...it, [key]: value } : it)));
   return (
     <div className="space-y-2">
@@ -30,25 +31,94 @@ function ItemsEditor({ items, setItems }) {
   );
 }
 
-function NuevaNecesidad({ onCreated, onCancel }) {
+const ORDERABLE = ['material', 'herramienta', 'maquinaria'];
+
+// Proveedores habituales de esa partida primero (coinciden con la categoría o el texto).
+function sortSuppliers(suppliers, { category, text }) {
+  const t = String(text || '').toLowerCase();
+  const score = (s) => (s.categories || []).filter((c) => c === category || t.includes(c)).length;
+  return suppliers.filter((s) => s.is_active).sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
+}
+
+function SupplierPicker({ suppliers, selected, setSelected, kind, setKind }) {
+  const toggle = (id) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  return (
+    <div className="flex flex-wrap gap-2 items-center">
+      <select value={kind} onChange={(e) => setKind(e.target.value)} className={`${inputCls} !w-auto`}>
+        <option value="pedido">Pedido</option>
+        <option value="solicitud_presupuesto">Pedir precio (comparar)</option>
+      </select>
+      <span className="text-xs text-slate-400">Proveedores:</span>
+      {suppliers.length === 0 && <span className="text-xs text-slate-500">No hay proveedores: añádelos en la pestaña Proveedores.</span>}
+      {suppliers.map((s) => (
+        <button type="button" key={s.id} onClick={() => toggle(s.id)} title={s.email || 'Sin correo'}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${selected.includes(s.id) ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>
+          {s.name}{!s.email && ' (sin correo)'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Comprueba antes de enviar: proveedores elegidos, con correo, y confirmación.
+function confirmSend(suppliers, selected, showNotification) {
+  const chosen = suppliers.filter((s) => selected.includes(s.id));
+  if (chosen.length === 0) { showNotification('Elige al menos un proveedor.', 'error'); return false; }
+  const withoutEmail = chosen.filter((s) => !s.email);
+  if (withoutEmail.length) {
+    showNotification(`Falta el correo de: ${withoutEmail.map((s) => s.name).join(', ')}. Añádelo en Proveedores o genera solo el borrador.`, 'error');
+    return false;
+  }
+  return window.confirm(`¿Enviar el pedido por correo a ${chosen.map((s) => s.name).join(', ')}?`);
+}
+
+function reportSend(errors, send, showNotification) {
+  if (errors?.length) showNotification(`Algún correo no se pudo enviar: ${errors[0]}`, 'error');
+  else if (send) showNotification('Pedido enviado a los proveedores');
+}
+
+function NuevaNecesidad({ suppliers, onCreated, onCancel }) {
   const { obras = [] } = useApp() || {};
   const showNotification = useNotify();
   const [form, setForm] = useState({ obra_id: '', tajo: '', category: 'material', urgency: 'normal', description: '', needed_by: '', site_contact_name: '', site_contact_phone: '' });
   const [items, setItems] = useState([emptyItem()]);
-  const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState([]);
+  const [kind, setKind] = useState('pedido');
+  const [busy, setBusy] = useState('');
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+  const orderable = ORDERABLE.includes(form.category);
+  const sorted = useMemo(
+    () => sortSuppliers(suppliers, { category: form.category, text: `${form.description} ${form.tajo} ${items.map((i) => i.material).join(' ')}` }),
+    [suppliers, form.category, form.description, form.tajo, items]
+  );
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
+  // mode: 'save' solo guarda; 'draft' guarda y prepara los correos; 'send' guarda y los envía.
+  const submit = async (e, mode = 'save') => {
+    e?.preventDefault();
+    if (!form.description.trim()) { showNotification('Describe qué hace falta.', 'error'); return; }
+    if (mode === 'send' && !confirmSend(suppliers, selected, showNotification)) return;
+    if (mode === 'draft' && selected.length === 0) { showNotification('Elige al menos un proveedor.', 'error'); return; }
+    setBusy(mode);
+    let need;
     try {
-      const need = await api('/api/needs', { method: 'POST', body: { ...form, items: form.category === 'material' ? items : [] } });
-      onCreated(need);
+      need = await api('/api/needs', { method: 'POST', body: { ...form, items: form.category === 'material' ? items : [] } });
     } catch (err) {
       showNotification(err.message, 'error');
-    } finally {
-      setBusy(false);
+      setBusy('');
+      return;
     }
+    if (mode !== 'save' && orderable) {
+      try {
+        const { drafts, errors } = await api(`/api/needs/${need.id}/order-draft`, { method: 'POST', body: { supplier_ids: selected, kind, send: mode === 'send' } });
+        reportSend(errors, mode === 'send', showNotification);
+        const sent = drafts.some((d) => d.status === 'enviado');
+        need = { ...need, status: sent ? 'pedido_tramitado' : 'en_revision' };
+      } catch (err) {
+        showNotification(`Necesidad guardada, pero el pedido falló: ${err.message}`, 'error');
+      }
+    }
+    setBusy('');
+    onCreated(need);
   };
 
   return (
@@ -78,9 +148,27 @@ function NuevaNecesidad({ onCreated, onCancel }) {
         <label className="text-xs text-slate-400 space-y-1"><span>Teléfono</span>
           <input value={form.site_contact_phone} onChange={set('site_contact_phone')} className={inputCls} /></label>
       </div>
-      <div className="flex justify-end gap-2">
+      {orderable && (
+        <div className="border-t border-slate-800 pt-3 space-y-2">
+          <p className="text-xs text-slate-400">Pedido al proveedor (opcional: también puedes hacerlo más tarde desde la ficha).</p>
+          <SupplierPicker suppliers={sorted} selected={selected} setSelected={setSelected} kind={kind} setKind={setKind} />
+        </div>
+      )}
+      <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={onCancel} className={btnGhost}>Cancelar</button>
-        <button type="submit" disabled={busy} className={btnPrimary}>{busy && <Loader2 className="w-4 h-4 animate-spin" />} Guardar</button>
+        <button type="submit" disabled={Boolean(busy)} className={selected.length && orderable ? btnGhost : btnPrimary}>
+          {busy === 'save' && <Loader2 className="w-4 h-4 animate-spin" />} Guardar
+        </button>
+        {orderable && selected.length > 0 && (
+          <>
+            <button type="button" onClick={(e) => submit(e, 'draft')} disabled={Boolean(busy)} className={btnGhost}>
+              {busy === 'draft' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} Guardar y revisar correo
+            </button>
+            <button type="button" onClick={(e) => submit(e, 'send')} disabled={Boolean(busy)} className={btnPrimary}>
+              {busy === 'send' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Guardar y enviar pedido
+            </button>
+          </>
+        )}
       </div>
     </form>
   );
@@ -99,14 +187,10 @@ function DetalleNecesidad({ need, suppliers, onBack, onNeedChange }) {
     api(`/api/material-orders?need=${need.id}`).then(setOrders).catch((e) => showNotification(e.message, 'error'));
   }, [need.id, showNotification]);
 
-  // Proveedores habituales de esa partida primero (coinciden con la categoría o el texto).
-  const sortedSuppliers = useMemo(() => {
-    const text = `${need.description} ${need.tajo || ''} ${(need.items || []).map((i) => i.material).join(' ')}`.toLowerCase();
-    const score = (s) => (s.categories || []).filter((c) => c === need.category || text.includes(c)).length;
-    return suppliers.filter((s) => s.is_active).sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
-  }, [suppliers, need]);
-
-  const toggle = (id) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const sortedSuppliers = useMemo(
+    () => sortSuppliers(suppliers, { category: need.category, text: `${need.description} ${need.tajo || ''} ${(need.items || []).map((i) => i.material).join(' ')}` }),
+    [suppliers, need]
+  );
 
   const run = async (key, fn) => {
     setBusy(key);
@@ -119,15 +203,20 @@ function DetalleNecesidad({ need, suppliers, onBack, onNeedChange }) {
     }
   };
 
-  const generate = () => run('draft', async () => {
-    if (JSON.stringify(items) !== JSON.stringify(need.items || [])) {
-      onNeedChange(await api(`/api/needs/${need.id}`, { method: 'PATCH', body: { items } }));
-    }
-    const { drafts } = await api(`/api/needs/${need.id}/order-draft`, { method: 'POST', body: { supplier_ids: selected, kind } });
-    setOrders((prev) => [...drafts, ...prev]);
-    if (need.status === 'nueva') onNeedChange({ ...need, items, status: 'en_revision' });
-    setSelected([]);
-  });
+  const generate = (send = false) => {
+    if (send && !confirmSend(suppliers, selected, showNotification)) return;
+    run(send ? 'send' : 'draft', async () => {
+      if (JSON.stringify(items) !== JSON.stringify(need.items || [])) {
+        onNeedChange(await api(`/api/needs/${need.id}`, { method: 'PATCH', body: { items } }));
+      }
+      const { drafts, errors } = await api(`/api/needs/${need.id}/order-draft`, { method: 'POST', body: { supplier_ids: selected, kind, send } });
+      reportSend(errors, send, showNotification);
+      setOrders((prev) => [...drafts, ...prev]);
+      if (drafts.some((d) => d.status === 'enviado')) onNeedChange({ ...need, items, status: 'pedido_tramitado' });
+      else if (need.status === 'nueva') onNeedChange({ ...need, items, status: 'en_revision' });
+      setSelected([]);
+    });
+  };
 
   const setStatus = (value) => run(value, async () => onNeedChange(await api(`/api/needs/${need.id}`, { method: 'PATCH', body: { status: value } })));
 
@@ -172,28 +261,21 @@ function DetalleNecesidad({ need, suppliers, onBack, onNeedChange }) {
         </div>
       </div>
 
-      {['material', 'herramienta', 'maquinaria'].includes(need.category) && !['descartada', 'entregado'].includes(need.status) && (
+      {ORDERABLE.includes(need.category) && !['descartada', 'entregado'].includes(need.status) && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
           <h4 className="font-bold text-white">Preparar pedido</h4>
           <ItemsEditor items={items} setItems={setItems} />
-          <div className="flex flex-wrap gap-2 items-center">
-            <select value={kind} onChange={(e) => setKind(e.target.value)} className={`${inputCls} !w-auto`}>
-              <option value="pedido">Pedido</option>
-              <option value="solicitud_presupuesto">Pedir precio (comparar)</option>
-            </select>
-            <span className="text-xs text-slate-400">Proveedores:</span>
-            {sortedSuppliers.length === 0 && <span className="text-xs text-slate-500">No hay proveedores: añádelos en la pestaña Proveedores.</span>}
-            {sortedSuppliers.map((s) => (
-              <button key={s.id} onClick={() => toggle(s.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${selected.includes(s.id) ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>
-                {s.name}
-              </button>
-            ))}
+          <SupplierPicker suppliers={sortedSuppliers} selected={selected} setSelected={setSelected} kind={kind} setKind={setKind} />
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => generate(false)} disabled={Boolean(busy) || selected.length === 0} className={btnGhost}>
+              {busy === 'draft' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              Generar borrador{selected.length > 1 ? `es (${selected.length})` : ''}
+            </button>
+            <button onClick={() => generate(true)} disabled={Boolean(busy) || selected.length === 0} className={btnPrimary}>
+              {busy === 'send' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Enviar pedido ya
+            </button>
           </div>
-          <button onClick={generate} disabled={Boolean(busy)} className={btnPrimary}>
-            {busy === 'draft' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-            Generar borrador{selected.length > 1 ? `es (${selected.length})` : ''}
-          </button>
         </div>
       )}
 
@@ -208,7 +290,7 @@ export default function NecesidadesPanel({ focusId }) {
   const showNotification = useNotify();
   const [needs, setNeeds] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [filter, setFilter] = useState('abiertas');
+  const [filter, setFilter] = useState('abiertas'); // abiertas | todas | enviados
   const [openId, setOpenId] = useState(focusId || null);
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -241,18 +323,20 @@ export default function NecesidadesPanel({ focusId }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
-        {['abiertas', 'todas'].map((f) => (
+        {[['abiertas', 'Abiertas'], ['todas', 'Todas'], ['enviados', 'Pedidos enviados']].map(([f, label]) => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border capitalize ${filter === f ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>{f}</button>
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${filter === f ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>{label}</button>
         ))}
         <button onClick={() => setCreating(true)} className={`${btnPrimary} ml-auto`}><Plus className="w-4 h-4" /> Nueva necesidad</button>
       </div>
 
       {creating && (
-        <NuevaNecesidad onCancel={() => setCreating(false)} onCreated={(need) => { setCreating(false); setNeeds((p) => [{ ...need, photo_urls: [] }, ...p]); setOpenId(need.id); }} />
+        <NuevaNecesidad suppliers={suppliers} onCancel={() => setCreating(false)} onCreated={(need) => { setCreating(false); setNeeds((p) => [{ ...need, photo_urls: [] }, ...p]); setOpenId(need.id); }} />
       )}
 
-      {loading ? (
+      {filter === 'enviados' ? (
+        <PedidosEnviados suppliers={suppliers} onOpenNeed={setOpenId} />
+      ) : loading ? (
         <div className="py-10 flex justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin" /></div>
       ) : shown.length === 0 ? (
         <p className="text-center py-10 text-sm text-slate-500">No hay necesidades {filter === 'abiertas' ? 'abiertas' : ''}.</p>
