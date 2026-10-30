@@ -9,13 +9,13 @@ import { api, ORDER_STATUS, fmtDateTime, inputCls, btnPrimary, btnGhost } from '
  * Un pedido / solicitud de presupuesto a un proveedor.
  * En borrador: destinatario, asunto y cuerpo editables (el cuerpo se edita directamente sobre la vista previa).
  */
-export default function PedidoBorrador({ order, supplierName, onChange }) {
+export default function PedidoBorrador({ order, supplierName, onChange, defaultShowMail = false }) {
   const showNotification = useNotify();
   const [to, setTo] = useState(order.to_email || '');
   const [cc, setCc] = useState(order.cc_email || '');
   const [subject, setSubject] = useState(order.subject);
   const [busy, setBusy] = useState('');
-  const [showMail, setShowMail] = useState(order.status === 'borrador' || order.status === 'error');
+  const [showMail, setShowMail] = useState(defaultShowMail || order.status === 'borrador' || order.status === 'error');
   const frameRef = useRef(null);
   const editable = order.status === 'borrador' || order.status === 'error';
   const status = ORDER_STATUS[order.status] || ORDER_STATUS.borrador;

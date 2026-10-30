@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
 import { api, NEED_CATEGORIES, NEED_STATUS, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import PedidoBorrador from './PedidoBorrador';
+import PedidosEnviados from './PedidosEnviados';
 
 const categoryLabel = (value) => NEED_CATEGORIES.find((c) => c.value === value)?.label || value;
 export const emptyItem = () => ({ material: '', cantidad: '', unidad: '' });
@@ -289,7 +290,7 @@ export default function NecesidadesPanel({ focusId }) {
   const showNotification = useNotify();
   const [needs, setNeeds] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [filter, setFilter] = useState('abiertas');
+  const [filter, setFilter] = useState('abiertas'); // abiertas | todas | enviados
   const [openId, setOpenId] = useState(focusId || null);
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -322,9 +323,9 @@ export default function NecesidadesPanel({ focusId }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
-        {['abiertas', 'todas'].map((f) => (
+        {[['abiertas', 'Abiertas'], ['todas', 'Todas'], ['enviados', 'Pedidos enviados']].map(([f, label]) => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border capitalize ${filter === f ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>{f}</button>
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${filter === f ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>{label}</button>
         ))}
         <button onClick={() => setCreating(true)} className={`${btnPrimary} ml-auto`}><Plus className="w-4 h-4" /> Nueva necesidad</button>
       </div>
@@ -333,7 +334,9 @@ export default function NecesidadesPanel({ focusId }) {
         <NuevaNecesidad suppliers={suppliers} onCancel={() => setCreating(false)} onCreated={(need) => { setCreating(false); setNeeds((p) => [{ ...need, photo_urls: [] }, ...p]); setOpenId(need.id); }} />
       )}
 
-      {loading ? (
+      {filter === 'enviados' ? (
+        <PedidosEnviados suppliers={suppliers} onOpenNeed={setOpenId} />
+      ) : loading ? (
         <div className="py-10 flex justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin" /></div>
       ) : shown.length === 0 ? (
         <p className="text-center py-10 text-sm text-slate-500">No hay necesidades {filter === 'abiertas' ? 'abiertas' : ''}.</p>
