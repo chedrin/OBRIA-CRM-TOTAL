@@ -374,7 +374,7 @@ function geminiFastThinking(modelId) {
   return null;
 }
 
-async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json", fast = false }) {
+async function callGeminiProvider({ apiKey, model, contents, systemInstruction, temperature = 0.15, maxTokens = 4096, responseMimeType = "application/json", fast = false, timeoutMs = FAST_AI_TIMEOUT_MS }) {
   const effectiveKey = (apiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!effectiveKey) {
     throw aiError("Falta la clave GEMINI_API_KEY.");
@@ -384,7 +384,7 @@ async function callGeminiProvider({ apiKey, model, contents, systemInstruction, 
   // se pasa al siguiente proveedor en vez de encadenar esperas.
   const allModels = await geminiModelsToTry(effectiveKey, model || GEMINI_DEFAULT_MODEL, { fast });
   const modelsToTry = fast ? allModels.slice(0, 2) : allModels;
-  const signalFor = () => (fast ? AbortSignal.timeout(FAST_AI_TIMEOUT_MS) : undefined);
+  const signalFor = () => (fast ? AbortSignal.timeout(timeoutMs) : undefined);
 
   const baseUrl = `https://generativelanguage.googleapis.com/v1beta`;
   const bodyPayload = {
@@ -958,7 +958,8 @@ async function transcribeWithWhisper(audioFile, apiKey) {
       "Content-Type": `multipart/form-data; boundary=${boundary}`,
       "Authorization": `Bearer ${apiKey}`
     },
-    body: Buffer.concat(bodyParts)
+    body: Buffer.concat(bodyParts),
+    signal: AbortSignal.timeout(90000)
   });
 
   const rawText = await res.text();
@@ -995,7 +996,11 @@ async function transcribeWithGemini(audioFile, apiKey, model) {
     contents: [{ role: "user", parts: [{ text: "Transcribe literalmente este audio." }, fileToPart(audioFile)] }],
     temperature: 0,
     maxTokens: 8192,
-    responseMimeType: null
+    responseMimeType: null,
+    // Transcribir no necesita razonar: modo rápido (razonamiento bajo, 2 modelos, sin esperas encadenadas)
+    // y un tiempo máximo según la duración aproximada del audio.
+    fast: true,
+    timeoutMs: Math.min(90000, 25000 + Math.round((audioFile.buffer?.length || 0) / 1048576) * 15000)
   });
   return cleanTranscript(rawText);
 }
