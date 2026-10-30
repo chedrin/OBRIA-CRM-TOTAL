@@ -2,7 +2,7 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { NAV_ITEMS, NAV_TONES } from './navigation/navConfig';
 import { useNotifications } from '../context/NotificationsContext';
-import { Menu, Building2, Sparkles, Bell, Mic, Calculator } from 'lucide-react';
+import { Menu, Building2, Sparkles, Bell, Mic, Calculator, LogOut } from 'lucide-react';
 
 // Título y descripción largos de cada módulo (el icono y el color salen de navConfig).
 const TAB_TEXT = {
@@ -28,7 +28,7 @@ function saludo() {
 }
 
 export default function TopHeader({ onOpenMobileMenu = () => {} }) {
-  const { activeTab, setActiveTab, currentUser, obras, mensajesInbox } = useApp();
+  const { activeTab, setActiveTab, currentUser, logout, obras, mensajesInbox } = useApp();
   const { unreadCount, available: avisosAvailable } = useNotifications();
 
   const navItem = NAV_ITEMS.find(i => i.id === activeTab);
@@ -46,6 +46,13 @@ export default function TopHeader({ onOpenMobileMenu = () => {} }) {
   const Icon = navItem?.icon || Building2;
   const tone = NAV_TONES[navItem?.tone || 'amber'];
   const avisosLabel = unreadCount ? `${unreadCount} avisos sin leer` : 'Avisos';
+  const userName = currentUser?.fullName || 'Administrador';
+  const initial = userName.charAt(0).toUpperCase();
+  const roleLabel = currentUser?.role === 'admin' ? 'Director de obra' : currentUser?.role || 'Admin';
+
+  const handleLogout = () => {
+    if (window.confirm('¿Deseas cerrar la sesión del panel administrativo?')) logout();
+  };
 
   return (
     <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 lg:px-8 py-3">
@@ -117,6 +124,31 @@ export default function TopHeader({ onOpenMobileMenu = () => {} }) {
             )}
           </button>
         )}
+
+        {/* Sesión */}
+        <div className="flex items-center gap-2 pl-2 ml-1 border-l border-slate-800">
+          <div
+            className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0"
+            title={`${userName} (${roleLabel})`}
+          >
+            {initial}
+          </div>
+          <div className="min-w-0 max-w-[10rem] hidden md:block">
+            <p className="text-xs font-bold text-white truncate">{userName}</p>
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5 truncate">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              {roleLabel}
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition border border-slate-700/60 shrink-0"
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
         </div>
 
       </div>
