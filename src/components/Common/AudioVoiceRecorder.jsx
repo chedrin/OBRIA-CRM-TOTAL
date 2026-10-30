@@ -502,7 +502,7 @@ export default function AudioVoiceRecorder({
   };
 
   return (
-    <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+    <div className="bg-slate-950 p-3 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
       
       {/* 1. Header: Title & AI Cloud Engine Status */}
       {!hideHeader && (
@@ -521,19 +521,19 @@ export default function AudioVoiceRecorder({
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            Transcripción con IA (Whisper / Gemini)
+            Texto en directo · IA de respaldo
           </span>
         </div>
       </div>
       )}
 
       {/* 2. Recording Waveform Canvas & Control Buttons */}
-      <div className="@container bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
+      <div className="@container bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-800 space-y-3">
         
-        <div className="flex flex-col @xl:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col @xl:flex-row items-center gap-4">
           
           {/* Left: Dynamic Real Sound Waves */}
-          <div className="w-full @xl:w-1/2 space-y-1.5">
+          <div className="w-full @xl:flex-1 min-w-0 space-y-1.5">
             <div className="bg-slate-950 rounded-xl p-2.5 border border-slate-800 flex flex-col justify-center">
               <canvas
                 ref={canvasRef}
