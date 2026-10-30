@@ -38,6 +38,20 @@ ObraMaster es un Sistema Informático de Facturación (SIF) propio en modalidad 
 
 El servidor debe estar siempre encendido para que la cola de envíos funcione. El plan gratuito de Render se duerme tras 15 minutos sin visitas; los registros pendientes se envían al despertar, pero para cumplir el envío inmediato conviene un plan de pago.
 
+## Comprobación de requisitos (2026-10-30)
+
+| Requisito | Dónde se cumple |
+|---|---|
+| Declaración responsable (art. 15 Orden HAC/1177/2024): título y datos a) a l) | `backend/verifactu/sistema.js`; visible para todos los usuarios en el pie de página ("Cumplimiento legal") y descargable en PDF. Sin fecha y lugar no se puede pasar a producción. |
+| Huella SHA-256 encadenada, una sola cadena por obligado tributario (art. 7) | `emitir_factura()`, `anular_factura()` y `subsanar_registro()` en la base de datos; `verificarCadena` en `huella.js`. |
+| Fecha, hora y huso de generación de cada registro | `FechaHoraHusoGenRegistro`, la pone la base de datos al emitir. |
+| Envío a la AEAT por servicio web con certificado (mTLS) | `aeatClient.js`, `envio.js`: cola cada 15 s con control de flujo y reintentos. |
+| XML conforme a los esquemas `SuministroLR.xsd`/`SuministroInformacion.xsd` | Validado con xmllint (altas, rectificativas, anulaciones y subsanaciones) y aceptado por el entorno de pruebas de la AEAT. |
+| QR (30-40 mm, nivel M, URL de cotejo con NIF, serie y número, fecha e importe) y leyenda VERI*FACTU | `huella.js` (URL), `documentPdf.js` y `PdfModal.jsx`. |
+| Inalterabilidad: sin borrado ni edición de facturas emitidas ni de registros | Disparadores `invoices_guard`, `verifactu_records_guard`, `verifactu_envios_guard`; la API no tiene rutas de borrado. Correcciones solo con rectificativas o anulaciones encadenadas. |
+| Registro de eventos | No obligatorio en VERI*FACTU (art. 3 de la Orden); aun así hay un registro de auditoría encadenado (`audit_events`). |
+| Firma XAdES de los registros | No obligatoria en VERI*FACTU (art. 3 de la Orden): la autenticación es el certificado del envío. |
+
 ## Limitaciones conocidas
 
 - No se comprueba el NIF del cliente contra el censo de la AEAT antes de emitir; si es erróneo, la AEAT lo acepta con errores o lo rechaza y se ve en la lista.

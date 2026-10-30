@@ -20,6 +20,7 @@ import PdfModal from './components/Common/PdfModal';
 import LoginObreroView from './components/Auth/LoginObreroView';
 import LoginAdminModal from './components/Auth/LoginAdminModal';
 import GlobalOverlays from './components/Common/GlobalOverlays';
+import DeclaracionResponsableModal from './components/Common/DeclaracionResponsable';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 
 function getInitialRoute() {
@@ -35,6 +36,7 @@ function MainLayout() {
   const { activeTab = 'dashboard', notification, currentUser, activeRealtimeAlert, authReady = true, facturacionActivada = false } = useApp() || {};
   const [route, setRoute] = useState(getInitialRoute);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+  const [verDeclaracion, setVerDeclaracion] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('obramaster_sidebar_collapsed') === 'true';
@@ -183,9 +185,17 @@ function MainLayout() {
         <footer className="border-t border-slate-800 text-[11px] text-slate-500 py-4 mt-auto">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-center">
             <span><strong className="font-bold text-slate-300">ObraMaster</strong> · Gestión integral para constructores y reformas</span>
-            <span>Modelos 303/130 AEAT · REBT y LOE</span>
+            <span className="flex items-center gap-2">
+              <span>Modelos 303/130 AEAT · REBT y LOE</span>
+              {currentUser && (
+                <button type="button" onClick={() => setVerDeclaracion(true)} className="underline decoration-dotted hover:text-slate-300">
+                  Cumplimiento legal (VERI*FACTU)
+                </button>
+              )}
+            </span>
           </div>
         </footer>
+        {verDeclaracion && <DeclaracionResponsableModal onClose={() => setVerDeclaracion(false)} />}
 
       </div>
 
