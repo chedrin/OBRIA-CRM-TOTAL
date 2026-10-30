@@ -17,9 +17,11 @@ import {
   Pencil,
   BadgeCheck,
   AlertTriangle,
-  Receipt
+  Receipt,
+  PencilRuler
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
+import CroquisEditorModal from '../Croquis/CroquisEditorModal';
 import confetti from 'canvas-confetti';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import { recordAiCorrection, recordBudgetEditDebounced } from '../../services/backendAiService';
@@ -47,6 +49,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
     refineQuoteWithVoiceCommand,
     editarPresupuesto,
     registrarNuevaAceptacion,
+    guardarCroquisPresupuesto,
     setPdfModalData,
     showNotification,
     empresaConfig
@@ -62,6 +65,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
   const [showEnvioModal, setShowEnvioModal] = useState(false);
   const [collapsedChapters, setCollapsedChapters] = useState({});
   const [showDatos, setShowDatos] = useState(false);
+  const [showCroquis, setShowCroquis] = useState(false);
 
   if (!quote) {
     return (
@@ -301,6 +305,15 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           >
             <History className="w-3.5 h-3.5 text-amber-400" />
             <span className="hidden sm:inline">Historial IA</span>
+          </button>
+
+          <button
+            onClick={() => setShowCroquis(true)}
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700"
+            title="Croquis 2D de la vivienda a partir de las mediciones y fotos"
+          >
+            <PencilRuler className="w-3.5 h-3.5 text-amber-400" />
+            <span>{quote.croquis?.plan?.rooms?.length ? 'Croquis 2D' : '📐 Generar Croquis 2D con IA'}</span>
           </button>
 
           <button
@@ -737,6 +750,22 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
         </div>
 
       </div>
+
+      {/* Croquis 2D: se guarda en el presupuesto y pasa a la obra al aceptarlo */}
+      {showCroquis && (
+        <CroquisEditorModal
+          titulo={`Croquis 2D · ${quote.numero}`}
+          croquis={quote.croquis}
+          contexto={{
+            medidasNotas: quote.medidasNotas || '',
+            obraTitulo: quote.obraTitulo,
+            partidas: capitulos.flatMap(c => c.partidas.map(p => p.titulo || p.concepto)).filter(Boolean)
+          }}
+          cabecera={{ numero: quote.numero, fecha: quote.fecha, cliente: quote.cliente, nif: quote.nif, obraTitulo: quote.obraTitulo, direccion: quote.direccion }}
+          onGuardar={(croquis) => guardarCroquisPresupuesto(quote.id, croquis)}
+          onClose={() => setShowCroquis(false)}
+        />
+      )}
 
       {/* Envio Cliente Modal */}
       {showEnvioModal && (

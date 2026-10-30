@@ -98,6 +98,7 @@ export default function PresupuestosList() {
       margenEsperadoPct: pres.margenGlobalPct || 35,
       margenRealPct: pres.margenGlobalPct || 35,
       presupuestoId: pres.id,
+      croquis: pres.croquis || null,
       notas: `Obra creada tras la aceptación del presupuesto ${pres.numero}. Responsable: ${datosObra.responsable}.`,
       fases: fasesFromPresupuesto,
       necesidadesMateriales: [

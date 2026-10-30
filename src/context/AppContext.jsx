@@ -1299,6 +1299,8 @@ export function AppProvider({ children }) {
                 ...o,
                 presupuestoId: pres.id,
                 presupuestoTotal: pres.totalConIva || pres.baseImponible,
+                // El croquis 2D del presupuesto aceptado queda guardado en la obra.
+                croquis: pres.croquis || o.croquis || null,
                 fases: canonicalFases,
                 progreso: calculateGlobalProjectProgress(canonicalFases),
                 _syncSourceOfTruth: {
@@ -1309,6 +1311,20 @@ export function AppProvider({ children }) {
       }
       return o;
     }));
+  };
+
+  // Croquis 2D: no cuenta como revisión del presupuesto. Si ya está aceptado, también se guarda en su obra.
+  const guardarCroquisPresupuesto = (id, croquis) => {
+    const pres = presupuestos.find(p => p.id === id);
+    setPresupuestos(prev => prev.map(p => (p.id === id ? { ...p, croquis } : p)));
+    const enObra = pres && ['aceptado', 'firmado', 'facturado'].includes(pres.estado);
+    if (enObra) setObras(prev => prev.map(o => (o.id === pres.obraId || o.presupuestoId === id ? { ...o, croquis } : o)));
+    showNotification(enObra ? 'Croquis guardado en el presupuesto y en su obra.' : 'Croquis guardado en el presupuesto.');
+  };
+
+  const guardarCroquisObra = (obraId, croquis) => {
+    setObras(prev => prev.map(o => (o.id === obraId ? { ...o, croquis } : o)));
+    showNotification('Croquis de la obra guardado.');
   };
 
   // Edición de contenido (cabecera, capítulos, partidas). Sin aviso: se llama al escribir.
@@ -2258,6 +2274,8 @@ export function AppProvider({ children }) {
       setPresupuestos,
       addPresupuesto,
       updatePresupuesto,
+      guardarCroquisPresupuesto,
+      guardarCroquisObra,
       editarPresupuesto,
       registrarNuevaAceptacion,
       convertPresupuestoToFactura,
