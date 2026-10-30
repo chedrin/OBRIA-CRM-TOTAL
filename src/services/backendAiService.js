@@ -9,6 +9,7 @@
  * - POST /api/ai/generate-budget   -> Generación estructurada de presupuesto
  * - POST /api/ai/price-sources/extract -> Precios de un presupuesto de gremio (PDF, imagen o texto)
  * - POST /api/ai/analyze-images    -> Inspección de fotos de obra
+ * - POST /api/ai/croquis           -> Croquis 2D (planta) desde mediciones y fotos
  */
 
 const BACKEND_BASE_URL = '/api';
@@ -283,6 +284,38 @@ export async function generateBudgetViaBackend({
     throw new Error(`Error al generar presupuesto IA (${res.status}): ${data.error || res.statusText}`);
   }
 
+  return data;
+}
+
+/**
+ * Croquis 2D: mediciones por estancia + fotos -> plano normalizado ({ plan }).
+ * La IA puede tardar: se corta a los 3 minutos con un mensaje claro.
+ */
+export async function generateCroquisViaBackend({ fotos = [], mediciones = '', notas = '', obra = '', partidas = [] }) {
+  const form = new FormData();
+  fotos.forEach((f, idx) => form.append('fotos', f, f.name || `foto-${idx + 1}.jpg`));
+  if (mediciones) form.append('mediciones', mediciones);
+  if (notas) form.append('notas', notas);
+  if (obra) form.append('obra', obra);
+  if (partidas.length) form.append('partidas', JSON.stringify(partidas));
+  if (clientAiKeysJson()) form.append('apiKeys', clientAiKeysJson());
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 180000);
+  let res;
+  try {
+    res = await fetch(`${BACKEND_BASE_URL}/ai/croquis`, { method: 'POST', body: form, signal: controller.signal });
+  } catch (err) {
+    throw new Error(err.name === 'AbortError' ? 'La IA ha tardado más de 3 minutos. Prueba con menos fotos.' : `No se pudo contactar con el servidor: ${err.message}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  const rawText = await res.text();
+  let data = {};
+  try { data = rawText ? JSON.parse(rawText) : {}; } catch {}
+  if (!res.ok || !data.plan) {
+    throw new Error(data.error || `Error al generar el croquis (${res.status}): ${rawText.slice(0, 200) || res.statusText}`);
+  }
   return data;
 }
 

@@ -24,8 +24,13 @@ import {
   Trash2,
   PlusCircle,
   Download,
-  ChevronDown
+  ChevronDown,
+  PencilRuler
 } from 'lucide-react';
+import CroquisEditorModal from '../Croquis/CroquisEditorModal';
+import CroquisLienzo from '../Croquis/CroquisLienzo';
+import { buildCroquisPdf } from '../../utils/croquisPdf';
+import { normalizarCroquis, resumenSuperficies } from '../../utils/croquisPlano';
 import TaskProgressSelector from '../PortalObrero/TaskProgressSelector';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
@@ -51,6 +56,8 @@ export default function ObraDetail({ obraId, onBack }) {
     setActiveTab,
     setSelectedPresupuestoId,
     setPdfModalData,
+    guardarCroquisObra,
+    empresaConfig,
     broadcastAdminTask,
     broadcastAdminAlert,
     broadcastWorkerProgress
@@ -58,6 +65,7 @@ export default function ObraDetail({ obraId, onBack }) {
 
   const obra = obras.find(o => o.id === obraId);
   const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, documentos, catalogo_precios, equipo
+  const [showCroquis, setShowCroquis] = useState(false);
   const [expandedFases, setExpandedFases] = useState({});
   const [editingFase, setEditingFase] = useState(null); // copia de la fase en edición
 
@@ -177,6 +185,15 @@ export default function ObraDetail({ obraId, onBack }) {
 
   // Related Data
   const obraPresupuesto = presupuestos.find(p => p.id === obra.presupuestoId);
+  const croquisCabecera = {
+    numero: obraPresupuesto?.numero || '',
+    fecha: obraPresupuesto?.fecha || '',
+    cliente: obra.cliente,
+    nif: obraPresupuesto?.nif || '',
+    obraTitulo: `${obra.codigo ? `${obra.codigo} · ` : ''}${obra.titulo}`,
+    direccion: obra.direccion
+  };
+  const croquisPlanObra = obra.croquis?.plan?.rooms?.length ? normalizarCroquis(obra.croquis.plan) : null;
   const obraFacturas = facturas.filter(f => f.obraId === obra.id);
   const obraFacturasProveedores = (facturasProveedores || []).filter(f => f.obraId === obra.id);
   const totalFacturadoObra = obraFacturas.reduce((s, f) => s + f.totalFactura, 0);
@@ -325,7 +342,7 @@ export default function ObraDetail({ obraId, onBack }) {
 
       {/* Main Obra Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
           <div className="space-y-2">
             <h1 className="text-2xl sm:text-3xl font-black text-white">{obra.titulo}</h1>
             <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-slate-300">
@@ -349,8 +366,9 @@ export default function ObraDetail({ obraId, onBack }) {
             )}
           </div>
 
-          {/* Quick Metrics Badge & Planificación IA */}
-          <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800 shrink-0">
+          {/* Métricas y Planificación IA arriba; debajo, el croquis de la obra si lo tiene */}
+          <div className="flex flex-col gap-3 shrink-0 lg:max-w-[46rem]">
+          <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
             <div className="flex items-center gap-4">
               <div className="text-center px-2">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold block">Presupuesto</span>
@@ -386,6 +404,23 @@ export default function ObraDetail({ obraId, onBack }) {
                 </div>
               );
             })()}
+          </div>
+
+          {obra.croquis?.plan?.rooms?.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowCroquis(true)}
+              title="Abrir el croquis en el editor"
+              aria-label="Abrir el croquis de la obra"
+              className="group relative rounded-xl overflow-hidden border border-slate-800 hover:border-amber-500/60 transition-colors"
+              style={{ background: '#ffffff' }}
+            >
+              <CroquisLienzo plan={croquisPlanObra} soloLectura mostrarCotas={false} alto="11rem" />
+              <span className="absolute top-1.5 left-2 text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-white/85 rounded px-1.5 py-0.5">
+                Croquis · {resumenSuperficies(croquisPlanObra).util.toLocaleString('es-ES')} m² útiles
+              </span>
+            </button>
+          )}
           </div>
         </div>
 
@@ -1019,6 +1054,37 @@ export default function ObraDetail({ obraId, onBack }) {
               </h3>
               <p className="text-xs text-slate-400">Acceso centralizado a presupuestos, contratos, certificaciones y facturas de compras/subcontratas</p>
             </div>
+          </div>
+
+          {/* Croquis 2D de la vivienda (llega del presupuesto aceptado o se dibuja aquí) */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <PencilRuler className="w-4 h-4" />
+                <span>Croquis 2D de la vivienda</span>
+              </h4>
+              <div className="flex gap-2">
+                {obra.croquis?.plan?.rooms?.length > 0 && (
+                  <button
+                    onClick={() => buildCroquisPdf({ plan: normalizarCroquis(obra.croquis.plan), cabecera: croquisCabecera, empresaConfig }).save(`Croquis-${obra.codigo || 'obra'}.pdf`)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold border border-slate-700 flex items-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>PDF</span>
+                  </button>
+                )}
+                <button onClick={() => setShowCroquis(true)} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold">
+                  {obra.croquis?.plan?.rooms?.length ? 'Abrir editor' : 'Crear croquis'}
+                </button>
+              </div>
+            </div>
+            {obra.croquis?.plan?.rooms?.length > 0 ? (
+              <div className="rounded-xl overflow-hidden border border-slate-800 max-w-2xl" style={{ background: '#ffffff' }}>
+                <CroquisLienzo plan={croquisPlanObra} soloLectura />
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">Sin croquis. Se copia aquí al aceptar un presupuesto que lo tenga, o puedes crearlo desde las medidas.</p>
+            )}
           </div>
 
           {/* Document Section 1: Presupuesto y Contrato */}
@@ -1669,6 +1735,16 @@ export default function ObraDetail({ obraId, onBack }) {
         </div>
       )}
 
+      {showCroquis && (
+        <CroquisEditorModal
+          titulo={`Croquis 2D · ${obra.titulo}`}
+          croquis={obra.croquis}
+          contexto={{ medidasNotas: obraPresupuesto?.medidasNotas || '', obraTitulo: obra.titulo }}
+          cabecera={croquisCabecera}
+          onGuardar={(croquis) => guardarCroquisObra(obra.id, croquis)}
+          onClose={() => setShowCroquis(false)}
+        />
+      )}
     </div>
   );
 }

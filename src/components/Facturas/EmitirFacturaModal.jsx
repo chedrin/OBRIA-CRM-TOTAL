@@ -111,8 +111,12 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
   const construccion = obra.tipoObra === 'obra_nueva' || obra.tipoObra === 'rehabilitacion';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-6 shadow-2xl space-y-4 my-6 text-xs sm:text-sm">
+    // El contenedor hace scroll y el formulario arranca arriba: con items-center, si el modal
+    // es más alto que la pantalla se cortaba por arriba sin poder llegar a la cabecera.
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm overflow-y-auto">
+      <div className="min-h-full flex items-start justify-center p-3 sm:p-6">
+      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-700 w-full max-w-6xl rounded-2xl p-4 sm:p-6 shadow-2xl text-xs sm:text-sm grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] gap-6">
+        <div className="space-y-4 min-w-0">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
             <Receipt className="w-5 h-5 text-emerald-400" />
@@ -296,7 +300,100 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
             {emitiendo ? 'Emitiendo…' : 'Emitir factura (VeriFactu)'}
           </button>
         </div>
+        </div>
+
+        <aside className="min-w-0 lg:sticky lg:top-6 self-start">
+          <span className="text-slate-400 block mb-2 font-medium">Vista previa de la factura</span>
+          <VistaPreviaFactura
+            empresa={empresa}
+            pres={pres}
+            cliente={cliente}
+            concepto={concepto}
+            pct={pct}
+            importes={importes}
+            ivaPct={ivaPct}
+            irpfPct={irpfPct}
+            isp={isp}
+            motivo={manual ? '' : fiscal?.motivo}
+            fechaOperacion={fechaOperacion}
+          />
+        </aside>
       </form>
+      </div>
+    </div>
+  );
+}
+
+/** Miniatura de la factura con los datos que se van a emitir (el número y el QR se asignan al emitir). */
+function VistaPreviaFactura({ empresa, pres, cliente, concepto, pct, importes, ivaPct, irpfPct, isp, motivo, fechaOperacion }) {
+  const pruebas = empresa?.verifactuEntorno !== 'produccion';
+  const serie = String(empresa?.serieOrdinaria || 'F').toUpperCase();
+  const hoy = new Date().toLocaleDateString('es-ES');
+  const lugar = [empresa?.codigoPostal, empresa?.municipio, empresa?.provincia].filter(Boolean).join(' ');
+  const lugarCliente = [cliente.clienteCodigoPostal, cliente.clienteMunicipio, cliente.clienteProvincia].filter(Boolean).join(' ');
+  const falta = (v) => v || <span className="text-rose-600 font-semibold">falta</span>;
+
+  return (
+    <div className="theme-native bg-white text-slate-900 rounded-xl shadow-lg p-5 space-y-4 text-[11px] leading-snug">
+      <div className="flex justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-black text-sm">{falta(empresa?.razonSocial)}</p>
+          <p>NIF: {falta(empresa?.nif)}</p>
+          <p>{falta(empresa?.domicilio)}</p>
+          {lugar && <p>{lugar}</p>}
+        </div>
+        <div className="text-right shrink-0">
+          <p className="font-black text-sm text-emerald-700">FACTURA</p>
+          {pruebas && <p className="text-rose-600 font-bold">PRUEBA · sin validez fiscal</p>}
+          <p className="font-mono">{pruebas ? 'PRUEBA-' : ''}{serie}-{new Date().getFullYear()}-·····</p>
+          <p>Fecha: {hoy}</p>
+          {fechaOperacion && <p>Operación: {new Date(fechaOperacion).toLocaleDateString('es-ES')}</p>}
+        </div>
+      </div>
+
+      <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+        <p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">Cliente</p>
+        <p className="font-bold">{falta(cliente.clienteNombre)}</p>
+        <p>NIF: {falta(cliente.clienteNif)}</p>
+        <p>{falta(cliente.clienteDireccion)}</p>
+        {lugarCliente && <p>{lugarCliente}</p>}
+      </div>
+
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-slate-300 text-[10px] uppercase text-slate-500">
+            <th className="text-left py-1">Concepto</th>
+            <th className="text-right py-1">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-slate-100 align-top">
+            <td className="py-1.5 pr-2">
+              <p className="font-semibold">{concepto}</p>
+              <p className="text-slate-500">{pres ? `${pres.obraTitulo || ''} · ${pct} % del presupuesto ${pres.numero}` : 'Elige un presupuesto'}</p>
+            </td>
+            <td className="py-1.5 text-right font-mono whitespace-nowrap">{eur(importes.base)} €</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div className="ml-auto w-full sm:w-64 space-y-1">
+        <div className="flex justify-between"><span>Base imponible</span><span className="font-mono">{eur(importes.base)} €</span></div>
+        <div className="flex justify-between"><span>{isp ? 'IVA (inversión del sujeto pasivo)' : `IVA ${ivaPct} %`}</span><span className="font-mono">{eur(importes.cuota)} €</span></div>
+        {importes.irpf > 0 && <div className="flex justify-between"><span>Retención IRPF {irpfPct} %</span><span className="font-mono">-{eur(importes.irpf)} €</span></div>}
+        <div className="flex justify-between border-t border-slate-300 pt-1 font-black text-sm"><span>Total</span><span className="font-mono">{eur(importes.total)} €</span></div>
+      </div>
+
+      {(isp || motivo) && (
+        <p className="text-[10px] text-slate-600 border-t border-slate-200 pt-2">
+          {isp ? (empresa?.textoIsp || 'Operación con inversión del sujeto pasivo (art. 84.Uno.2º.f Ley 37/1992).') : motivo}
+        </p>
+      )}
+
+      <div className="flex items-center gap-3 border-t border-slate-200 pt-3">
+        <div className="w-14 h-14 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-[9px] text-slate-400 text-center shrink-0">QR al emitir</div>
+        <p className="text-[10px] text-slate-500">Factura verificable en la sede electrónica de la AEAT (VERI*FACTU). El número, la huella y el QR se asignan al emitir.</p>
+      </div>
     </div>
   );
 }

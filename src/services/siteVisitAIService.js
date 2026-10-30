@@ -349,6 +349,8 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
     totalConIva,
     costeTotal,
     resumen: resumenGeneral,
+    // Notas y mediciones de la visita: las usa el croquis 2D.
+    medidasNotas: expediente.medidasNotas || '',
     observaciones_tecnicas: observacionesTecnicas,
     conceptos: conceptosSugeridos,
     capitulos: capitulosCalculados,

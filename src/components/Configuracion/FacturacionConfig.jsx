@@ -5,6 +5,7 @@ import {
   saveEmpresaFacturacion, verificarCadenaVerifactu, subirCertificado, quitarCertificado,
   listarEnvios, enviarAhora, getDeclaracionResponsable
 } from '../../services/facturacionService';
+import HistorialEnviosModal from './HistorialEnviosModal';
 
 const EMPTY = {
   razonSocial: '',
@@ -68,6 +69,7 @@ export default function FacturacionConfig() {
   const [cert, setCert] = useState({ file: null, password: '' });
   const [subiendo, setSubiendo] = useState(false);
   const [envios, setEnvios] = useState(null);
+  const [verHistorial, setVerHistorial] = useState(false);
   const [declaracion, setDeclaracion] = useState(null);
 
   useEffect(() => {
@@ -92,7 +94,8 @@ export default function FacturacionConfig() {
       return false;
     }
     await recargarFacturacion();
-    return true;
+    // El servidor guarda los datos aunque falte el certificado y lo avisa (devuelve el texto del aviso).
+    return result.data?.aviso || true;
   };
 
   const handleSave = async (e) => {
@@ -104,7 +107,9 @@ export default function FacturacionConfig() {
       );
       if (!ok) return;
     }
-    if (await guardar()) showNotification(form.facturacionActivada ? 'Facturación guardada.' : 'Datos guardados. La facturación está desactivada.');
+    const guardado = await guardar();
+    if (typeof guardado === 'string') showNotification(guardado, 'error');
+    else if (guardado) showNotification(form.facturacionActivada ? 'Facturación guardada.' : 'Datos guardados. La facturación está desactivada.');
   };
 
   const handleProduccion = async () => {
@@ -116,6 +121,13 @@ export default function FacturacionConfig() {
       '· A partir de ese momento deja de emitir facturas en tu programa anterior.\n\n¿Pasar a producción?'
     );
     if (!ok) return;
+    // Segunda confirmación: hay que escribir la palabra para que no se pase por un clic despistado.
+    const escrito = window.prompt('Segunda confirmación. Este paso no se puede deshacer.\n\nEscribe PRODUCCION para continuar:');
+    if (escrito === null) return;
+    if (escrito.trim().toUpperCase() !== 'PRODUCCION') {
+      showNotification('No se ha pasado a producción: el texto no coincide.');
+      return;
+    }
     if (await guardar({ verifactuEntorno: 'produccion', envioAeatActivo: true, confirmarProduccion: true })) {
       showNotification('Facturación en producción: las facturas ya son reales y se envían a la AEAT.');
     }
@@ -164,6 +176,11 @@ export default function FacturacionConfig() {
     }
     setEnvios(result.data);
   };
+
+  // Los últimos envíos se ven al entrar, sin tener que pulsar nada.
+  useEffect(() => {
+    if (empresa?.id) cargarEnvios();
+  }, [empresa?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEnviarAhora = async () => {
     const result = await enviarAhora();
@@ -329,6 +346,19 @@ export default function FacturacionConfig() {
         )}
       </form>
 
+      {!empresa && (
+        <div className={card}>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-amber-400" />
+            <span>Certificado electrónico</span>
+          </h3>
+          <Aviso tipo="warn">
+            Para subir el certificado, primero rellena los datos fiscales de arriba y pulsa Guardar. Si al guardar sale un error de tabla,
+            falta ejecutar supabase_schema_facturacion.sql en Supabase.
+          </Aviso>
+        </div>
+      )}
+
       {empresa && (
         <div className={card}>
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -360,7 +390,7 @@ export default function FacturacionConfig() {
             </div>
             <div className="flex gap-2">
               <button type="submit" disabled={!cert.file || subiendo} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs">
-                {subiendo ? 'Subiendo…' : 'Subir certificado'}
+                {subiendo ? 'Subiendo…' : cert.file ? 'Subir certificado' : 'Elige primero el archivo'}
               </button>
               {certificado?.origen === 'empresa' && !enProduccion && (
                 <button type="button" onClick={handleQuitarCertificado} className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs">Quitar</button>
@@ -378,11 +408,12 @@ export default function FacturacionConfig() {
               <span>Envíos a la AEAT</span>
             </h3>
             <div className="flex gap-2">
-              <button type="button" onClick={cargarEnvios} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs">Ver detalle</button>
+              <button type="button" onClick={() => setVerHistorial(true)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs">Ver detalle y filtrar</button>
               <button type="button" onClick={handleEnviarAhora} disabled={!empresa.envioAeatActivo} className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs">Enviar ahora</button>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Aceptados por la AEAT</span><strong className={`text-lg ${registros?.aceptados ? 'text-emerald-400' : 'text-white'}`}>{registros?.aceptados ?? '-'}</strong></div>
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Pendientes</span><strong className="text-white text-lg">{registros?.pendientes ?? '-'}</strong></div>
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Rechazados</span><strong className={`text-lg ${registros?.rechazados ? 'text-rose-400' : 'text-white'}`}>{registros?.rechazados ?? '-'}</strong></div>
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3"><span className="text-slate-400 block">Con errores</span><strong className={`text-lg ${registros?.conErrores ? 'text-amber-400' : 'text-white'}`}>{registros?.conErrores ?? '-'}</strong></div>
@@ -467,6 +498,8 @@ export default function FacturacionConfig() {
           </div>
         )}
       </div>
+
+      {verHistorial && <HistorialEnviosModal onClose={() => setVerHistorial(false)} />}
     </div>
   );
 }

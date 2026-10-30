@@ -473,6 +473,7 @@ create index if not exists audit_events_company_idx on public.audit_events (comp
 create or replace function public.audit_events_chain()
 returns trigger
 language plpgsql
+set search_path = public, extensions
 as $$
 begin
   if tg_op <> 'INSERT' then
@@ -526,6 +527,7 @@ create or replace function public.verifactu_huella(cadena text)
 returns text
 language sql
 immutable
+set search_path = public, extensions
 as $$
   select upper(encode(digest(convert_to(cadena, 'UTF8'), 'sha256'), 'hex'));
 $$;
@@ -552,7 +554,7 @@ create or replace function public.emitir_factura(p_invoice_id uuid, p_user_id uu
 returns public.invoices
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   inv     public.invoices;
@@ -703,7 +705,7 @@ create or replace function public.anular_factura(p_invoice_id uuid, p_user_id uu
 returns public.invoices
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   inv     public.invoices;
@@ -786,7 +788,7 @@ create or replace function public.subsanar_registro(p_invoice_id uuid, p_user_id
 returns public.verifactu_records
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   inv     public.invoices;
@@ -889,3 +891,6 @@ $$;
 -- Los certificados no se pueden leer desde el navegador (ni siquiera cifrados).
 alter table public.company_certificates enable row level security;
 revoke all on public.company_certificates from anon, authenticated;
+
+-- Que la API de Supabase vea al momento las tablas y columnas nuevas.
+notify pgrst, 'reload schema';

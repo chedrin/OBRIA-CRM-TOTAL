@@ -22,8 +22,14 @@ import { documentPdfAttachment } from '../../utils/documentPdf';
 
 const eur = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function SendDocumentModal({
-  isOpen,
+// El contenido usa hooks: se monta solo con el modal abierto para que el número de
+// hooks no cambie entre renders (antes el return null previo rompía la página en blanco).
+export default function SendDocumentModal({ isOpen, document, ...props }) {
+  if (!isOpen || !document) return null;
+  return <SendDocumentModalContent document={document} {...props} />;
+}
+
+function SendDocumentModalContent({
   onClose,
   document,
   documentType = 'presupuesto',
@@ -31,8 +37,6 @@ export default function SendDocumentModal({
 }) {
   const { empresaConfig, facturacion, facturas = [], showNotification, addAuditLog, updatePresupuesto, updateFactura } = useApp();
   const backdropRef = useRef(null);
-
-  if (!isOpen || !document) return null;
 
   const handleBackdropClick = (e) => {
     if (e.target === backdropRef.current) {

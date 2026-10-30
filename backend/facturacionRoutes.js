@@ -27,6 +27,7 @@
  *   GET    /api/facturacion/resumen            resumen trimestral del IVA repercutido
  *   GET    /api/facturas                       facturas de la empresa (entorno actual)
  *   POST   /api/facturas                       crear y emitir una factura
+ *   POST   /api/facturas/excel                 Excel de las facturas indicadas (las que se ven con los filtros)
  *   POST   /api/facturas/:id/rectificar        rectificativa por diferencias o por sustitución
  *   POST   /api/facturas/:id/anular            anular una factura que no debió emitirse
  *   POST   /api/facturas/:id/subsanar          volver a registrar en la AEAT un registro rechazado
@@ -43,6 +44,7 @@ import { enviarPendientesEmpresa } from "./verifactu/envio.js";
 import { calcularFiscalidadObra } from "./verifactu/fiscalidadObra.js";
 import { generarFacturae } from "./verifactu/facturae.js";
 import { libroExpedidasCsv, resumenTrimestral } from "./verifactu/libros.js";
+import { crearXlsx, XLSX_CONTENT_TYPE } from "./verifactu/xlsx.js";
 
 const IVA_VALIDOS = new Set([0, 4, 5, 10, 21]);
 const TIPOS_RECTIFICATIVA = new Set(["R1", "R2", "R3", "R4"]);
@@ -100,7 +102,8 @@ function readJsonBody(req, maxBytes = 512 * 1024) {
 function dbError(error) {
   const text = String(error?.message || error || "");
   if (["42P01", "42703", "PGRST205", "PGRST202", "PGRST204"].includes(error?.code) || /does not exist|schema cache/i.test(text)) {
-    return httpError(503, "Falta actualizar la base de datos: ejecuta supabase_schema_facturacion.sql en Supabase > SQL Editor.");
+    // Se añade el detalle (qué tabla o columna falta) para poder diagnosticarlo sin acceso a los logs.
+    return httpError(503, `Falta actualizar la base de datos: ejecuta supabase_schema_facturacion.sql en Supabase > SQL Editor. Detalle: ${text.slice(0, 200)}`);
   }
   if (error?.code === "P0001" || error?.code === "23514" || error?.code === "23505") return httpError(400, text);
   return httpError(500, `Error de la base de datos: ${text}`);
@@ -251,15 +254,32 @@ function toAppCompany(company, ajustes, extra = {}) {
   };
 }
 
-async function contarRegistros(companyId, entorno) {
+/**
+ * Registros con algo pendiente (sin enviar, rechazados o aceptados con errores). Solo cuenta el
+ * último registro de cada factura: un alta rechazada que después se subsanó o se anuló ya está cerrada.
+ */
+async function registrosAbiertos(companyId, entorno) {
   const db = getAdminClient();
-  const contar = async (estado) => {
-    const { count, error } = await db.from("verifactu_records").select("id", { count: "exact", head: true })
-      .eq("company_id", companyId).eq("entorno", entorno).eq("estado_envio", estado);
-    if (error) throw dbError(error);
-    return count || 0;
-  };
-  return { pendientes: await contar("pendiente"), rechazados: await contar("rechazado"), conErrores: await contar("aceptado_con_errores") };
+  const problemas = await run(db.from("verifactu_records")
+    .select("id, invoice_id, tipo_registro, num_serie, estado_envio, codigo_error, descripcion_error, intentos, ultimo_intento_at")
+    .eq("company_id", companyId).eq("entorno", entorno)
+    .in("estado_envio", ["pendiente", "rechazado", "aceptado_con_errores"])
+    .order("id", { ascending: false }).limit(500));
+  if (!problemas.length) return [];
+  const facturas = [...new Set(problemas.map((r) => r.invoice_id))];
+  const todos = await run(db.from("verifactu_records").select("id, invoice_id").in("invoice_id", facturas));
+  const ultimo = new Map();
+  for (const r of todos) if (!ultimo.has(r.invoice_id) || r.id > ultimo.get(r.invoice_id)) ultimo.set(r.invoice_id, r.id);
+  return problemas.filter((r) => ultimo.get(r.invoice_id) === r.id);
+}
+
+async function contarRegistros(companyId, entorno) {
+  const abiertos = await registrosAbiertos(companyId, entorno);
+  const contar = (estado) => abiertos.filter((r) => r.estado_envio === estado).length;
+  const { count: aceptados, error } = await getAdminClient().from("verifactu_records").select("id", { count: "exact", head: true })
+    .eq("company_id", companyId).eq("entorno", entorno).eq("estado_envio", "aceptado");
+  if (error) throw dbError(error);
+  return { aceptados: aceptados || 0, pendientes: contar("pendiente"), rechazados: contar("rechazado"), conErrores: contar("aceptado_con_errores") };
 }
 
 async function empresaCompleta(company) {
@@ -348,6 +368,63 @@ async function facturasDelPeriodo(company, searchParams) {
   return { periodo: p, rows };
 }
 
+const ESTADOS_REGISTRO = { pendiente: "Pendiente de envío", aceptado: "Aceptado", aceptado_con_errores: "Aceptado con errores", rechazado: "Rechazado" };
+
+// Un filtro de estado sirve para las dos listas: el resultado del envío y el de cada registro.
+const FILTRO_ESTADO = {
+  correcto: { envios: ["Correcto"], registros: ["aceptado"] },
+  con_errores: { envios: ["ParcialmenteCorrecto"], registros: ["aceptado_con_errores"] },
+  rechazado: { envios: ["Incorrecto", "error"], registros: ["rechazado"] },
+  pendiente: { envios: [], registros: ["pendiente"] }
+};
+
+/** Medianoche de un día (AAAA-MM-DD) en hora de Madrid, como instante ISO. */
+function inicioDiaMadrid(dia) {
+  const utc = new Date(`${dia}T00:00:00Z`);
+  const partes = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Madrid", timeZoneName: "longOffset" }).formatToParts(utc);
+  const m = /GMT([+-])(\d{2}):(\d{2})/.exec(partes.find((p) => p.type === "timeZoneName")?.value || "");
+  const minutos = m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+  return new Date(utc.getTime() - minutos * 60000).toISOString();
+}
+
+function filtrosHistorial(searchParams, maximo = 500) {
+  const dia = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") && !Number.isNaN(Date.parse(v)) ? v : null);
+  const estado = searchParams?.get("estado");
+  return {
+    desde: dia(searchParams?.get("desde")),
+    hasta: dia(searchParams?.get("hasta")),
+    estado: FILTRO_ESTADO[estado] ? estado : null,
+    limite: maximo
+  };
+}
+
+/** Envíos y registros de la empresa en el entorno actual, filtrados por día (hora de Madrid) y estado. */
+async function historialAeat(company, { desde, hasta, estado, limite }) {
+  const db = getAdminClient();
+  const finDia = (d) => inicioDiaMadrid(new Date(Date.parse(`${d}T12:00:00Z`) + 86400000).toISOString().slice(0, 10));
+  const rango = (q, campo) => {
+    let r = q;
+    if (desde) r = r.gte(campo, inicioDiaMadrid(desde));
+    if (hasta) r = r.lt(campo, finDia(hasta));
+    return r;
+  };
+  const filtro = estado ? FILTRO_ESTADO[estado] : null;
+
+  let envios = [];
+  if (!filtro || filtro.envios.length) {
+    let q = db.from("verifactu_envios").select("*").eq("company_id", company.id).eq("entorno", company.verifactu_entorno);
+    if (filtro) q = q.in("estado_envio", filtro.envios);
+    envios = await run(rango(q, "created_at").order("id", { ascending: false }).limit(limite));
+  }
+
+  let q = db.from("verifactu_records")
+    .select("id, invoice_id, tipo_registro, num_serie, fecha_expedicion, tipo_factura, cuota_total, importe_total, huella, estado_envio, codigo_error, descripcion_error, csv_aeat, intentos, ultimo_intento_at, enviado_at, subsanacion, entorno, created_at")
+    .eq("company_id", company.id).eq("entorno", company.verifactu_entorno);
+  if (filtro) q = q.in("estado_envio", filtro.registros);
+  const registros = await run(rango(q, "created_at").order("id", { ascending: false }).limit(limite));
+  return { envios, registros };
+}
+
 const ROUTES = [
   ["GET", /^\/api\/facturacion$/, "estado"],
   ["PUT", /^\/api\/facturacion\/empresa$/, "empresa"],
@@ -355,6 +432,7 @@ const ROUTES = [
   ["DELETE", /^\/api\/facturacion\/certificado$/, "quitarCertificado"],
   ["GET", /^\/api\/facturacion\/verificar$/, "verificar"],
   ["GET", /^\/api\/facturacion\/envios$/, "envios"],
+  ["GET", /^\/api\/facturacion\/envios\/excel$/, "enviosExcel"],
   ["POST", /^\/api\/facturacion\/enviar$/, "enviar"],
   ["GET", /^\/api\/facturacion\/declaracion$/, "declaracion"],
   ["POST", /^\/api\/facturacion\/iva-obra$/, "ivaObra"],
@@ -364,6 +442,7 @@ const ROUTES = [
   ["GET", /^\/api\/facturacion\/resumen$/, "resumen"],
   ["GET", /^\/api\/facturas$/, "listar"],
   ["POST", /^\/api\/facturas$/, "crear"],
+  ["POST", /^\/api\/facturas\/excel$/, "facturasExcel"],
   ["POST", /^\/api\/facturas\/([0-9a-f-]{36})\/rectificar$/, "rectificar"],
   ["POST", /^\/api\/facturas\/([0-9a-f-]{36})\/anular$/, "anular"],
   ["POST", /^\/api\/facturas\/([0-9a-f-]{36})\/subsanar$/, "subsanar"],
@@ -389,13 +468,22 @@ const handlers = {
     const current = await findCompany(user);
 
     // Envío a la AEAT y paso a producción: solo con certificado y declaración responsable completa.
-    const quiereEnvio = body.envioAeatActivo === true;
+    // Sin certificado o sin productor se guardan igualmente los datos fiscales (el certificado se sube
+    // después de guardarlos) y el envío queda desactivado con un aviso; el paso a producción sí se bloquea.
+    let quiereEnvio = body.envioAeatActivo === true;
     const quiereProduccion = body.verifactuEntorno === "produccion";
+    let aviso = null;
     if ((quiereEnvio && !current?.envio_aeat_activo) || (quiereProduccion && current?.verifactu_entorno !== "produccion")) {
       const productor = datosProductor();
-      if (!productor.completo) throw httpError(409, `Faltan los datos del productor del software en el servidor (${productor.faltan.join(", ")}).`);
       const cert = current ? await estadoCertificado(db, current.id) : null;
-      if (!cert || cert.error) throw httpError(409, "Sube primero el certificado electrónico de la empresa.");
+      const falta = !productor.completo
+        ? `faltan los datos del productor del software en el servidor (${productor.faltan.join(", ")})`
+        : (!cert || cert.error) ? "falta subir el certificado electrónico de la empresa" : null;
+      if (falta && quiereProduccion && current?.verifactu_entorno !== "produccion") throw httpError(409, `No se puede pasar a producción: ${falta}.`);
+      if (falta) {
+        quiereEnvio = false;
+        aviso = `Datos guardados, pero el envío a la AEAT sigue desactivado: ${falta}.`;
+      }
     }
     if (quiereProduccion && current?.verifactu_entorno !== "produccion") {
       if (body.confirmarProduccion !== true) throw httpError(400, "Confirma el paso a producción: desde ese momento las facturas son reales y se envían a la AEAT.");
@@ -450,7 +538,7 @@ const handlers = {
       await audit(company.id, user?.id, company.envio_aeat_activo ? "ENVIO_AEAT_ACTIVADO" : "ENVIO_AEAT_DESACTIVADO", { entorno: company.verifactu_entorno });
     }
     if (current) await audit(company.id, user?.id, "EMPRESA_ACTUALIZADA", { nif: company.nif });
-    return { empresa: await empresaCompleta(company) };
+    return { empresa: await empresaCompleta(company), ...(aviso ? { aviso } : {}) };
   },
 
   async subirCertificado({ req, user }) {
@@ -484,16 +572,39 @@ const handlers = {
     return { entorno: company.verifactu_entorno, registros: registros.length, ...verificarCadena(registros) };
   },
 
-  async envios({ user }) {
+  async envios({ user, searchParams }) {
     const company = await requireCompany(user);
-    const db = getAdminClient();
-    const envios = await run(db.from("verifactu_envios").select("*").eq("company_id", company.id).order("id", { ascending: false }).limit(20));
-    const problemas = await run(db.from("verifactu_records")
-      .select("id, invoice_id, tipo_registro, num_serie, estado_envio, codigo_error, descripcion_error, intentos, ultimo_intento_at")
-      .eq("company_id", company.id).eq("entorno", company.verifactu_entorno)
-      .in("estado_envio", ["pendiente", "rechazado", "aceptado_con_errores"])
-      .order("id", { ascending: false }).limit(100));
-    return { envios, registros: problemas };
+    const filtros = filtrosHistorial(searchParams);
+    const { envios, registros } = await historialAeat(company, filtros);
+    const problemas = await registrosAbiertos(company.id, company.verifactu_entorno);
+    return { filtros, envios, historial: registros, registros: problemas.slice(0, 100) };
+  },
+
+  async enviosExcel({ res, user, searchParams }) {
+    const company = await requireCompany(user);
+    const filtros = filtrosHistorial(searchParams, 5000);
+    const { envios, registros } = await historialAeat(company, filtros);
+    const f = (iso) => (iso ? new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid" }) : "");
+    const num = (v) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? v : Number(v));
+    const body = crearXlsx([
+      {
+        nombre: "Envíos",
+        columnas: ["Fecha y hora", "Entorno", "Registros", "Estado del envío", "CSV AEAT", "Espera pedida (s)", "Error"],
+        filas: envios.map((e) => [f(e.created_at), e.entorno, e.registros, e.estado_envio, e.csv_aeat, e.tiempo_espera, e.error])
+      },
+      {
+        nombre: "Registros",
+        columnas: ["Nº factura", "Operación", "Fecha expedición", "Tipo factura", "Cuota total", "Importe total", "Estado en la AEAT",
+          "Código error", "Descripción error", "CSV AEAT", "Intentos", "Último intento", "Aceptado el", "Subsanación", "Entorno", "Huella"],
+        filas: registros.map((r) => [r.num_serie, r.tipo_registro === "anulacion" ? "Anulación" : "Alta", r.fecha_expedicion, r.tipo_factura,
+          num(r.cuota_total), num(r.importe_total), ESTADOS_REGISTRO[r.estado_envio] || r.estado_envio, r.codigo_error, r.descripcion_error,
+          r.csv_aeat, r.intentos, f(r.ultimo_intento_at), f(r.enviado_at), r.subsanacion === "S" ? "Sí" : "", r.entorno, r.huella])
+      }
+    ]);
+    await audit(company.id, user?.id, "ENVIOS_EXPORTADOS", { ...filtros, envios: envios.length, registros: registros.length });
+    const rango = [filtros.desde, filtros.hasta].filter(Boolean).join("_a_") || "todo";
+    sendFile(res, { contentType: XLSX_CONTENT_TYPE, filename: `envios-aeat-${company.nif}-${rango}.xlsx`, body });
+    return undefined;
   },
 
   async enviar({ user }) {
@@ -590,6 +701,34 @@ const handlers = {
       .order("issued_at", { ascending: false }));
     const registros = rows.length ? await ultimosRegistros(company.id) : new Map();
     return { facturas: rows.map((r) => toAppInvoice(r, registros.get(r.id))) };
+  },
+
+  async facturasExcel({ req, res, user }) {
+    const company = await requireCompany(user);
+    const body = await readJsonBody(req);
+    const ids = new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 5000).map(String));
+    if (!ids.size) throw httpError(400, "No hay facturas que exportar.");
+    const rows = (await run(getAdminClient().from("invoices").select("*")
+      .eq("company_id", company.id).eq("entorno", company.verifactu_entorno).eq("status", "ISSUED")
+      .order("issued_at", { ascending: true }))).filter((r) => ids.has(r.id));
+    const registros = await ultimosRegistros(company.id);
+    const numeros = new Map(rows.map((r) => [r.id, r.num_serie]));
+    const facturas = rows.map((r) => toAppInvoice(r, registros.get(r.id)));
+    const f = (iso) => (iso ? new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid" }) : "");
+    const libro = crearXlsx([{
+      nombre: "Facturas",
+      columnas: ["Nº factura", "Tipo", "Rectifica a", "Fecha expedición", "Fecha operación", "Trimestre", "Cliente", "NIF", "Tipo cliente",
+        "Dirección", "Concepto", "Base imponible", "IVA %", "Cuota IVA", "Inversión sujeto pasivo", "IRPF %", "Retención", "Importe total",
+        "Líquido a cobrar", "Estado cobro", "Fecha cobro", "Vencimiento", "Estado AEAT", "CSV AEAT", "Error AEAT", "Anulada", "Motivo anulación", "Huella"],
+      filas: facturas.map((x) => [x.numero, x.tipoAeat, numeros.get(x.rectificaId) || "", x.fechaEmision, x.fechaOperacion, `${x.trimestre} ${x.ano || ""}`.trim(),
+        x.cliente, x.cifNif, x.clienteTipo, x.direccion, x.obraTitulo, x.baseImponible, x.tipoIvaPct, x.cuotaIva, x.isp ? "Sí" : "",
+        x.retencionIrpfPct, x.cuotaRetencion, x.importeTotal, x.totalFactura, x.estadoCobro, x.fechaCobro, x.fechaVencimiento,
+        x.aeat ? ESTADOS_REGISTRO[x.aeat.estado] || x.aeat.estado : "Sin registro", x.aeat?.csv, x.aeat?.codigoError ? `(${x.aeat.codigoError}) ${x.aeat.error || ""}` : "",
+        x.anulada ? `Sí (${f(x.anuladaEl)})` : "", x.anulacionMotivo, x.huella])
+    }]);
+    await audit(company.id, user?.id, "FACTURAS_EXPORTADAS", { facturas: facturas.length });
+    sendFile(res, { contentType: XLSX_CONTENT_TYPE, filename: `facturas-${company.nif}-${new Date().toISOString().slice(0, 10)}.xlsx`, body: libro });
+    return undefined;
   },
 
   async crear({ req, user }) {
