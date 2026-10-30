@@ -69,6 +69,9 @@ nueva ──(Generar borrador)──> en_revision ──(Aprobar y enviar)──
 3. **Revisión.** El administrador edita asunto, cuerpo y destinatario con `PATCH /api/material-orders/<id>`.
 4. **Aprobar y enviar.** `POST /api/material-orders/<id>/send` envía con Resend desde el servidor (`backend/emailService.js`; el texto sale de la plantilla de Ajustes > Correos y plantillas) (`RESEND_API_KEY`, sin prefijo `VITE_`), con `reply_to` al correo de la empresa para que el proveedor conteste a la oficina y una clave de idempotencia para no mandar dos veces el mismo pedido. El pedido pasa a `enviado` y la necesidad a `pedido_tramitado`. Si Resend falla, el pedido queda en `error` con el motivo y se puede reintentar.
 5. **Proveedores.** Tabla `suppliers` con `categories` (fontanería, electricidad, áridos…) para proponer los habituales de cada partida.
+6. **Nuevo pedido.** Botón "Nuevo pedido" en Avisos y Pedidos (`POST /api/material-orders/manual`): una o varias obras, uno o varios proveedores, materiales, dirección de entrega y observaciones. Se envía en el acto o se deja en borrador. Requiere `supabase_migration_pedidos_respuesta.sql`.
+7. **Respuesta del proveedor.** En cada pedido enviado (`PATCH /api/material-orders/<id>/response`): estado, fecha de entrega, importe, notas y el correo de respuesta pegado; "Leer correo con IA" rellena los campos. La pestaña "Pedidos a proveedores" los lista por fecha de entrega.
+8. **Pedir desde la obra.** En la ficha de la obra, pestaña "Necesidades y Materiales", cada material tiene "Pedir" y la tabla tiene "Pedir pendientes". Abren el mismo modal con la obra, la dirección, los materiales y sus cantidades y, si coincide, el proveedor indicado. Si el correo sale, el material pasa a "Pedido".
 
 ## 5. Subcontratas sin app ni contraseña
 
