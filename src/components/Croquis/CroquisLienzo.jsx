@@ -84,6 +84,7 @@ function Cota({ forma, color = COTA, fuente = 0.2, onPulsar }) {
  * - onSoltar(tipo, x, y): un elemento de la paleta soltado en el lienzo.
  * - onEditarCota({ roomId, edge, x, y }): el usuario pulsa la cota de un lado para escribir su medida.
  * - onAviso(texto): explicación cuando un arrastre choca con una medida fija.
+ * - alto: altura fija en pantalla (p. ej. '11rem'); el plano se encaja dentro sin deformarse.
  */
 export default function CroquisLienzo({
   plan,
@@ -99,6 +100,7 @@ export default function CroquisLienzo({
   paso = 0.05,
   mostrarCotas = true,
   zoom = 1,
+  alto = null,
   svgRef: svgRefExterno
 }) {
   const svgRefInterno = useRef(null);
@@ -259,7 +261,7 @@ export default function CroquisLienzo({
     <svg
       ref={svgRef}
       viewBox={`${px(-margen)} ${px(-margen)} ${px(W + margen * 2)} ${px(H + margen * 2)}`}
-      style={{ width: `${zoom * 100}%`, height: 'auto', touchAction: soloLectura ? 'auto' : 'none', display: 'block', background: '#ffffff' }}
+      style={{ width: `${zoom * 100}%`, height: alto || 'auto', touchAction: soloLectura ? 'auto' : 'none', display: 'block', background: '#ffffff' }}
       onPointerMove={mover}
       onPointerUp={terminar}
       onPointerCancel={terminar}
