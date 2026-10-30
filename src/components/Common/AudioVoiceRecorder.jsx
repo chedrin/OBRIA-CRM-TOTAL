@@ -38,6 +38,8 @@ export default function AudioVoiceRecorder({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState(initialTranscript);
   const [isEditing, setIsEditing] = useState(false);
+  // Estado de la transcripción en vivo del navegador: null | 'listening' | 'unsupported' | código de error.
+  const [liveStatus, setLiveStatus] = useState(null);
   const [micVolume, setMicVolume] = useState(0); // 0 to 100%
   const [micError, setMicError] = useState(null); // 'insecure_context' | 'permission_denied' | 'no_hardware' | null
   const [showKeyGuideModal, setShowKeyGuideModal] = useState(false);
@@ -101,6 +103,12 @@ export default function AudioVoiceRecorder({
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
   }, [stopAudioTracks]);
+
+  // Algunos navegadores aceptan el dictado pero nunca devuelven texto: se avisa a los pocos segundos.
+  useEffect(() => {
+    if (isRecording && recordSeconds >= 5 && liveStatus === 'listening' && !liveTextRef.current) setLiveStatus('silent');
+    if (liveStatus === 'silent' && liveTextRef.current) setLiveStatus('listening');
+  }, [isRecording, recordSeconds, liveStatus]);
 
   // Audio Visualization Loop
   useEffect(() => {
@@ -248,6 +256,7 @@ export default function AudioVoiceRecorder({
       recordingActiveRef.current = true;
       speechDoneRef.current = false;
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      setLiveStatus(SpeechRecognition ? 'listening' : 'unsupported');
       if (SpeechRecognition) {
         try {
           let committed = '';
@@ -266,6 +275,7 @@ export default function AudioVoiceRecorder({
           };
           recognition.onerror = (e) => {
             if (['not-allowed', 'service-not-allowed', 'language-not-supported'].includes(e?.error)) blocked = true;
+            if (e?.error && !['no-speech', 'aborted'].includes(e.error)) setLiveStatus(e.error);
             console.warn('SpeechRecognition:', e?.error);
           };
           recognition.onend = () => {
@@ -280,6 +290,7 @@ export default function AudioVoiceRecorder({
           recognition.start();
           recognitionRef.current = recognition;
         } catch (speechErr) {
+          setLiveStatus('start-failed');
           console.warn('SpeechRecognition not available or failed:', speechErr);
         }
       }
@@ -597,6 +608,20 @@ export default function AudioVoiceRecorder({
           </div>
 
         </div>
+
+        {isRecording && liveStatus && liveStatus !== 'listening' && (
+          <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+            {liveStatus === 'silent'
+              ? 'El navegador aún no ha escrito nada de lo que dices. Si estás hablando, su dictado en directo no funciona aquí (prueba Chrome o Edge actualizados). Al parar se transcribirá con la IA.'
+              : liveStatus === 'unsupported'
+              ? 'Este navegador no escribe el texto mientras hablas (pasa en Firefox, Brave y algunos móviles). Usa Chrome o Edge para verlo en directo; al parar se transcribirá con la IA.'
+              : liveStatus === 'network'
+              ? 'El navegador no puede conectar con su servicio de dictado (error de red). Al parar se transcribirá con la IA.'
+              : liveStatus === 'not-allowed' || liveStatus === 'service-not-allowed'
+              ? 'El navegador ha bloqueado el dictado en directo. Revisa el permiso de micrófono del candado 🔒. Al parar se transcribirá con la IA.'
+              : `El dictado en directo del navegador ha fallado (${liveStatus}). Al parar se transcribirá con la IA.`}
+          </p>
+        )}
 
         {/* Audio Player Preview (if audio was recorded or uploaded) */}
         {audioPreview && (
