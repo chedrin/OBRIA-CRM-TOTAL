@@ -10,7 +10,16 @@ import {
   ratioQueCabe,
   largoMuro,
   formatoM2,
-  redondear
+  redondear,
+  rehacerEstancia,
+  respetaFijas,
+  moverVertice,
+  insertarVertice,
+  quitarVertice,
+  centroide,
+  esRectangulo,
+  anguloInterior,
+  areaConSigno
 } from '../../utils/croquisPlano';
 
 // Colores fijos de plano técnico (no dependen del tema claro/oscuro de la app).
@@ -19,13 +28,13 @@ const TINTA_SUAVE = '#64748b';
 const COTA = '#0f766e';
 const SELECCION = '#f59e0b';
 const MIN_LADO = 0.5;
-const IMAN = 0.15; // m: distancia a la que un borde se pega al de otra estancia
+const IMAN = 0.15; // m: distancia a la que un borde o un vértice se pega al de otra estancia
 
 const px = (m) => redondear(m * PX, 2);
 const puntos = (lista) => lista.map(([x, y]) => `${px(x)},${px(y)}`).join(' ');
 const ASAS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
-/** Ajusta los huecos de una estancia tras cambiar su tamaño (siguen cabiendo en su muro). */
+/** Ajusta los huecos de una estancia tras cambiar su forma (siguen cabiendo en su lado). */
 export function reajustarHuecos(plan, roomId) {
   const room = plan.rooms.find(r => r.id === roomId);
   if (!room) return plan;
@@ -33,15 +42,19 @@ export function reajustarHuecos(plan, roomId) {
     ...plan,
     openings: plan.openings.map(o => {
       if (o.roomId !== roomId) return o;
-      const widthMeters = Math.min(o.widthMeters, Math.max(0.4, largoMuro(room, o.wall) - 0.1));
-      return { ...o, widthMeters, positionRatio: ratioQueCabe(room, o.wall, o.positionRatio, widthMeters) };
+      const edge = Math.min(o.edge, room.points.length - 1);
+      const widthMeters = Math.min(o.widthMeters, Math.max(0.4, largoMuro(room, edge) - 0.1));
+      return { ...o, edge, widthMeters, positionRatio: ratioQueCabe(room, edge, o.positionRatio, widthMeters) };
     })
   };
 }
 
-function Cota({ forma, color = COTA, fuente = 0.2 }) {
+const conEstancia = (plan, room) => reajustarHuecos({ ...plan, rooms: plan.rooms.map(r => (r.id === room.id ? room : r)) }, room.id);
+
+function Cota({ forma, color = COTA, fuente = 0.2, onPulsar }) {
   if (!forma) return null;
   const { linea, referencias, marcas, texto } = forma;
+  const valor = forma.fija ? `${texto.valor} 🔒` : texto.valor;
   return (
     <g stroke={color} fill="none" pointerEvents="none">
       <line x1={px(linea[0][0])} y1={px(linea[0][1])} x2={px(linea[1][0])} y2={px(linea[1][1])} strokeWidth={0.8} />
@@ -51,8 +64,13 @@ function Cota({ forma, color = COTA, fuente = 0.2 }) {
         x={px(texto.x)} y={px(texto.y)}
         transform={`rotate(${texto.angulo} ${px(texto.x)} ${px(texto.y)})`}
         fill={color} stroke="none" fontSize={px(fuente)} textAnchor="middle" fontFamily="Helvetica, Arial, sans-serif"
+        pointerEvents={onPulsar ? 'auto' : 'none'}
+        style={onPulsar ? { cursor: 'text' } : undefined}
+        onPointerDown={onPulsar ? (e) => { e.stopPropagation(); e.preventDefault(); } : undefined}
+        onClick={onPulsar ? (e) => { e.stopPropagation(); onPulsar(e); } : undefined}
       >
-        {texto.valor}
+        {onPulsar && <title>Pulsa para cambiar la medida</title>}
+        {valor}
       </text>
     </g>
   );
@@ -62,7 +80,10 @@ function Cota({ forma, color = COTA, fuente = 0.2 }) {
  * Lienzo SVG del croquis. Coordenadas en metros (1 m = 50 px del SVG; el zoom solo cambia el tamaño en pantalla).
  * - onPreview(plan): cambio en curso (arrastre), sin historial.
  * - onCommit(planAntes): fin del arrastre; el editor guarda `planAntes` para deshacer.
+ * - onAplicar(plan): cambio puntual (quitar un vértice), con historial.
  * - onSoltar(tipo, x, y): un elemento de la paleta soltado en el lienzo.
+ * - onEditarCota({ roomId, edge, x, y }): el usuario pulsa la cota de un lado para escribir su medida.
+ * - onAviso(texto): explicación cuando un arrastre choca con una medida fija.
  */
 export default function CroquisLienzo({
   plan,
@@ -70,7 +91,10 @@ export default function CroquisLienzo({
   onSeleccion = () => {},
   onPreview = () => {},
   onCommit = () => {},
+  onAplicar = () => {},
   onSoltar = () => {},
+  onEditarCota = null,
+  onAviso = () => {},
   soloLectura = false,
   paso = 0.05,
   mostrarCotas = true,
@@ -101,9 +125,19 @@ export default function CroquisLienzo({
     candidatos.forEach(c => { if (Math.abs(c - valor) <= IMAN && (mejor === null || Math.abs(c - valor) < Math.abs(mejor - valor))) mejor = c; });
     return mejor;
   };
+  const otrasEstancias = (excluir) => plan.rooms.filter(r => r.id !== excluir);
   const bordes = (excluir) => {
-    const otras = plan.rooms.filter(r => r.id !== excluir);
-    return { xs: otras.flatMap(r => [r.x, r.x + r.width]), ys: otras.flatMap(r => [r.y, r.y + r.height]) };
+    const pts = otrasEstancias(excluir).flatMap(r => r.points);
+    return { xs: pts.map(p => p[0]), ys: pts.map(p => p[1]) };
+  };
+  // Un vértice se pega a un vértice de otra estancia; si no, a la rejilla.
+  const ajustarPunto = (x, y, excluir) => {
+    let mejor = null;
+    otrasEstancias(excluir).forEach(r => r.points.forEach(p => {
+      const d = Math.hypot(p[0] - x, p[1] - y);
+      if (d <= IMAN && (!mejor || d < mejor.d)) mejor = { p, d };
+    }));
+    return mejor ? [...mejor.p] : [ajustar(x), ajustar(y)];
   };
 
   const empezar = (e, datos) => {
@@ -111,7 +145,7 @@ export default function CroquisLienzo({
     e.stopPropagation();
     e.preventDefault();
     svgRef.current?.setPointerCapture?.(e.pointerId);
-    arrastre.current = { ...datos, inicio: aMetros(e), planAntes: plan, movido: false };
+    arrastre.current = { planAntes: plan, movido: false, ...datos, inicio: aMetros(e) };
     onSeleccion(datos.seleccion);
   };
 
@@ -123,7 +157,7 @@ export default function CroquisLienzo({
     const dy = my - d.inicio[1];
     if (!d.movido && Math.hypot(dx, dy) < 0.02) return;
     d.movido = true;
-    const base = d.planAntes;
+    const base = d.planBase || d.planAntes;
     let nuevo = base;
 
     if (d.tipo === 'room') {
@@ -134,9 +168,10 @@ export default function CroquisLienzo({
       if (ix !== null) x = ix; else if (ixd !== null) x = redondear(ixd - o.width, 3);
       const iy = imantar(y, ys), iyd = imantar(y + o.height, ys);
       if (iy !== null) y = iy; else if (iyd !== null) y = redondear(iyd - o.height, 3);
-      nuevo = { ...base, rooms: base.rooms.map(r => (r.id === o.id ? { ...r, x, y } : r)) };
-      // Los textos y cotas no van unidos a la estancia; los huecos sí (se dibujan desde ella).
+      const ddx = x - o.x, ddy = y - o.y;
+      nuevo = { ...base, rooms: base.rooms.map(r => (r.id === o.id ? rehacerEstancia({ ...r, points: o.points.map(([px0, py0]) => [px0 + ddx, py0 + ddy]) }) : r)) };
     } else if (d.tipo === 'asa') {
+      // Escala la estancia dentro de su caja (en un rectángulo, cambia ancho y fondo).
       const o = d.original;
       const { xs, ys } = bordes(o.id);
       const borde = (v, lista) => { const a = ajustar(v); const i = imantar(a, lista); return i !== null ? i : a; };
@@ -145,23 +180,36 @@ export default function CroquisLienzo({
       if (d.asa.includes('w')) left = Math.min(right - MIN_LADO, borde(left + dx, xs));
       if (d.asa.includes('s')) bottom = Math.max(top + MIN_LADO, borde(bottom + dy, ys));
       if (d.asa.includes('n')) top = Math.min(bottom - MIN_LADO, borde(top + dy, ys));
-      const width = redondear(right - left), height = redondear(bottom - top);
-      nuevo = reajustarHuecos({
-        ...base,
-        rooms: base.rooms.map(r => (r.id === o.id ? { ...r, x: redondear(left, 3), y: redondear(top, 3), width, height, area: redondear(width * height) } : r))
-      }, o.id);
+      const sx = (right - left) / (o.width || 1), sy = (bottom - top) / (o.height || 1);
+      const room = rehacerEstancia({ ...o, points: o.points.map(([qx, qy]) => [left + (qx - o.x) * sx, top + (qy - o.y) * sy]) });
+      if (!respetaFijas(o, room)) {
+        if (!d.avisado) onAviso('Esa medida está fija (🔒). Pulsa la cota para cambiarla o desbloquéala en el panel.');
+        d.avisado = true;
+        return;
+      }
+      nuevo = conEstancia(base, room);
+    } else if (d.tipo === 'vertice') {
+      const o = d.original;
+      const [vx, vy] = ajustarPunto(mx, my, o.id);
+      const room = moverVertice(o, d.k, vx, vy);
+      if (!room) {
+        if (!d.avisado) onAviso('Los dos lados de este punto tienen la medida fija (🔒). Desbloquea uno para moverlo.');
+        d.avisado = true;
+        return;
+      }
+      nuevo = conEstancia(base, room);
     } else if (d.tipo === 'hueco') {
       const muro = muroMasCercano(base, mx, my);
       if (muro) {
         const room = base.rooms.find(r => r.id === muro.roomId);
+        const L = largoMuro(room, muro.edge);
         nuevo = {
           ...base,
           openings: base.openings.map(op => {
             if (op.id !== d.original.id) return op;
-            const widthMeters = Math.min(op.widthMeters, Math.max(0.4, largoMuro(room, muro.wall) - 0.1));
-            const L = largoMuro(room, muro.wall);
+            const widthMeters = Math.min(op.widthMeters, Math.max(0.4, L - 0.1));
             const ratio = paso ? Math.round((muro.ratio * L) / paso) * paso / L : muro.ratio;
-            return { ...op, roomId: room.id, wall: muro.wall, widthMeters, positionRatio: ratioQueCabe(room, muro.wall, ratio, widthMeters) };
+            return { ...op, roomId: room.id, edge: muro.edge, widthMeters, positionRatio: ratioQueCabe(room, muro.edge, ratio, widthMeters) };
           })
         };
       }
@@ -192,7 +240,7 @@ export default function CroquisLienzo({
     const d = arrastre.current;
     arrastre.current = null;
     try { svgRef.current?.releasePointerCapture?.(e.pointerId); } catch { /* ya liberado */ }
-    if (d?.movido) onCommit(d.planAntes);
+    if (d?.movido || d?.planBase) onCommit(d.planAntes);
   };
 
   const soltarPaleta = (e) => {
@@ -241,12 +289,12 @@ export default function CroquisLienzo({
       {/* Estancias: suelo, trama y muros */}
       {plan.rooms.map(r => (
         <g key={r.id} onPointerDown={(e) => empezar(e, { tipo: 'room', original: r, seleccion: { tipo: 'room', id: r.id } })} style={{ cursor: cursorEdicion }}>
-          <rect x={px(r.x)} y={px(r.y)} width={px(r.width)} height={px(r.height)} fill={r.color || '#f8fafc'} />
-          <rect x={px(r.x)} y={px(r.y)} width={px(r.width)} height={px(r.height)} fill="url(#croquis-trama)" />
+          <polygon points={puntos(r.points)} fill={r.color || '#f8fafc'} />
+          <polygon points={puntos(r.points)} fill="url(#croquis-trama)" />
         </g>
       ))}
       {plan.rooms.map(r => (
-        <rect key={`muro-${r.id}`} x={px(r.x)} y={px(r.y)} width={px(r.width)} height={px(r.height)} fill="none" stroke={TINTA} strokeWidth={px(GROSOR_MURO)} strokeLinejoin="miter" pointerEvents="none" />
+        <polygon key={`muro-${r.id}`} points={puntos(r.points)} fill="none" stroke={TINTA} strokeWidth={px(GROSOR_MURO)} strokeLinejoin="miter" strokeMiterlimit={6} pointerEvents="none" />
       ))}
 
       {/* Huecos: corte del muro y símbolo normalizado */}
@@ -255,9 +303,7 @@ export default function CroquisLienzo({
         if (!room) return null;
         const f = formasHueco(room, op);
         const sel = seleccion?.tipo === 'hueco' && seleccion.id === op.id;
-        const [cx, cy] = f.centro;
-        const a = f.horizontal ? [cx - op.widthMeters / 2, cy] : [cx, cy - op.widthMeters / 2];
-        const b = f.horizontal ? [cx + op.widthMeters / 2, cy] : [cx, cy + op.widthMeters / 2];
+        const [a, b] = f.extremos;
         return (
           <g key={op.id}>
             <polygon points={puntos(f.hueco)} fill="#ffffff" />
@@ -278,17 +324,22 @@ export default function CroquisLienzo({
       {/* Nombre y superficie útil de cada estancia */}
       {plan.rooms.map(r => {
         const fs = fuenteNombre(r);
-        const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+        const [cx, cy] = centroide(r.points);
         return (
           <g key={`txt-${r.id}`} pointerEvents="none" fontFamily="Helvetica, Arial, sans-serif" textAnchor="middle">
             <text x={px(cx)} y={px(cy - fs * 0.2)} fontSize={px(fs)} fontWeight="700" fill={TINTA}>{r.name}</text>
-            <text x={px(cx)} y={px(cy + fs * 1.05)} fontSize={px(fs * 0.85)} fill={TINTA_SUAVE}>{formatoM2(r.width * r.height)}</text>
+            <text x={px(cx)} y={px(cy + fs * 1.05)} fontSize={px(fs * 0.85)} fill={TINTA_SUAVE}>{formatoM2(Math.abs(areaConSigno(r.points)))}</text>
           </g>
         );
       })}
 
-      {/* Cotas automáticas (se actualizan al mover o redimensionar) */}
-      {mostrarCotas && plan.rooms.flatMap(r => cotasEstancia(r).map((c, i) => <Cota key={`ce-${r.id}-${i}`} forma={c} fuente={0.17} />))}
+      {/* Cotas automáticas (se actualizan al mover; pulsando una se escribe la medida) */}
+      {mostrarCotas && plan.rooms.flatMap(r => cotasEstancia(r).map((c) => (
+        <Cota
+          key={`ce-${r.id}-${c.edge}`} forma={c} fuente={0.17}
+          onPulsar={!soloLectura && onEditarCota ? (e) => { onSeleccion({ tipo: 'room', id: r.id }); onEditarCota({ roomId: r.id, edge: c.edge, x: e.clientX, y: e.clientY }); } : null}
+        />
+      )))}
       {mostrarCotas && cotasGenerales(plan).map((c, i) => <Cota key={`cg-${i}`} forma={c} color={TINTA} fuente={0.22} />)}
 
       {/* Cotas libres */}
@@ -334,20 +385,62 @@ export default function CroquisLienzo({
         );
       })}
 
-      {/* Selección de estancia y asas de redimensionado */}
+      {/* Estancia seleccionada: caja con asas, vértices arrastrables y "+" para añadir puntos */}
       {roomSel && !soloLectura && (
         <g>
-          <rect x={px(roomSel.x)} y={px(roomSel.y)} width={px(roomSel.width)} height={px(roomSel.height)} fill="none" stroke={SELECCION} strokeWidth={2} strokeDasharray="6 4" pointerEvents="none" />
-          {ASAS.map(asa => {
+          <polygon points={puntos(roomSel.points)} fill="none" stroke={SELECCION} strokeWidth={2} strokeDasharray="6 4" pointerEvents="none" />
+          {esRectangulo(roomSel) && ASAS.map(asa => {
             const hx = roomSel.x + (asa.includes('w') ? 0 : asa.includes('e') ? roomSel.width : roomSel.width / 2);
             const hy = roomSel.y + (asa.includes('n') ? 0 : asa.includes('s') ? roomSel.height : roomSel.height / 2);
-            const cursor = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' }[asa];
+            if (asa.length === 2) return null; // las esquinas son vértices
+            const cursor = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' }[asa];
             return (
               <rect
                 key={asa} x={px(hx) - 6} y={px(hy) - 6} width={12} height={12} rx={2}
                 fill="#ffffff" stroke={SELECCION} strokeWidth={2} style={{ cursor }}
                 onPointerDown={(e) => empezar(e, { tipo: 'asa', asa, original: roomSel, seleccion: { tipo: 'room', id: roomSel.id } })}
               />
+            );
+          })}
+          {!esRectangulo(roomSel) && roomSel.points.map((p, k) => (
+            <text
+              key={`ang-${k}`} x={px(p[0])} y={px(p[1]) - 10} fontSize={10} fill={SELECCION} textAnchor="middle"
+              fontFamily="Helvetica, Arial, sans-serif" fontWeight="700" pointerEvents="none"
+            >
+              {String(anguloInterior(roomSel, k)).replace('.', ',')}°
+            </text>
+          ))}
+          {roomSel.points.map((p, k) => {
+            const n = roomSel.points.length;
+            const q = roomSel.points[(k + 1) % n];
+            const mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+            return (
+              <circle
+                key={`mid-${k}`} cx={px(mid[0])} cy={px(mid[1])} r={5} fill={SELECCION} fillOpacity={0.35} stroke={SELECCION} strokeWidth={1}
+                style={{ cursor: 'copy' }}
+                onPointerDown={(e) => {
+                  // Añade un punto en el centro del lado y lo arrastra.
+                  const conPunto = insertarVertice(plan, roomSel.id, k, mid);
+                  const room = conPunto.rooms.find(r => r.id === roomSel.id);
+                  empezar(e, { tipo: 'vertice', k: k + 1, original: room, planBase: conPunto, seleccion: { tipo: 'room', id: roomSel.id, vertice: k + 1 } });
+                  onPreview(conPunto);
+                }}
+              >
+                <title>Arrastra para añadir un punto</title>
+              </circle>
+            );
+          })}
+          {roomSel.points.map((p, k) => {
+            const sel = seleccion.vertice === k;
+            return (
+              <circle
+                key={`v-${k}`} cx={px(p[0])} cy={px(p[1])} r={sel ? 8 : 7} fill={sel ? SELECCION : '#ffffff'} stroke={SELECCION} strokeWidth={2.5}
+                style={{ cursor: 'crosshair' }}
+                onPointerDown={(e) => empezar(e, { tipo: 'vertice', k, original: roomSel, seleccion: { tipo: 'room', id: roomSel.id, vertice: k } })}
+                onDoubleClick={(e) => { e.stopPropagation(); onAplicar(quitarVertice(plan, roomSel.id, k)); onSeleccion({ tipo: 'room', id: roomSel.id }); }}
+              >
+                <title>Arrastra para mover el punto · doble clic para quitarlo</title>
+              </circle>
             );
           })}
         </g>

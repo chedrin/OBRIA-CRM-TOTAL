@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Undo2,
@@ -22,19 +22,29 @@ import {
   AppWindow,
   Columns2,
   PencilRuler,
-  AlertTriangle
+  AlertTriangle,
+  Box,
+  Lock,
+  LockOpen
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import CroquisLienzo, { reajustarHuecos } from './CroquisLienzo';
 import { generateCroquisViaBackend } from '../../services/backendAiService';
 import { buildCroquisPdf } from '../../utils/croquisPdf';
 import {
+  ALTO_DEFECTO,
   ANCHO_HUECO,
   COLORES_ESTANCIA,
-  MUROS,
   NOMBRE_HUECO,
-  NOMBRE_MURO,
+  cambiarLargoLado,
+  centroide,
   croquisDesdeMediciones,
+  esRectangulo,
+  formatoMetros,
+  lados,
+  quitarVertice,
+  rehacerEstancia,
+  respetaFijas,
   formatoM2,
   leerMediciones,
   lienzoParaPlano,
@@ -52,6 +62,8 @@ import {
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400';
 const btnCls = 'px-2.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700';
 const MAX_FOTOS = 8;
+// La vista 3D (three.js) solo se descarga al abrirla.
+const Croquis3D = lazy(() => import('./Croquis3D'));
 
 const PALETA = [
   { tipo: 'room', label: 'Estancia', icon: Square },
@@ -115,6 +127,8 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
   const [mostrarCotas, setMostrarCotas] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [sinGuardar, setSinGuardar] = useState(false);
+  const [vista3d, setVista3d] = useState(false);
+  const [editCota, setEditCota] = useState(null); // { roomId, edge, x, y } al pulsar una cota del plano
   const fotosRef = useRef(fotos);
   fotosRef.current = fotos;
 
@@ -148,14 +162,30 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
     room: plan.rooms, hueco: plan.openings, texto: plan.labels, cota: plan.dimensions
   }[seleccion.tipo] || []).find(e => e.id === seleccion.id);
 
-  const cambiarRoom = (id, cambios) => aplicar(p => reajustarHuecos({
+  // Nombre, color, altura o caja (x, y, ancho, fondo: mueve o escala los puntos). Respeta las medidas fijas.
+  const cambiarRoom = (id, cambios) => {
+    const r = plan.rooms.find(q => q.id === id);
+    if (!r) return;
+    const { x = r.x, y = r.y, width = r.width, height = r.height, ...resto } = cambios;
+    const sx = width / (r.width || 1), sy = height / (r.height || 1);
+    const nueva = rehacerEstancia({ ...r, ...resto, points: r.points.map(([qx, qy]) => [x + (qx - r.x) * sx, y + (qy - r.y) * sy]) });
+    if (!respetaFijas(r, nueva)) {
+      showNotification('Esa medida está fija (🔒). Desbloquea el lado o cambia su medida en la lista de lados.', 'error');
+      return;
+    }
+    aplicar(p => reajustarHuecos({ ...p, rooms: p.rooms.map(q => (q.id === id ? nueva : q)) }, id));
+  };
+  // Medida de un lado (la escribe el usuario: manda sobre el bloqueo) y bloqueo del lado.
+  const cambiarLado = (id, edge, { largo, fija } = {}) => aplicar(p => reajustarHuecos({
     ...p,
     rooms: p.rooms.map(r => {
       if (r.id !== id) return r;
-      const n = { ...r, ...cambios };
-      return { ...n, area: redondear(n.width * n.height) };
+      let n = largo ? cambiarLargoLado(r, edge, largo) : r;
+      if (fija !== undefined) n = { ...n, fijas: fija ? [...new Set([...(n.fijas || []), edge])] : (n.fijas || []).filter(i => i !== edge) };
+      return n;
     })
   }, id));
+  const fijarTodos = (id, fija) => aplicar(p => ({ ...p, rooms: p.rooms.map(r => (r.id === id ? { ...r, fijas: fija ? r.points.map((_, i) => i) : [] } : r)) }));
   const cambiarHueco = (id, cambios) => aplicar(p => ({
     ...p,
     openings: p.openings.map(o => {
@@ -163,14 +193,20 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
       const n = { ...o, ...cambios };
       const room = p.rooms.find(r => r.id === n.roomId);
       if (!room) return n;
-      const widthMeters = Math.min(Math.max(0.4, n.widthMeters), Math.max(0.4, largoMuro(room, n.wall) - 0.1));
-      return { ...n, widthMeters, positionRatio: ratioQueCabe(room, n.wall, n.positionRatio, widthMeters) };
+      const widthMeters = Math.min(Math.max(0.4, n.widthMeters), Math.max(0.4, largoMuro(room, n.edge) - 0.1));
+      return { ...n, widthMeters, positionRatio: ratioQueCabe(room, n.edge, n.positionRatio, widthMeters) };
     })
   }));
   const cambiarLista = (lista, id, cambios) => aplicar(p => ({ ...p, [lista]: p[lista].map(e => (e.id === id ? { ...e, ...cambios } : e)) }));
 
   const eliminarSeleccion = useCallback(() => {
     if (!seleccion) return;
+    // Con un punto seleccionado, Supr quita ese punto (no la estancia).
+    if (seleccion.tipo === 'room' && Number.isInteger(seleccion.vertice)) {
+      aplicar(p => quitarVertice(p, seleccion.id, seleccion.vertice));
+      setSeleccion({ tipo: 'room', id: seleccion.id });
+      return;
+    }
     aplicar(p => {
       if (seleccion.tipo === 'room') return { ...p, rooms: p.rooms.filter(r => r.id !== seleccion.id), openings: p.openings.filter(o => o.roomId !== seleccion.id) };
       if (seleccion.tipo === 'hueco') return { ...p, openings: p.openings.filter(o => o.id !== seleccion.id) };
@@ -195,8 +231,15 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
     } else if (seleccion.tipo === 'texto') {
       aplicar(p => ({ ...p, labels: p.labels.map(l => (l.id === seleccion.id ? { ...l, rotation: ((l.rotation || 0) + 90) % 360 } : l)) }));
     } else if (seleccion.tipo === 'room') {
-      // Girar una estancia = intercambiar ancho y fondo.
-      aplicar(p => reajustarHuecos({ ...p, rooms: p.rooms.map(r => (r.id === seleccion.id ? { ...r, width: r.height, height: r.width } : r)) }, seleccion.id));
+      // Girar una estancia 90° sobre su centro (conserva las medidas y los huecos).
+      aplicar(p => ({
+        ...p,
+        rooms: p.rooms.map(r => {
+          if (r.id !== seleccion.id) return r;
+          const [cx, cy] = centroide(r.points);
+          return rehacerEstancia({ ...r, points: r.points.map(([x, y]) => [cx - (y - cy), cy + (x - cx)]) });
+        })
+      }));
     }
   }, [seleccion, aplicar]);
 
@@ -204,14 +247,14 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
     const r = elemento;
     if (!r) return;
     const id = nuevoId('room');
-    aplicar(p => ({ ...p, rooms: [...p.rooms, { ...r, id, name: `${r.name} (copia)`, x: redondear(r.x + r.width) }] }));
+    aplicar(p => ({ ...p, rooms: [...p.rooms, rehacerEstancia({ ...r, id, name: `${r.name} (copia)`, points: r.points.map(([x, y]) => [x + r.width, y]) })] }));
     setSeleccion({ tipo: 'room', id });
   };
 
   const moverSeleccion = useCallback((dx, dy) => {
     if (!seleccion) return;
     aplicar(p => {
-      if (seleccion.tipo === 'room') return { ...p, rooms: p.rooms.map(r => (r.id === seleccion.id ? { ...r, x: redondear(r.x + dx, 3), y: redondear(r.y + dy, 3) } : r)) };
+      if (seleccion.tipo === 'room') return { ...p, rooms: p.rooms.map(r => (r.id === seleccion.id ? rehacerEstancia({ ...r, points: r.points.map(([x, y]) => [x + dx, y + dy]) }) : r)) };
       if (seleccion.tipo === 'texto') return { ...p, labels: p.labels.map(l => (l.id === seleccion.id ? { ...l, x: redondear(l.x + dx, 3), y: redondear(l.y + dy, 3) } : l)) };
       if (seleccion.tipo === 'cota') return { ...p, dimensions: p.dimensions.map(d => (d.id === seleccion.id ? { ...d, x1: d.x1 + dx, x2: d.x2 + dx, y1: d.y1 + dy, y2: d.y2 + dy } : d)) };
       return p;
@@ -223,7 +266,8 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
     const ajustar = (v) => (paso ? Math.round(v / paso) * paso : v);
     if (tipo === 'room') {
       const id = nuevoId('room');
-      aplicar(p => ({ ...p, rooms: [...p.rooms, { id, name: 'Nueva estancia', x: redondear(Math.max(0, ajustar(x - 1.5)), 3), y: redondear(Math.max(0, ajustar(y - 1.5)), 3), width: 3, height: 3, area: 9, color: COLORES_ESTANCIA[p.rooms.length % COLORES_ESTANCIA.length] }] }));
+      const x0 = Math.max(0, ajustar(x - 1.5)), y0 = Math.max(0, ajustar(y - 1.5));
+      aplicar(p => ({ ...p, rooms: [...p.rooms, rehacerEstancia({ id, name: 'Nueva estancia', points: [[x0, y0], [x0 + 3, y0], [x0 + 3, y0 + 3], [x0, y0 + 3]], fijas: [], color: COLORES_ESTANCIA[p.rooms.length % COLORES_ESTANCIA.length] })] }));
       setSeleccion({ tipo: 'room', id });
     } else if (tipo in ANCHO_HUECO) {
       const muro = muroMasCercano(plan, x, y);
@@ -232,9 +276,9 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
         return;
       }
       const room = plan.rooms.find(r => r.id === muro.roomId);
-      const widthMeters = Math.min(ANCHO_HUECO[tipo], Math.max(0.4, largoMuro(room, muro.wall) - 0.1));
+      const widthMeters = Math.min(ANCHO_HUECO[tipo], Math.max(0.4, largoMuro(room, muro.edge) - 0.1));
       const id = nuevoId('op');
-      aplicar(p => ({ ...p, openings: [...p.openings, { id, type: tipo, roomId: room.id, wall: muro.wall, widthMeters, positionRatio: ratioQueCabe(room, muro.wall, muro.ratio, widthMeters), swing: 'in', hinge: 'start' }] }));
+      aplicar(p => ({ ...p, openings: [...p.openings, { id, type: tipo, roomId: room.id, edge: muro.edge, widthMeters, positionRatio: ratioQueCabe(room, muro.edge, muro.ratio, widthMeters), swing: 'in', hinge: 'start' }] }));
       setSeleccion({ tipo: 'hueco', id });
     } else if (tipo === 'texto') {
       const id = nuevoId('lbl');
@@ -508,7 +552,7 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
                   <input type="checkbox" checked={mostrarCotas} onChange={(e) => setMostrarCotas(e.target.checked)} className="accent-amber-500" />
                   Cotas automáticas
                 </label>
-                <p className="leading-relaxed text-slate-500">Supr: borrar · Flechas: mover (Mayús: 50 cm) · R: girar · Ctrl+Z: deshacer</p>
+                <p className="leading-relaxed text-slate-500">Supr: borrar · Flechas: mover (Mayús: 50 cm) · R: girar · Ctrl+Z: deshacer · Pulsa una cota para escribir su medida (🔒 = fija)</p>
               </div>
             </aside>
 
@@ -519,22 +563,43 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
                 <span className="w-10 text-center font-mono">{Math.round(zoom * 100)}%</span>
                 <button onClick={() => setZoom(z => Math.min(4, redondear(z + 0.25)))} className={btnCls} aria-label="Acercar"><ZoomIn className="w-3.5 h-3.5" /></button>
                 <button onClick={() => setZoom(1)} className={btnCls} aria-label="Ajustar a la pantalla"><Maximize className="w-3.5 h-3.5" /></button>
-                <span className="ml-auto">Útil {formatoM2(sup.util)} · {plan.rooms.length} estancias</span>
+                <button onClick={() => setVista3d(v => !v)} className={`${btnCls} ${vista3d ? '!bg-amber-500 !text-slate-950 !border-amber-400' : ''}`} aria-pressed={vista3d}>
+                  <Box className="w-3.5 h-3.5" /><span>{vista3d ? 'Volver a 2D' : 'Ver en 3D'}</span>
+                </button>
+                <span className="ml-auto hidden sm:inline">Útil {formatoM2(sup.util)} · {plan.rooms.length} estancias</span>
               </div>
               <div className="flex-1 overflow-auto p-2" style={{ background: '#e2e8f0' }}>
-                <div style={{ width: '100%' }}>
-                  <CroquisLienzo
-                    plan={plan}
-                    seleccion={seleccion}
-                    onSeleccion={setSeleccion}
-                    onPreview={previsualizar}
-                    onCommit={confirmarArrastre}
-                    onSoltar={agregar}
-                    paso={paso}
-                    mostrarCotas={mostrarCotas}
-                    zoom={zoom}
+                {vista3d ? (
+                  <Suspense fallback={<p className="text-xs text-slate-600 p-4">Cargando la vista 3D…</p>}>
+                    <Croquis3D plan={plan} nombreArchivo={`Croquis3D-${String(cabecera.numero || cabecera.obraTitulo || 'vivienda').replace(/[^\w.-]+/g, '_')}`} />
+                  </Suspense>
+                ) : (
+                  <div style={{ width: '100%' }}>
+                    <CroquisLienzo
+                      plan={plan}
+                      seleccion={seleccion}
+                      onSeleccion={setSeleccion}
+                      onPreview={previsualizar}
+                      onCommit={confirmarArrastre}
+                      onAplicar={aplicar}
+                      onSoltar={agregar}
+                      onEditarCota={setEditCota}
+                      onAviso={(t) => showNotification(t, 'error')}
+                      paso={paso}
+                      mostrarCotas={mostrarCotas}
+                      zoom={zoom}
+                    />
+                  </div>
+                )}
+                {editCota && (
+                  <EditorCota
+                    key={`${editCota.roomId}-${editCota.edge}`}
+                    datos={editCota}
+                    room={plan.rooms.find(r => r.id === editCota.roomId)}
+                    onAplicar={(cambios) => { cambiarLado(editCota.roomId, editCota.edge, cambios); setEditCota(null); }}
+                    onCancelar={() => setEditCota(null)}
                   />
-                </div>
+                )}
               </div>
             </div>
 
@@ -546,6 +611,8 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
                 plan={plan}
                 sup={sup}
                 cambiarRoom={cambiarRoom}
+                cambiarLado={cambiarLado}
+                fijarTodos={fijarTodos}
                 cambiarHueco={cambiarHueco}
                 cambiarLista={cambiarLista}
                 eliminar={eliminarSeleccion}
@@ -588,7 +655,50 @@ function Metros({ value, onChange, min = 0 }) {
   );
 }
 
-function Propiedades({ seleccion, elemento, plan, sup, cambiarRoom, cambiarHueco, cambiarLista, eliminar, girar, duplicar }) {
+// Ventanita junto a la cota pulsada: medida del lado y candado.
+function EditorCota({ datos, room, onAplicar, onCancelar }) {
+  const largo = room ? redondear(largoMuro(room, datos.edge), 3) : 0;
+  const [texto, setTexto] = useState(String(largo).replace('.', ','));
+  const [fija, setFija] = useState(Boolean(room?.fijas?.includes(datos.edge)));
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.select(); }, []);
+  if (!room) return null;
+  const aplicar = () => {
+    const n = parseFloat(texto.replace(',', '.'));
+    onAplicar({ largo: Number.isFinite(n) && n > 0.1 && Math.abs(n - largo) > 0.0005 ? n : null, fija });
+  };
+  const left = Math.min(datos.x, window.innerWidth - 230), top = Math.min(datos.y + 12, window.innerHeight - 140);
+  return (
+    <div className="fixed z-[60] w-56 bg-slate-900 border border-amber-500/60 rounded-xl shadow-2xl p-3 space-y-2" style={{ left, top }}>
+      <p className="text-[11px] font-bold text-white">{room.name} · lado {datos.edge + 1}</p>
+      <div className="flex items-center gap-2">
+        <input
+          ref={inputRef}
+          value={texto}
+          inputMode="decimal"
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); aplicar(); }
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancelar(); }
+          }}
+          className={inputCls}
+          aria-label="Medida del lado en metros"
+        />
+        <span className="text-xs text-slate-400">m</span>
+      </div>
+      <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+        <input type="checkbox" checked={fija} onChange={(e) => setFija(e.target.checked)} className="accent-amber-500" />
+        Medida fija (no cambia al mover puntos)
+      </label>
+      <div className="flex gap-1.5 justify-end">
+        <button onClick={onCancelar} className={btnCls}>Cancelar</button>
+        <button onClick={aplicar} className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold">Aplicar</button>
+      </div>
+    </div>
+  );
+}
+
+function Propiedades({ seleccion, elemento, plan, sup, cambiarRoom, cambiarLado, fijarTodos, cambiarHueco, cambiarLista, eliminar, girar, duplicar }) {
   const acciones = (extra = null) => (
     <div className="flex flex-wrap gap-1.5 pt-1">
       {extra}
@@ -625,17 +735,50 @@ function Propiedades({ seleccion, elemento, plan, sup, cambiarRoom, cambiarHueco
 
   if (seleccion.tipo === 'room') {
     const r = elemento;
+    const rect = esRectangulo(r);
+    const todasFijas = r.points.every((_, i) => (r.fijas || []).includes(i));
     return (
       <div className="space-y-2.5">
         <h4 className="text-sm font-bold text-white">Estancia</h4>
         <Campo label="Nombre"><input value={r.name} onChange={(e) => cambiarRoom(r.id, { name: e.target.value })} className={inputCls} /></Campo>
         <div className="grid grid-cols-2 gap-2">
-          <Campo label="Ancho (m)"><Metros value={r.width} min={0.5} onChange={(v) => cambiarRoom(r.id, { width: Math.max(0.5, v) })} /></Campo>
-          <Campo label="Fondo (m)"><Metros value={r.height} min={0.5} onChange={(v) => cambiarRoom(r.id, { height: Math.max(0.5, v) })} /></Campo>
+          {rect && <Campo label="Ancho (m)"><Metros value={r.width} min={0.5} onChange={(v) => cambiarRoom(r.id, { width: Math.max(0.5, v) })} /></Campo>}
+          {rect && <Campo label="Fondo (m)"><Metros value={r.height} min={0.5} onChange={(v) => cambiarRoom(r.id, { height: Math.max(0.5, v) })} /></Campo>}
           <Campo label="X (m)"><Metros value={r.x} onChange={(v) => cambiarRoom(r.id, { x: v })} /></Campo>
           <Campo label="Y (m)"><Metros value={r.y} onChange={(v) => cambiarRoom(r.id, { y: v })} /></Campo>
+          <Campo label="Altura libre (m)"><Metros value={r.alto || ALTO_DEFECTO} min={1.8} onChange={(v) => cambiarRoom(r.id, { alto: Math.min(8, Math.max(1.8, v)) })} /></Campo>
         </div>
-        <p className="text-xs text-slate-300">Superficie útil: <span className="font-mono font-bold text-white">{formatoM2(r.width * r.height)}</span></p>
+        <p className="text-xs text-slate-300">Superficie útil: <span className="font-mono font-bold text-white">{formatoM2(r.area)}</span></p>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Lados ({r.points.length})</span>
+            <button onClick={() => fijarTodos(r.id, !todasFijas)} className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold">
+              {todasFijas ? 'Liberar todas' : 'Fijar todas'}
+            </button>
+          </div>
+          {lados(r).map(({ i, largo }) => {
+            const fija = (r.fijas || []).includes(i);
+            return (
+              <div key={i} className="grid grid-cols-[44px_1fr_32px] gap-1.5 items-center">
+                <span className="text-[11px] text-slate-400">Lado {i + 1}</span>
+                <Metros value={redondear(largo, 2)} min={0.1} onChange={(v) => v > 0.1 && cambiarLado(r.id, i, { largo: v })} />
+                <button
+                  onClick={() => cambiarLado(r.id, i, { fija: !fija })}
+                  className={`p-1.5 rounded-lg border ${fija ? 'border-amber-500/60 text-amber-400 bg-amber-500/10' : 'border-slate-700 text-slate-500'}`}
+                  aria-label={fija ? `Liberar la medida del lado ${i + 1}` : `Fijar la medida del lado ${i + 1}`}
+                  title={fija ? 'Medida fija: no cambia al mover puntos' : 'Medida libre'}
+                >
+                  {fija ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            );
+          })}
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Arrastra los puntos para dar cualquier forma (romboide, en L…). Los círculos pequeños añaden un punto; doble clic o Supr sobre un punto lo quita. También puedes pulsar una cota del plano para escribir su medida.
+          </p>
+        </div>
+
         <Campo label="Color del suelo">
           <div className="flex flex-wrap gap-1.5">
             {COLORES_ESTANCIA.map(c => (
@@ -661,9 +804,9 @@ function Propiedades({ seleccion, elemento, plan, sup, cambiarRoom, cambiarHueco
         </Campo>
         <div className="grid grid-cols-2 gap-2">
           <Campo label="Ancho (m)"><Metros value={o.widthMeters} min={0.4} onChange={(v) => cambiarHueco(o.id, { widthMeters: v })} /></Campo>
-          <Campo label="Muro">
-            <select value={o.wall} onChange={(e) => cambiarHueco(o.id, { wall: e.target.value })} className={inputCls}>
-              {MUROS.map(m => <option key={m} value={m}>{NOMBRE_MURO[m]}</option>)}
+          <Campo label="Lado">
+            <select value={o.edge} onChange={(e) => cambiarHueco(o.id, { edge: Number(e.target.value) })} className={inputCls}>
+              {room && lados(room).map(({ i, largo }) => <option key={i} value={i}>{`Lado ${i + 1} (${formatoMetros(largo)})`}</option>)}
             </select>
           </Campo>
         </div>
@@ -671,7 +814,7 @@ function Propiedades({ seleccion, elemento, plan, sup, cambiarRoom, cambiarHueco
           <input type="range" min={0} max={1} step={0.01} value={o.positionRatio} onChange={(e) => cambiarHueco(o.id, { positionRatio: Number(e.target.value) })} className="w-full accent-amber-500" />
         </Campo>
         {o.type === 'door' && (
-          <p className="text-[11px] text-slate-400">Abre hacia {o.swing === 'out' ? 'fuera' : 'dentro'} · bisagras al {o.hinge === 'end' ? 'final' : 'inicio'} del muro. «Girar» cambia la apertura.</p>
+          <p className="text-[11px] text-slate-400">Abre hacia {o.swing === 'out' ? 'fuera' : 'dentro'} · bisagras al {o.hinge === 'end' ? 'final' : 'inicio'} del lado. «Girar» cambia la apertura.</p>
         )}
         {acciones()}
       </div>

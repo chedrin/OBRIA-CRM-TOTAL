@@ -18,6 +18,8 @@ SISTEMA DE COORDENADAS:
 - Cada estancia: x, y = esquina superior izquierda; width, height = medidas interiores.
 - Las estancias contiguas COMPARTEN muro: el borde de una coincide exactamente con el de la otra (por ejemplo, x de la segunda = x + width de la primera). No dejes huecos entre estancias ni las solapes.
 - Busca una envolvente compacta (rectangular o en L) como la de una vivienda real.
+- Estancias NO rectangulares (romboides, trapecios, en L, chaflanes) solo si las notas o las fotos lo indican claramente: añade "points" con los vértices en orden ([[x,y], ...], en metros) y mantén x, y, width, height como su caja. Los lados medidos conservan su medida.
+- Si una medición trae altura, ponla en "alto" (metros).
 
 CRITERIOS DE DISTRIBUCIÓN (cuando las notas y las fotos no digan otra cosa):
 - Salón/comedor y dormitorio principal dan a fachada (borde exterior del conjunto, preferiblemente al sur).
@@ -27,7 +29,7 @@ CRITERIOS DE DISTRIBUCIÓN (cuando las notas y las fotos no digan otra cosa):
 - No inventes estancias que no estén en las mediciones salvo pasillos o distribuidores imprescindibles.
 
 HUECOS ("openings"):
-- Cada hueco pertenece a una estancia ("roomId") y a uno de sus muros ("wall": "north" | "south" | "east" | "west").
+- Cada hueco pertenece a una estancia ("roomId") y a uno de sus muros ("wall": "north" | "south" | "east" | "west"). En estancias con "points" usa en su lugar "edge": índice del lado (el lado i va del punto i al i+1).
 - "positionRatio" = posición del CENTRO del hueco a lo largo del muro (0 = extremo oeste en muros north/south, o extremo norte en muros east/west; 1 = el otro extremo). Que el hueco quepa entero en el muro.
 - "type": "door" (abatible), "window" o "sliding_door" (corredera o balconera).
 - Anchos habituales: puerta interior 0,72 a 0,82 m; puerta de entrada 0,90 m; ventana 1,00 a 1,40 m; corredera o balconera 1,60 a 2,40 m.
@@ -45,7 +47,7 @@ ESTRUCTURA EXACTA DE LA RESPUESTA:
 {
   "canvas": { "widthMeters": 15, "heightMeters": 10, "scale": 50 },
   "rooms": [
-    { "id": "room-1", "name": "Salón - Comedor", "x": 0, "y": 0, "width": 5.2, "height": 4.1, "area": 21.32, "color": "#f8fafc" }
+    { "id": "room-1", "name": "Salón - Comedor", "x": 0, "y": 0, "width": 5.2, "height": 4.1, "area": 21.32, "alto": 2.6, "color": "#f8fafc" }
   ],
   "openings": [
     { "id": "op-1", "type": "door", "roomId": "room-1", "wall": "east", "positionRatio": 0.3, "widthMeters": 0.82, "swing": "in", "hinge": "start" }
