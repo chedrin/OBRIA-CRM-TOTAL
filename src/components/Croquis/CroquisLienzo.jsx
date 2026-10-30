@@ -19,7 +19,8 @@ import {
   centroide,
   esRectangulo,
   anguloInterior,
-  areaConSigno
+  areaConSigno,
+  limitesPlano
 } from '../../utils/croquisPlano';
 
 // Colores fijos de plano técnico (no dependen del tema claro/oscuro de la app).
@@ -85,6 +86,7 @@ function Cota({ forma, color = COTA, fuente = 0.2, onPulsar }) {
  * - onEditarCota({ roomId, edge, x, y }): el usuario pulsa la cota de un lado para escribir su medida.
  * - onAviso(texto): explicación cuando un arrastre choca con una medida fija.
  * - alto: altura fija en pantalla (p. ej. '11rem'); el plano se encaja dentro sin deformarse.
+ * - ajustado: encuadra solo el dibujo (miniaturas), sin el margen del lienzo de trabajo.
  */
 export default function CroquisLienzo({
   plan,
@@ -101,6 +103,7 @@ export default function CroquisLienzo({
   mostrarCotas = true,
   zoom = 1,
   alto = null,
+  ajustado = false,
   svgRef: svgRefExterno
 }) {
   const svgRefInterno = useRef(null);
@@ -109,6 +112,10 @@ export default function CroquisLienzo({
   const W = plan.canvas.widthMeters;
   const H = plan.canvas.heightMeters;
   const margen = 1.5;
+  const b = ajustado ? limitesPlano(plan) : null;
+  const caja = b && !b.vacio
+    ? [b.minX - 0.3, b.minY - 0.3, b.maxX - b.minX + 0.6, b.maxY - b.minY + 0.6]
+    : [-margen, -margen, W + margen * 2, H + margen * 2];
 
   const aMetros = (e) => {
     const svg = svgRef.current;
@@ -260,7 +267,7 @@ export default function CroquisLienzo({
   return (
     <svg
       ref={svgRef}
-      viewBox={`${px(-margen)} ${px(-margen)} ${px(W + margen * 2)} ${px(H + margen * 2)}`}
+      viewBox={caja.map(px).join(' ')}
       style={{ width: `${zoom * 100}%`, height: alto || 'auto', touchAction: soloLectura ? 'auto' : 'none', display: 'block', background: '#ffffff' }}
       onPointerMove={mover}
       onPointerUp={terminar}
