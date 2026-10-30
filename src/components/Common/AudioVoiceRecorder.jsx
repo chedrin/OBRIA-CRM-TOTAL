@@ -63,6 +63,7 @@ export default function AudioVoiceRecorder({
   const speechEndedRef = useRef(null);
   const speechDoneRef = useRef(true);
   const lastAudioRef = useRef(null);
+  const maxMicVolumeRef = useRef(0);
 
   const aiConfig = empresaConfig?.aiConfig || {};
   const hasRealOpenAiKey =
@@ -106,6 +107,15 @@ export default function AudioVoiceRecorder({
 
   // Algunos navegadores aceptan el dictado pero nunca devuelven texto: se avisa a los pocos segundos.
   useEffect(() => {
+    // Micrófono mudo (nivel 0% todo el rato): ni el dictado ni la IA tienen nada que oír.
+    if (isRecording && recordSeconds >= 4 && analyserRef.current && maxMicVolumeRef.current === 0 && liveStatus !== 'no-audio') {
+      setLiveStatus('no-audio');
+      return;
+    }
+    if (liveStatus === 'no-audio' && maxMicVolumeRef.current > 0) {
+      const hasDictation = window.SpeechRecognition || window.webkitSpeechRecognition;
+      setLiveStatus(!hasDictation ? 'unsupported' : liveTextRef.current ? 'listening' : 'silent');
+    }
     if (isRecording && recordSeconds >= 5 && liveStatus === 'listening' && !liveTextRef.current) setLiveStatus('silent');
     if (liveStatus === 'silent' && liveTextRef.current) setLiveStatus('listening');
   }, [isRecording, recordSeconds, liveStatus]);
@@ -140,6 +150,7 @@ export default function AudioVoiceRecorder({
         const avg = sum / dataArray.length;
         const volPct = Math.min(100, Math.round((avg / 128) * 100));
         setMicVolume(volPct);
+        if (volPct > maxMicVolumeRef.current) maxMicVolumeRef.current = volPct;
 
         for (let i = 0; i < barCount; i++) {
           const dataIndex = Math.floor((i / barCount) * dataArray.length);
@@ -253,6 +264,7 @@ export default function AudioVoiceRecorder({
       // 2. Transcripción en vivo con el reconocimiento de voz del navegador: el texto sale según se habla.
       // Chrome corta la sesión tras unos segundos de silencio, así que se reanuda mientras siga la grabación.
       liveTextRef.current = '';
+      maxMicVolumeRef.current = 0;
       recordingActiveRef.current = true;
       speechDoneRef.current = false;
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -490,7 +502,7 @@ export default function AudioVoiceRecorder({
   };
 
   return (
-    <div className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+    <div className="bg-slate-950 p-3 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
       
       {/* 1. Header: Title & AI Cloud Engine Status */}
       {!hideHeader && (
@@ -509,19 +521,19 @@ export default function AudioVoiceRecorder({
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            Transcripción con IA (Whisper / Gemini)
+            Texto en directo · IA de respaldo
           </span>
         </div>
       </div>
       )}
 
       {/* 2. Recording Waveform Canvas & Control Buttons */}
-      <div className="@container bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
+      <div className="@container bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-800 space-y-3">
         
-        <div className="flex flex-col @xl:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col @xl:flex-row items-center gap-4">
           
           {/* Left: Dynamic Real Sound Waves */}
-          <div className="w-full @xl:w-1/2 space-y-1.5">
+          <div className="w-full @xl:flex-1 min-w-0 space-y-1.5">
             <div className="bg-slate-950 rounded-xl p-2.5 border border-slate-800 flex flex-col justify-center">
               <canvas
                 ref={canvasRef}
@@ -611,7 +623,9 @@ export default function AudioVoiceRecorder({
 
         {isRecording && liveStatus && liveStatus !== 'listening' && (
           <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-            {liveStatus === 'silent'
+            {liveStatus === 'no-audio'
+              ? 'El micrófono no está recibiendo sonido (nivel 0%). Elige el micrófono correcto en chrome://settings/content/microphone, comprueba en Windows (Configuración > Sonido > Entrada) que no está silenciado y cierra Teams o Zoom si lo están usando.'
+              : liveStatus === 'silent'
               ? 'El navegador aún no ha escrito nada de lo que dices. Si estás hablando, su dictado en directo no funciona aquí (prueba Chrome o Edge actualizados). Al parar se transcribirá con la IA.'
               : liveStatus === 'unsupported'
               ? 'Este navegador no escribe el texto mientras hablas (pasa en Firefox, Brave y algunos móviles). Usa Chrome o Edge para verlo en directo; al parar se transcribirá con la IA.'
