@@ -31,6 +31,8 @@ import {
   EyeOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 const TRADES_AI_MATCH = [
   { id: 'alicatado', label: 'Alicatado Porcelánico Rectificado Gran Formato', gremio: 'Albañilería' },
@@ -1222,8 +1224,9 @@ export default function ObrerosList() {
       {/* ========================================================================= */}
       {/* MODAL 1: DAR DE ALTA EMPLEADO (CRUD COMPLETO)                             */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-6 shadow-2xl space-y-5 my-8">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -1553,14 +1556,16 @@ export default function ObrerosList() {
 
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL 2: FICHA INTEGRAL DE EMPLEADO (DETALLE + TABS + EDICIÓN)            */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showDetailModal && selectedEmployee && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-5 my-8">
             
             {/* Modal Header */}
@@ -1935,14 +1940,16 @@ export default function ObrerosList() {
             </div>
 
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL 3: TRAMITAR BAJA / DESPIDO (BORRADO LÓGICO Y SUSPENSIÓN INMEDIATA)  */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showTerminationModal && employeeToTerminate && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-rose-500/40 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -2009,14 +2016,16 @@ export default function ObrerosList() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL 4: AÑADIR AUSENCIA / BAJA IT                                        */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showAddAbsenceModal && selectedEmployee && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -2107,14 +2116,16 @@ export default function ObrerosList() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL 5: RESUMEN MENSUAL NÓMINAS PARA GESTORÍA                            */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showGestoriaModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-2xl p-6 shadow-2xl space-y-4 my-8">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
@@ -2220,8 +2231,9 @@ export default function ObrerosList() {
               </div>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL 6: CALIFICAR TRABAJO (PRESERVADO)                                   */}
@@ -2247,7 +2259,7 @@ export default function ObrerosList() {
           : 'Deficiente / Calificación Muy Baja';
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
             <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4 my-6">
               
               {/* Modal Header */}
@@ -2478,15 +2490,16 @@ export default function ObrerosList() {
                 </div>
               </form>
             </div>
-          </div>
+          </ModalOverlay>
         );
       })()}
 
       {/* ========================================================================= */}
       {/* MODAL CONFIRMACIÓN: CREDENCIALES GENERADAS PARA EL OPERARIO               */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {createdCredentialsModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-emerald-500/40 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5">
             <div className="text-center space-y-2">
               <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/30">
@@ -2569,8 +2582,9 @@ export default function ObrerosList() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

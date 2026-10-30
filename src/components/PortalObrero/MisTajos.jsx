@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ListChecks, Loader2, X } from 'lucide-react';
 import ReporteAvanceSheet, { PartidaCard } from '../Avance/ReporteAvanceSheet';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 /**
  * "Mis tajos / partidas de hoy" del Portal del Obrero: solo las fases y partidas
@@ -87,16 +89,18 @@ export default function MisTajos({ obraId, obreroId, isAdmin = false, onAvailabl
         ))}
       </div>
 
+      <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 bg-slate-950 overflow-y-auto text-slate-100">
+        <ModalOverlay className="fixed inset-0 z-50 bg-slate-950 overflow-y-auto text-slate-100">
           <div className="max-w-md mx-auto px-4 py-6">
             <button type="button" onClick={() => setOpen(null)} className="absolute top-4 right-4 text-slate-400" aria-label="Cerrar">
               <X className="w-6 h-6" />
             </button>
             <ReporteAvanceSheet partida={open} onSubmit={submit} onClose={() => setOpen(null)} />
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
     </div>
   );
 }

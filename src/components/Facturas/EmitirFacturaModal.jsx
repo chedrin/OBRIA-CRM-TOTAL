@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Receipt, AlertTriangle, FileCheck2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { calcularIvaObra, getObraFiscal, guardarObraFiscal } from '../../services/facturacionService';
+import ModalOverlay from '../Common/ModalOverlay';
 
 const inputClass = 'w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white text-xs sm:text-sm focus:outline-none focus:border-emerald-400';
 
@@ -113,7 +114,7 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
   return (
     // El contenedor hace scroll y el formulario arranca arriba: con items-center, si el modal
     // es más alto que la pantalla se cortaba por arriba sin poder llegar a la cabecera.
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm overflow-y-auto">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm overflow-y-auto">
       <div className="min-h-full flex items-start justify-center p-3 sm:p-6">
       <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-700 w-full max-w-6xl rounded-2xl p-4 sm:p-6 shadow-2xl text-xs sm:text-sm grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] gap-6">
         <div className="space-y-4 min-w-0">
@@ -320,7 +321,7 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
         </aside>
       </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

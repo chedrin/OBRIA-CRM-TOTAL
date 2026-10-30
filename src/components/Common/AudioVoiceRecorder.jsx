@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { transcribeAudio } from '../../services/aiAudioTextService';
 import { useApp } from '../../context/AppContext';
+import ModalOverlay from './ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function AudioVoiceRecorder({
   onTranscriptChange,
@@ -791,8 +793,9 @@ export default function AudioVoiceRecorder({
       </div>
 
       {/* 4. Modal Guía: Cómo activar Whisper y la IA con API Key */}
+      <AnimatePresence>
       {showKeyGuideModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-amber-500/40 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
             
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -868,8 +871,9 @@ export default function AudioVoiceRecorder({
             </div>
 
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );

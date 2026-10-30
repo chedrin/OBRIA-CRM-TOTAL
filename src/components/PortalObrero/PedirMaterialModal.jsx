@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { flattenPlan } from '../../utils/avanceObra';
 import { X, Loader2, Plus, Trash2 } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
 
 // Botón "Pedir material / avisar" del Portal del Obrero: crea una necesidad de obra
 // y el jefe de obra recibe el aviso al instante (panel y notificación push).
@@ -75,7 +76,7 @@ export default function PedirMaterialModal({ isOpen, onClose, obra, onSent }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
+    <ModalOverlay className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
       <form onSubmit={submit} className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex justify-between items-center">
           <h3 className="font-black text-white">Pedir material o avisar</h3>
@@ -136,6 +137,6 @@ export default function PedirMaterialModal({ isOpen, onClose, obra, onSent }) {
           {busy && <Loader2 className="w-4 h-4 animate-spin" />} Enviar a la oficina
         </button>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

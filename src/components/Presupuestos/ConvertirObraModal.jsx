@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { HardHat, X, CheckCircle2, AlertCircle, Calendar, MapPin, User, Hash, Euro } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
 
 const todayIso = () => new Date().toISOString().split('T')[0];
 const addDaysIso = (iso, days) => {
@@ -104,7 +105,7 @@ export default function ConvertirObraModal({ presupuesto, onClose, onConfirm }) 
     : null);
 
   return (
-    <div
+    <ModalOverlay
       className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -213,6 +214,6 @@ export default function ConvertirObraModal({ presupuesto, onClose, onConfirm }) 
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

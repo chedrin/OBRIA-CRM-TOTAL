@@ -35,6 +35,8 @@ import TaskProgressSelector from '../PortalObrero/TaskProgressSelector';
 import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   const {
@@ -1389,8 +1391,9 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
       )}
 
       {/* Modal Nuevo Parte Diario */}
+      <AnimatePresence>
       {showNewDiarioModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-bold text-white">Nuevo Parte en Diario de Obra</h3>
             <form onSubmit={handleSaveDiario} className="space-y-3 text-xs sm:text-sm">
@@ -1474,12 +1477,14 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Nuevo Material */}
+      <AnimatePresence>
       {showNewMaterialModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-bold text-white">Añadir Necesidad de Material</h3>
             <form onSubmit={handleSaveMaterial} className="space-y-3 text-xs sm:text-sm">
@@ -1556,8 +1561,9 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Editar / Añadir Partida de Catálogo de la Obra */}
       {showNewPriceModal && (
@@ -1572,8 +1578,9 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
       )}
 
       {/* Modal Asignar Nueva Tarea (Realtime Dispatch) */}
+      <AnimatePresence>
       {showNewTaskModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
@@ -1645,12 +1652,14 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* Modal Enviar Aviso Técnico / Instrucción */}
+      <AnimatePresence>
       {showNewAlertModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-amber-500/40 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
@@ -1732,8 +1741,9 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {showCroquis && (
         <CroquisEditorModal

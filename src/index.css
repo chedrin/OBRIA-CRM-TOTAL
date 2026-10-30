@@ -191,8 +191,9 @@
 /* Cualquier modal (capa fija con desenfoque): fundido del fondo y escala del panel. */
 @keyframes om-backdrop { from { opacity: 0; } }
 @keyframes om-pop { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
-.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md) { animation: om-backdrop 180ms ease-out backwards; }
-.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md) > :not(.fixed) { animation: om-pop 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+/* Los que usan <ModalOverlay> (data-motion-modal) se animan con motion, entrada y salida. */
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md):not([data-motion-modal]) { animation: om-backdrop 180ms ease-out backwards; }
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md):not([data-motion-modal]) > :not(.fixed) { animation: om-pop 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
 /* Cambio de pestaña. */
 @keyframes om-page { from { opacity: 0; transform: translateY(6px); } }

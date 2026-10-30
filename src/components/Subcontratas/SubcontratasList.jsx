@@ -27,6 +27,8 @@ import confetti from 'canvas-confetti';
 import { extractPricesViaBackend } from '../../services/backendAiService';
 import { buildGremioQuote } from '../../services/priceBaseService';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function SubcontratasList() {
   const {
@@ -1121,8 +1123,9 @@ export default function SubcontratasList() {
       {/* ========================================================================= */}
       {/* MODAL 1: ALTA NUEVA SUBCONTRATA (CON DATOS PRL Y SEGURO RC)               */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showAddSubModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-6 shadow-2xl space-y-4 my-8">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -1264,14 +1267,16 @@ export default function SubcontratasList() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL 2: FICHA COMPLETA DE SUBCONTRATA (PRL + PRESUPUESTOS + FACTURAS...) */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {selectedSubcontractor && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-4 my-8">
             
             {/* Header */}
@@ -1581,14 +1586,16 @@ export default function SubcontratasList() {
             </div>
 
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL: VINCULAR PRESUPUESTO                                               */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showAddBudgetModal && selectedSubcontractor && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-base font-bold text-white">Vincular Presupuesto a Obra</h3>
             <form onSubmit={handleAddBudgetSubmit} className="space-y-3 text-xs">
@@ -1634,14 +1641,16 @@ export default function SubcontratasList() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL: REGISTRAR FACTURA                                                  */}
       {/* ========================================================================= */}
+      <AnimatePresence>
       {showAddInvoiceModal && selectedSubcontractor && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-base font-bold text-white">Registrar Factura de Subcontrata</h3>
             <form onSubmit={handleAddInvoiceSubmit} className="space-y-3 text-xs">
@@ -1701,8 +1710,9 @@ export default function SubcontratasList() {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
       {/* ========================================================================= */}
       {/* MODAL: AÑADIR PARTIDA A BASE DE PRECIOS                                   */}

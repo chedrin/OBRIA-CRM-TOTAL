@@ -13,6 +13,7 @@ import {
   User,
   Filter
 } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
 
 export default function AvisosTecnicosModal({
   isOpen = false,
@@ -104,7 +105,7 @@ export default function AvisosTecnicosModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+    <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
       <div className="bg-slate-900 border border-slate-700/80 w-full max-w-lg rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         
         {/* Header */}
@@ -301,6 +302,6 @@ export default function AvisosTecnicosModal({
         </div>
 
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

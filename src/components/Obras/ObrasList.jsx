@@ -20,6 +20,8 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
+import ModalOverlay from '../Common/ModalOverlay';
+import { AnimatePresence } from 'motion/react';
 
 export default function ObrasList() {
   const {
@@ -370,8 +372,9 @@ export default function ObrasList() {
       )}
 
       {/* Modal Nueva Obra con Selección de Presupuesto */}
+      <AnimatePresence>
       {showNewModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
@@ -595,8 +598,9 @@ export default function ObrasList() {
               </form>
             )}
           </div>
-        </div>
+        </ModalOverlay>
       )}
+      </AnimatePresence>
 
     </div>
   );
