@@ -630,7 +630,11 @@ async function handleCreateDoc(req, res, parseMultipart) {
   const { fields, files } = await readMultipart(req, parseMultipart);
   const obra = await getObra(ID(fields.obra_id));
   if (!obra) throw httpError(404, "Obra no encontrada.");
-  const found = findPartida(flattenPlan(obra), ID(fields.fase_id), ID(fields.partida_id));
+  // Sin partida = documento de la fase entera (también en fases que tienen partidas).
+  const plan = flattenPlan(obra);
+  const partidaId = ID(fields.partida_id);
+  const fase = plan.fases.find((f) => f.id === ID(fields.fase_id));
+  const found = fase && (partidaId ? findPartida(plan, fase.id, partidaId) : { fase, partida: { id: WHOLE_PHASE } });
   if (!found) throw httpError(400, "La fase o partida no existe en la obra.");
   const kind = DOC_KINDS.has(fields.kind) ? fields.kind : null;
   if (!kind) throw httpError(400, "Indica si es presupuesto o factura.");
