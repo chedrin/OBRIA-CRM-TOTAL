@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useApp } from '../../context/AppContext';
+import { useSyncedForm } from '../../hooks/useSyncedForm';
+import { comprimirImagen } from '../../utils/imagenes';
 import {
   Building2,
   HardHat,
@@ -12,7 +14,7 @@ import {
 export default function PerfilDirectorConfig() {
   const { empresaConfig, updateEmpresaConfig, showNotification } = useApp();
 
-  const [form, setForm] = useState({
+  const [form, setForm, marcarGuardado] = useSyncedForm(empresaConfig, (empresaConfig) => ({
     razonSocial: empresaConfig?.razonSocial || 'ObraMaster AI Construcciones y Reformas SL',
     nombreComercial: empresaConfig?.nombreComercial || 'ObraMaster AI',
     cifNif: empresaConfig?.cifNif || 'B87654321',
@@ -30,26 +32,26 @@ export default function PerfilDirectorConfig() {
     directorColegiado: empresaConfig?.directorColegiado || 'COAATM-4821',
     logoUrl: empresaConfig?.logoUrl || 'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f8?auto=format&fit=crop&w=200&q=80',
     firmaUrl: empresaConfig?.firmaUrl || 'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=300&q=80'
-  });
+  }));
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleFileUpload = (field, e) => {
+  const handleFileUpload = async (field, e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        handleChange(field, reader.result);
-        showNotification(`Archivo cargado para ${field === 'logoUrl' ? 'el logotipo' : 'la firma/sello'}`);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    try {
+      handleChange(field, await comprimirImagen(file));
+      showNotification(`Archivo cargado para ${field === 'logoUrl' ? 'el logotipo' : 'la firma/sello'}. Pulsa Guardar para conservarlo.`);
+    } catch (err) {
+      showNotification(err.message || 'No se pudo cargar la imagen.', 'error');
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    marcarGuardado();
     updateEmpresaConfig(form);
   };
 
