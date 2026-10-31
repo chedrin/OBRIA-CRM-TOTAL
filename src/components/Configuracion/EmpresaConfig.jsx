@@ -14,10 +14,12 @@ import {
   Database,
   BellRing,
   Mail,
-  ScanLine
+  ScanLine,
+  FileSignature
 } from 'lucide-react';
 import GestionUsuarios from './GestionUsuarios';
 import PerfilDirectorConfig from './PerfilDirectorConfig';
+import PlantillaPdfConfig from './PlantillaPdfConfig';
 import MotorIaConfig from './MotorIaConfig';
 import AiMemoryConfig from './AiMemoryConfig';
 import PresupuestosModeloConfig from './PresupuestosModeloConfig';
@@ -65,6 +67,7 @@ export default function EmpresaConfig() {
       <div role="tablist" aria-label="Secciones de ajustes" className="flex flex-nowrap md:flex-wrap gap-1.5 border-b border-slate-800 pb-2 min-w-0 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {[
           { id: 'perfil_director', label: 'Perfil Director & Empresa', icon: Building2, badge: 'Acreditado' },
+          { id: 'plantilla_pdf', label: 'Plantilla PDF', icon: FileSignature },
           { id: 'motor_ia', label: 'Motor Central IA (BYOK)', icon: Sparkles, badge: 'Multimodal' },
           { id: 'memoria_ia', label: 'Memoria de la IA', icon: Brain, badge: 'Aprende' },
           { id: 'presupuestos_modelo', label: 'Presupuestos Modelo (PDFs IA)', icon: FileText, badge: `${activeRefsCount} Activos` },
@@ -112,6 +115,9 @@ export default function EmpresaConfig() {
 
       {/* TAB PERFIL DIRECTOR & EMPRESA */}
       {activeSubTab === 'perfil_director' && <PerfilDirectorConfig />}
+
+      {/* TAB PLANTILLA PDF (presupuestos y facturas) */}
+      {activeSubTab === 'plantilla_pdf' && <PlantillaPdfConfig />}
 
       {/* TAB MOTOR CENTRAL IA (BYOK) */}
       {activeSubTab === 'motor_ia' && <MotorIaConfig />}
