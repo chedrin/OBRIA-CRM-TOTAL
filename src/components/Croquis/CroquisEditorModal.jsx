@@ -667,7 +667,7 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
             </div>
 
             {/* Propiedades */}
-            <aside className="lg:w-64 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-800 p-3 space-y-3 overflow-y-auto bg-slate-950/50 max-h-[40vh] lg:max-h-none">
+            <aside className="lg:w-64 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-800 p-3 space-y-3 overflow-y-auto bg-slate-950/50 max-h-[40dvh] lg:max-h-none">
               <Propiedades
                 seleccion={seleccion}
                 elemento={elemento}

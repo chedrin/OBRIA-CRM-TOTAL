@@ -195,6 +195,32 @@
 .fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md):not([data-motion-modal]) { animation: om-backdrop 180ms ease-out backwards; }
 .fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md):not([data-motion-modal]) > :not(.fixed) { animation: om-pop 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
+/* Modales que no se cortan por arriba.
+   Con `flex items-center` (o `items-end`), un panel más alto que la pantalla se sale por arriba y esa
+   parte no se alcanza con el scroll. Aquí el fondo hace scroll y el panel se alinea arriba con
+   margin:auto, que lo centra si cabe y deja ver su principio si no cabe. Va fuera de las capas de
+   Tailwind para ganar a las clases de cada modal, así cubre todos sin tocarlos uno a uno. */
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md, [data-motion-modal]) {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md, [data-motion-modal]).flex:is(.items-center, .items-end, [class*="sm:items-center"]) {
+  align-items: flex-start;
+}
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md, [data-motion-modal]).flex.items-center > :not(.fixed, .absolute) {
+  margin-block: auto;
+}
+/* Hoja inferior en móvil (items-end): pegada abajo si cabe; si no, empieza arriba. */
+.fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md, [data-motion-modal]).flex.items-end > :not(.fixed, .absolute) {
+  margin-top: auto;
+  margin-bottom: 0;
+}
+@media (min-width: 640px) {
+  .fixed.inset-0:is(.backdrop-blur-sm, .backdrop-blur-md, [data-motion-modal]).flex[class*="sm:items-center"] > :not(.fixed, .absolute) {
+    margin-block: auto;
+  }
+}
+
 /* Cambio de pestaña. */
 @keyframes om-page { from { opacity: 0; transform: translateY(6px); } }
 .om-page-enter { animation: om-page 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
