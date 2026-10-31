@@ -9,7 +9,8 @@ import ModalOverlay from '../Common/ModalOverlay';
 /**
  * Asignación rápida de ejecutores: una fase completa (se hereda en todas sus
  * partidas) o varias partidas sueltas, a un obrero propio o a una subcontrata.
- * `preset` = { faseId, partidaId } para abrirla desde una fila concreta.
+ * `preset` = { faseId, partidaId, cambiar } para abrirla desde una fila concreta;
+ * `cambiar` = la partida ya tiene ejecutor y el nuevo lo sustituye solo en ella.
  */
 export default function AsignacionRapida({ obra, preset = null, onClose, onSaved }) {
   const { obreros = [], subcontractors = [] } = useApp() || {};
@@ -20,7 +21,7 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
   const [selected, setSelected] = useState(() => new Set(preset?.partidaId ? [preset.partidaId] : []));
   const [type, setType] = useState('obrero_interno');
   const [who, setWho] = useState('');
-  const [form, setForm] = useState({ start_date: '', end_date: '', planned_rate: '', notes: '', replace: false });
+  const [form, setForm] = useState({ start_date: '', end_date: '', planned_rate: '', notes: '', replace: Boolean(preset?.cambiar), reset_partidas: false });
   const [phone, setPhone] = useState('');
   const [linkDays, setLinkDays] = useState(60);
   const [link, setLink] = useState(null); // enlace mágico creado al asignar a una subcontrata
@@ -97,7 +98,7 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
     <ModalOverlay className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
       <form onSubmit={submit} className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex justify-between items-center">
-          <h3 className="font-black text-white flex items-center gap-2"><UserPlus className="w-4 h-4 text-amber-400" /> Asignar ejecutor</h3>
+          <h3 className="font-black text-white flex items-center gap-2"><UserPlus className="w-4 h-4 text-amber-400" /> {preset?.cambiar ? 'Cambiar ejecutor' : 'Asignar ejecutor'}</h3>
           <button type="button" onClick={onClose} className="text-slate-400" aria-label="Cerrar"><X className="w-5 h-5" /></button>
         </div>
 
@@ -109,12 +110,12 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
           <div className="rounded-xl border border-slate-800 bg-slate-950 p-2 space-y-1 max-h-48 overflow-y-auto">
             <label className="flex items-center gap-2 text-sm font-bold text-white px-1 py-1">
               <input type="checkbox" checked={selected.size === 0} onChange={() => setSelected(new Set())} className="accent-amber-500" />
-              Fase completa (se aplica a todas sus partidas)
+              Fase completa (sus partidas lo heredan y luego puedes cambiar cada una)
             </label>
             {fase.partidas.map((p) => (
               <label key={p.id} className="flex items-center gap-2 text-xs text-slate-300 px-1 py-0.5">
                 <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} className="accent-amber-500" />
-                <span className="font-mono text-amber-400">{p.codigo}</span>
+                <span className="font-mono text-amber-400 shrink-0">{p.codigo}</span>
                 <span className="truncate">{p.titulo}</span>
               </label>
             ))}
@@ -164,6 +165,12 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
           <input type="checkbox" checked={form.replace} onChange={(e) => setForm({ ...form, replace: e.target.checked })} className="accent-amber-500" />
           Sustituir a quien lo tuviera asignado
         </label>
+        {hasPartidas && selected.size === 0 && (
+          <label className="flex items-start gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={form.reset_partidas} onChange={(e) => setForm({ ...form, reset_partidas: e.target.checked })} className="accent-amber-500 mt-0.5" />
+            Aplicar también a las partidas que ya tienen su propio ejecutor (vuelven a heredar el de la fase)
+          </label>
+        )}
 
         {error && <p className="text-sm text-rose-400 font-semibold">{error}</p>}
         <div className="flex gap-2 justify-end">

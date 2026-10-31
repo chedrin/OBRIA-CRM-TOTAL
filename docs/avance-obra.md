@@ -73,12 +73,23 @@ Además, **Reportar avance (%)** lista todas las partidas de su empresa en esa o
 | `GET /api/avance/obras/:obraId` · `GET /api/avance/logs` | Admin |
 | `POST /api/avance/assignments` (devuelve `link` para subcontratas) · `PATCH`/`DELETE /api/avance/assignments/:id` | Admin |
 | `POST /api/avance/certify` | Admin |
+| `POST /api/avance/docs` (multipart, archivo `archivo`) · `PATCH`/`DELETE /api/avance/docs/:id` · `GET /api/avance/docs/:id/file` | Admin |
 | `POST /api/sub-tokens/:id/resend` · `POST /api/sub-tokens/assignment/:assignmentId` (reenviar enlace) | Admin |
 | `POST /api/whatsapp/send` | Admin (opcional, Cloud API) |
 
-## 7. Puesta en marcha
+## 7. Asignar fases y partidas, presupuesto y factura de la subcontrata
 
-1. Supabase > SQL Editor: ejecutar `supabase_schema_avance_obra.sql` (después de `supabase_schema_notificaciones.sql`) y `supabase_migration_enlaces_reenvio.sql`.
+- **Asignar una fase** (botón de persona en la cabecera de la fase): sus partidas lo heredan (etiqueta `·F`). El ejecutor de la fase se ve en la cabecera, con cuántas partidas tienen ejecutor propio.
+- **Cambiar una partida**: botón de persona en la partida o **Cambiar** en su detalle. Por defecto sustituye solo en esa partida; el resto sigue heredando la fase.
+- Al reasignar la fase, la casilla **Aplicar también a las partidas que ya tienen su propio ejecutor** quita esas excepciones (`reset_partidas`).
+- **Presupuesto y factura** (icono de documento en la fase, o sección en el detalle de la partida): número, fecha, importe sin IVA, IVA y archivo PDF o foto (bucket privado `subcontrata-docs`, hasta 15 MB). Tabla `subcontract_documents` (`supabase_migration_documentos_subcontrata.sql`).
+- **Beneficio o pérdida** (`subcontractMargins` en `src/utils/avanceObra.js`): lo que cobramos (importe de la partida o fase en el presupuesto firmado) menos el coste de la subcontrata, en base imponible. Manda la factura; si aún no hay, su presupuesto. Un documento de fase cubre toda la fase; uno de partida, solo esa partida; la fase suma los dos. Se ve en la fase, en la partida y en el total de la obra ("Beneficio subcontratas"), y la desviación de la factura frente a su presupuesto.
+
+Capturas en `docs/capturas/asignar-fases-subcontratas/`.
+
+## 8. Puesta en marcha
+
+1. Supabase > SQL Editor: ejecutar `supabase_schema_avance_obra.sql` (después de `supabase_schema_notificaciones.sql`), `supabase_migration_enlaces_reenvio.sql` y `supabase_migration_documentos_subcontrata.sql`.
 2. Cada obrero debe tener su usuario vinculado a su ficha (`profiles.obrero_id`); los creados desde Ajustes > Usuarios ya lo están.
 3. Opcional: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` (y `WHATSAPP_TEMPLATE_NAME`) en Render y `.env`, sin prefijo `VITE_`.
 4. Probar: Obras y Reformas > Cronograma > pulsar la obra > Asignar una partida a una subcontrata > Abrir WhatsApp; abrir el enlace en el móvil, pedir material y marcar terminada; volver al panel y validar el avance.

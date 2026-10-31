@@ -117,6 +117,16 @@ export async function readForm(req, parseMultipart) {
   return { fields, photos: files.fotos || [] };
 }
 
+/** Formulario multipart con cualquier archivo (devuelve todos los campos de archivo). */
+export async function readMultipart(req, parseMultipart) {
+  const contentType = String(req.headers["content-type"] || "");
+  if (!contentType.includes("multipart/form-data")) return { fields: await readJson(req), files: {} };
+  const boundary = contentType.match(/boundary=([^;]+)/i)?.[1]?.trim();
+  if (!boundary) throw httpError(400, "Formulario incorrecto.");
+  const buffer = await readBuffer(req, MAX_UPLOAD_BYTES);
+  return parseMultipart(buffer, boundary);
+}
+
 function clientIp(req) {
   const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   return forwarded || req.socket?.remoteAddress || "desconocida";
