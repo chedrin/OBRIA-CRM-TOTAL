@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { ScanLine, Smartphone, FileCheck2, Info } from 'lucide-react';
+import { ScanLine, Smartphone, FileCheck2, Info, Box } from 'lucide-react';
+import { ACCEPT_VISOR } from '../../utils/formatos3D';
+
+const VisorEscaneo3D = lazy(() => import('../Escaneo/VisorEscaneo3D'));
 
 // Apps de escaneo con LiDAR (iPhone 12 Pro o posterior "Pro", iPad Pro). Sus exportaciones gratuitas cambian con el tiempo.
 const APPS = [
@@ -18,9 +21,18 @@ const FORMATOS = [
   ['PNG / JPG', 'Imagen del plano acotado: la IA del croquis lo copia (no es una medición).']
 ];
 
+// Solo visor 3D (se ven y se miden a mano, pero no dibujan el croquis).
+const FORMATOS_VISOR = [
+  ['GLB / glTF, USDZ, FBX', 'Modelos 3D con textura (Polycam, Scaniverse, el «Compartir» de Apple).'],
+  ['PLY, STL', 'Malla o nube de puntos (3D Scanner App, Polycam).'],
+  ['LAS, PCD, XYZ, PTS', 'Nubes de puntos de escáner o topografía. LAZ y E57: conviértelos a LAS o PLY con CloudCompare (gratis).'],
+  ['OBJ + MTL + texturas', 'Elige los archivos a la vez para ver la malla con color.']
+];
+
 export default function EscaneoLidarConfig() {
   const { empresaConfig, updateEmpresaConfig, showNotification } = useApp();
   const activo = Boolean(empresaConfig?.escaneoLidar?.activo);
+  const [archivosVisor, setArchivosVisor] = useState(null);
 
   const cambiar = () => {
     updateEmpresaConfig({ escaneoLidar: { ...(empresaConfig?.escaneoLidar || {}), activo: !activo } });
@@ -76,8 +88,30 @@ export default function EscaneoLidarConfig() {
             <li key={f} className="text-xs text-slate-300"><span className="font-bold text-white">{f}:</span> {d}</li>
           ))}
         </ul>
-        <p className="text-[11px] text-slate-500 flex gap-1.5"><Info className="w-3.5 h-3.5 shrink-0 mt-px" />USDZ (el 3D de Apple) y PDF no traen medidas legibles: expórtalos en uno de los formatos de arriba. El archivo se lee en tu navegador; no se envía a la IA.</p>
+        <p className="text-[11px] text-slate-500 flex gap-1.5"><Info className="w-3.5 h-3.5 shrink-0 mt-px" />USDZ (el 3D de Apple) y PDF no traen medidas legibles para el croquis: el USDZ sí se ve en el visor 3D. El archivo se lee en tu navegador; no se envía a la IA.</p>
       </section>
+
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-bold text-white flex items-center gap-2"><Box className="w-4 h-4 text-amber-400" />Visor 3D de escaneos</h4>
+          <label className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition cursor-pointer bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-500/40 text-cyan-300">
+            <Box className="w-3.5 h-3.5" /><span>Abrir un escaneo en 3D</span>
+            <input type="file" multiple accept={ACCEPT_VISOR} className="hidden" onChange={e => { const l = Array.from(e.target.files || []); e.target.value = ''; if (l.length) setArchivosVisor(l); }} />
+          </label>
+        </div>
+        <p className="text-xs text-slate-400">Al subir un escaneo en Presupuestos IA o en el croquis se abre aquí mismo: gíralo, míralo en planta y mide entre dos puntos. Además de los formatos de arriba, el visor abre:</p>
+        <ul className="space-y-1.5">
+          {FORMATOS_VISOR.map(([f, d]) => (
+            <li key={f} className="text-xs text-slate-300"><span className="font-bold text-white">{f}:</span> {d}</li>
+          ))}
+        </ul>
+      </section>
+
+      {archivosVisor && (
+        <Suspense fallback={null}>
+          <VisorEscaneo3D archivos={archivosVisor} onClose={() => setArchivosVisor(null)} />
+        </Suspense>
+      )}
     </div>
   );
 }
