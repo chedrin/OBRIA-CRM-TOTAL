@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useSyncedForm } from '../../hooks/useSyncedForm';
 import { useApp } from '../../context/AppContext';
 import { FileText, Download, Save, RotateCcw } from 'lucide-react';
 import {
@@ -49,11 +50,12 @@ const Check = ({ label, checked, onChange, ayuda }) => (
 /** Ajustes > Plantilla PDF: aspecto y textos de los presupuestos y facturas. */
 export default function PlantillaPdfConfig() {
   const { empresaConfig, updateEmpresaConfig, showNotification } = useApp();
-  const [form, setForm] = useState(() => plantillaPdfDe(empresaConfig));
+  const [form, setForm, marcarGuardado] = useSyncedForm(empresaConfig, plantillaPdfDe);
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const guardar = (e) => {
     e.preventDefault();
+    marcarGuardado();
     updateEmpresaConfig({ plantillaPdf: form });
   };
 

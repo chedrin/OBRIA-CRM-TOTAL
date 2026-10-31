@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useSyncedForm } from '../../hooks/useSyncedForm';
 import { useApp } from '../../context/AppContext';
 import {
   Building2,
@@ -33,16 +34,23 @@ import EscaneoLidarConfig from './EscaneoLidarConfig';
 export default function EmpresaConfig() {
   const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification, facturacionActivada, demoDataCount } = useApp();
 
-  const [form, setForm] = useState({ ...empresaConfig });
+  // Solo se guardan los campos que se cambian aquí, para no pisar con datos viejos lo guardado en otras pestañas.
+  const editadosRef = useRef(new Set());
+  const [form, setForm, marcarGuardado] = useSyncedForm(empresaConfig, (c) => ({ ...c }));
   const [activeSubTab, setActiveSubTab] = useState('perfil_director'); // perfil_director, motor_ia, presupuestos_modelo, usuarios, verifactu, ticketbai, sii_facturae, audit
 
   const handleChange = (field, value) => {
+    editadosRef.current.add(field);
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
   const handleSave = (e) => {
     e.preventDefault();
-    updateEmpresaConfig(form);
+    const cambios = {};
+    editadosRef.current.forEach((field) => { cambios[field] = form[field]; });
+    editadosRef.current = new Set();
+    marcarGuardado();
+    updateEmpresaConfig(cambios);
   };
 
   const activeRefsCount = (referenceBudgets || []).filter(b => b.is_active).length;

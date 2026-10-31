@@ -190,9 +190,12 @@ export function useCollectionSync({
   const oversizedNoticeRef = useRef(new Set()); // ids ya avisados por superar el tamaño máximo
   const sentRef = useRef(new Map()); // id -> [{ json, at }] lo que acabamos de enviar (para ignorar su eco)
   const pushRef = useRef(() => {});
-  const keepPending = !single; // solo colecciones de registros (obras, presupuestos...)
+  // Copia local de lo pendiente de subir (también para objetos únicos como los datos de empresa:
+  // si se cierra o recarga la app antes de que llegue a Supabase, no se pierde).
+  const keepPending = true;
   const [loadAttempt, setLoadAttempt] = useState(0);
   const failedSnapshotRef = useRef(null); // registros en pantalla cuando falló la carga
+  const preloadRef = useRef(null); // objeto único en pantalla al empezar a cargar
 
   // Guarda en el navegador los registros que todavía no coinciden con lo que hay en Supabase.
   const savePendingCopy = () => {
@@ -320,6 +323,15 @@ export function useCollectionSync({
         return;
       }
 
+      // Objeto único (datos de empresa): lo que se guarde mientras carga no se pisa con lo de la nube.
+      // Se toma al primer intento de carga; si falla y se reintenta, se mantiene.
+      if (loadAttempt === 0 || !preloadRef.current) {
+        preloadRef.current = single && role === 'admin' && valueRef.current && typeof valueRef.current === 'object'
+          ? { value: valueRef.current }
+          : { value: null };
+      }
+      const preload = preloadRef.current.value;
+
       try {
         const rows = await fetchAllRows(collection);
         if (cancelled) return;
@@ -327,12 +339,13 @@ export function useCollectionSync({
         // Registros que este navegador no llegó a guardar en la nube (se vuelven a subir).
         const pending = keepPending && role === 'admin' ? readPending(userId, collection) : {};
         // Si la carga falló antes, lo creado o cambiado en pantalla desde entonces también se conserva.
-        if (keepPending && role === 'admin' && failedSnapshotRef.current) {
+        if (!single && role === 'admin' && failedSnapshotRef.current) {
           toRecordMap(collection, valueRef.current, single).forEach((record, id) => {
             if (failedSnapshotRef.current.get(id) !== record.json) pending[id] = record.data;
           });
         }
         failedSnapshotRef.current = null;
+        preloadRef.current = null;
         const remoteMap = toRecordMap(collection, rows.map((row) => row.data), single);
         const recovered = Object.entries(pending).filter(([id, data]) => {
           const remote = remoteMap.get(id);
@@ -343,7 +356,18 @@ export function useCollectionSync({
           const records = rows.map((row) => row.data);
           baselineRef.current = toRecordMap(collection, single ? records[0] : records, single);
           if (single) {
-            setValue(records[0]);
+            let data = recovered.length ? pending[SINGLE_ID] : records[0];
+            // Campos cambiados en pantalla mientras se cargaba: se aplican encima de lo de la nube.
+            const now = valueRef.current;
+            if (!recovered.length && preload && now && now !== preload && data && typeof data === 'object') {
+              const changed = Object.keys(now).filter((key) => stableStringify(now[key]) !== stableStringify(preload[key]));
+              if (changed.length) data = { ...data, ...Object.fromEntries(changed.map((key) => [key, now[key]])) };
+            }
+            valueRef.current = data;
+            setValue(data);
+            if (recovered.length && notify) {
+              notify(`Recuperados cambios de "${collection}" que no se habían guardado en la nube. Guardando...`);
+            }
           } else {
             const recoveredIds = new Set(recovered.map(([id]) => id));
             const merged = [
