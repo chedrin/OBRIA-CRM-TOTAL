@@ -111,3 +111,25 @@ test("Formatos: elige el archivo principal entre malla, material y texturas", ()
   assert.equal(archivoPrincipal([f("foto.jpg")]), null);
   assert.ok(esVisible3D("escaneo.usdz") && esVisible3D("x.LAS") && !esVisible3D("plano.pdf"));
 });
+
+test("Formatos: en un ZIP con varios modelos se abre primero el que trae textura", () => {
+  const f = (name) => ({ name });
+  assert.equal(archivoPrincipal([f("nube.ply"), f("malla.obj"), f("modelo.glb"), f("foto.jpg")]).name, "modelo.glb");
+  assert.equal(archivoPrincipal([f("nube.ply"), f("textured_output.obj"), f("textured_output.mtl")]).name, "textured_output.obj");
+  assert.ok(esVisible3D("Escaneo 3D Scanner App.zip"));
+});
+
+test("Color real: la malla con textura o color por vértice se ve sin sombreado y se puede volver a las luces", async () => {
+  const THREE = await import("three");
+  const { prepararColorReal } = await import("../src/utils/visorEscaneo.js");
+  const tex = new THREE.Texture();
+  const conFoto = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ map: tex }));
+  const gris = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+  const grupo = new THREE.Group().add(conFoto, gris);
+  assert.equal(prepararColorReal(grupo), true);
+  assert.ok(conFoto.material.isMeshBasicMaterial);
+  assert.equal(conFoto.material.map, tex);
+  assert.ok(conFoto.userData.matLuz.isMeshStandardMaterial);
+  assert.ok(gris.material.isMeshStandardMaterial, "sin textura se queda con luces");
+  assert.equal(prepararColorReal(new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial()))), false);
+});

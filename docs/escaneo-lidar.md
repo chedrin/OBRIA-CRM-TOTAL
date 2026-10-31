@@ -27,13 +27,16 @@ Al subir un escaneo se puede ver en 3D dentro de la app (`src/components/Escaneo
 | Formato | Notas |
 |---|---|
 | GLB / glTF | Con texturas. Admite Draco (`public/draco/`) y Meshopt. El glTF con `.bin` aparte: elegir los archivos a la vez. |
-| OBJ (+MTL + texturas) | Elegidos a la vez se ve con color; solo el OBJ, en gris. |
+| OBJ (+MTL + texturas) | Elegidos a la vez, o el ZIP tal cual lo exporta la app (3D Scanner App, Polycam), se ve con sus fotos; solo el OBJ, en gris. |
+| ZIP | Se abre en el navegador (fflate) y se elige el mejor modelo de dentro: GLB > USDZ > OBJ > PLY > … |
 | USDZ / USD | El «Compartir» de Apple y Polycam. |
 | PLY, STL, FBX | PLY sin caras = nube de puntos. |
 | LAS (1.0-1.4) | Sin comprimir, con RGB o intensidad. Coordenadas UTM centradas. LAZ no: convertir a LAS. |
 | PCD, XYZ, PTS, TXT/CSV | TXT/CSV solo si cada línea es «x y z [r g b]» (si no, es una lista de medidas). |
 | DXF | Líneas, polilíneas, 3DFACE, polyface, círculos y arcos. Los planos 2D se abren en planta. |
 | E57 | No se lee en el navegador: convertir a PLY o LAS con CloudCompare. |
+
+**Color real:** las mallas con textura o color por vértice se pintan sin sombreado (`MeshBasicMaterial`), porque las fotos ya llevan la luz de la estancia; así se ven como en la app del iPad. El botón **Luces** vuelve al material con sombreado para ver el relieve. Texturas con filtrado anisótropo al máximo que permita la tarjeta.
 
 Herramientas: encuadrar, planta, alzado, **Medir** (dos clics; se engancha al punto escaneado o a la esquina del plano), **Sin techo** / corte por altura, alambre, rejilla, eje vertical (Z arriba), unidades (m, cm, mm, pies; se adivinan por el tamaño) y captura PNG. Las nubes de más de 3 millones de puntos se reducen; límite 500 MB.
 
