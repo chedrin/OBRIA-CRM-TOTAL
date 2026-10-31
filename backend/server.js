@@ -1043,7 +1043,8 @@ const MIME_TYPES = {
   ".ttf": "font/ttf",
   ".webm": "video/webm",
   ".mp3": "audio/mp3",
-  ".wav": "audio/wav"
+  ".wav": "audio/wav",
+  ".wasm": "application/wasm"
 };
 
 const DIST_DIR = path.resolve(__dirname, "../dist");

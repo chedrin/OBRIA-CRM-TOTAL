@@ -16,12 +16,14 @@ const isProduction = () => Boolean(process.env.RENDER) || process.env.NODE_ENV =
 // venir del propio dominio: un script inyectado no se ejecuta.
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self'",
+  // 'wasm-unsafe-eval': solo permite compilar WebAssembly (decodificadores Draco/Meshopt del visor 3D), no eval().
+  "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "media-src 'self' data: blob: https:",
-  "connect-src 'self' https: wss:",
+  // blob:/data: para que el visor 3D lea texturas y .bin de los archivos elegidos en el navegador.
+  "connect-src 'self' https: wss: blob: data:",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "frame-src 'self' blob: data:",
