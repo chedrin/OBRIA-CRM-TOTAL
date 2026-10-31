@@ -24,7 +24,7 @@ function readHashTarget() {
   const avance = hash.match(/^#admin\/avance(?:\/([^/]*))?(?:\/([^/]*))?(?:\/([^/]*))?/i);
   if (avance) {
     const dec = (v) => (v ? decodeURIComponent(v) : '');
-    return { section: 'avance', tab: 'avance', obraId: dec(avance[1]) || null, faseId: dec(avance[2]) || null, partidaId: dec(avance[3]) };
+    return { section: 'avance', tab: 'obras', obraId: dec(avance[1]) || null, faseId: dec(avance[2]) || null, partidaId: dec(avance[3]) };
   }
   const match = hash.match(/^#admin\/(avisos|necesidades|partes)(?:\/([0-9a-f-]{36}))?/i);
   return match ? { section: match[1].toLowerCase(), id: match[2] || null, tab: 'avisos' } : null;
@@ -125,7 +125,7 @@ export function NotificationsProvider({ children }) {
     // Avisos ligados a una partida: se abre directamente su detalle en el panel de avance.
     if (n.fase_id) {
       setTarget({ section: 'avance', obraId: n.obra_id, faseId: n.fase_id, partidaId: n.partida_id || '' });
-      setActiveTab('avance');
+      setActiveTab('obras'); // el avance de obra vive dentro de Obras y Reformas
       return;
     }
     const section = n.ref_table === 'worksite_needs' ? 'necesidades' : n.ref_table === 'site_reports' ? 'partes' : 'avisos';

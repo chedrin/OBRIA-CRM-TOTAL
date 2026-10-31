@@ -66,12 +66,13 @@ function Kpi({ label, value, tone }) {
   );
 }
 
-export default function SeguimientoObra() {
+// embebido: se muestra dentro de Obras y Reformas con la obra elegida en el cronograma (sin selector propio).
+export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, cabecera = null } = {}) {
   const { obras = [], obreros = [], updateObra } = useApp() || {};
   const { target, setTarget } = useNotifications();
   const notify = useNotify();
   const activas = useMemo(() => [...obras].sort((a, b) => (a.estado === 'finalizada') - (b.estado === 'finalizada')), [obras]);
-  const [obraId, setObraId] = useState(activas[0]?.id || '');
+  const [obraId, setObraId] = useState(obraIdProp || activas[0]?.id || '');
   const obra = obras.find((o) => o.id === obraId);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -80,6 +81,10 @@ export default function SeguimientoObra() {
   const [assigning, setAssigning] = useState(null);
   const [detailKey, setDetailKey] = useState(null);
   const reloadTimer = useRef(null);
+
+  useEffect(() => {
+    if (obraIdProp) { setObraId(obraIdProp); setDetailKey(null); }
+  }, [obraIdProp]);
 
   const load = useCallback(async (id = obraId) => {
     if (!id) return;
@@ -162,10 +167,13 @@ export default function SeguimientoObra() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 justify-end">
+        {cabecera}
         <div className="flex flex-wrap gap-2">
-          <select value={obraId} onChange={(e) => { setObraId(e.target.value); setDetailKey(null); }} className={`${inputCls} !w-auto`}>
-            {activas.map((o) => <option key={o.id} value={o.id}>{[o.codigo, o.titulo].filter(Boolean).join(' - ')}</option>)}
-          </select>
+          {!embebido && (
+            <select value={obraId} onChange={(e) => { setObraId(e.target.value); setDetailKey(null); }} className={`${inputCls} !w-auto`}>
+              {activas.map((o) => <option key={o.id} value={o.id}>{[o.codigo, o.titulo].filter(Boolean).join(' - ')}</option>)}
+            </select>
+          )}
           <button onClick={() => load()} className={btnGhost} title="Recargar"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
           <button onClick={() => setAssigning({})} disabled={!obra?.fases?.length} className={btnPrimary}><UserPlus className="w-4 h-4" /> Asignar</button>
         </div>

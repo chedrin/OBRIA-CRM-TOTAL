@@ -104,7 +104,9 @@ function Detalle({ fila, color, rect }) {
   );
 }
 
-export default function CronogramaObras({ obras, onOpen, hoy: hoyProp }) {
+// onSeleccionar(id, color): al pulsar una obra (nombre o barra) se elige para ver su avance debajo.
+// Sin onSeleccionar, el clic abre la ficha (onOpen).
+export default function CronogramaObras({ obras, onOpen, onSeleccionar, seleccionadaId, hoy: hoyProp }) {
   const hoy = useMemo(() => inicioDia(hoyProp || new Date()), [hoyProp]);
   const [preset, setPreset] = useState('4m');
   const [rangoManual, setRangoManual] = useState(null); // { desde, hasta } si se eligen fechas a mano
@@ -273,15 +275,19 @@ export default function CronogramaObras({ obras, onOpen, hoy: hoyProp }) {
                 const mostrarEntrega = f.entrega.getTime() !== f.finPlan.getTime() && entregaPct >= 0 && entregaPct <= 100;
                 const señalada = hover?.id === f.id;
                 const señalar = (e) => setHover({ id: f.id, rect: e.currentTarget.getBoundingClientRect() });
+                const elegida = seleccionadaId === f.id;
+                const elegir = () => (onSeleccionar ? onSeleccionar(f.id, f.color) : onOpen?.(f.id));
                 const r = (izqCort, derCort) => `${izqCort ? '0' : '9999px'} ${derCort ? '0' : '9999px'} ${derCort ? '0' : '9999px'} ${izqCort ? '0' : '9999px'}`;
 
                 return (
-                  <div key={f.id} className={`flex border-b border-slate-800/70 last:border-b-0 group ${señalada ? 'bg-slate-800/30' : ''}`}>
-                    <button type="button" onClick={() => onOpen?.(f.id)}
-                      className="w-32 sm:w-56 shrink-0 sticky left-0 z-20 bg-slate-900 border-r border-slate-800 px-3 py-2 text-left hover:bg-slate-800 transition-colors">
+                  <div key={f.id} className={`flex border-b border-slate-800/70 last:border-b-0 group ${señalada || elegida ? 'bg-slate-800/30' : ''}`}>
+                    <button type="button" onClick={elegir} aria-pressed={onSeleccionar ? elegida : undefined}
+                      title={onSeleccionar ? 'Ver el avance de esta obra' : 'Abrir la obra'}
+                      className={`w-32 sm:w-56 shrink-0 sticky left-0 z-20 border-r border-slate-800 px-3 py-2 text-left hover:bg-slate-800 transition-colors ${elegida ? 'bg-slate-800' : 'bg-slate-900'}`}
+                      style={elegida ? { boxShadow: `inset 3px 0 0 ${f.color}` } : undefined}>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: f.color }} />
-                        <span className="text-xs font-bold text-white truncate group-hover:text-amber-400">{f.obra.titulo}</span>
+                        <span className={`text-xs font-bold truncate group-hover:text-amber-400 ${elegida ? 'text-amber-400' : 'text-white'}`}>{f.obra.titulo}</span>
                       </span>
                       <span className="mt-1 flex items-center gap-1.5 min-w-0 overflow-hidden">
                         <EstadoChip estado={f.estado} />
@@ -304,7 +310,7 @@ export default function CronogramaObras({ obras, onOpen, hoy: hoyProp }) {
 
                       {/* Tramo planificado con el avance real dentro */}
                       {ancho > 0 && (
-                        <button type="button" onClick={() => onOpen?.(f.id)}
+                        <button type="button" onClick={elegir}
                           onMouseEnter={señalar} onMouseLeave={() => setHover(null)}
                           onFocus={señalar} onBlur={() => setHover(null)}
                           aria-label={`${f.obra.titulo}: del ${fechaCorta(f.inicio)} al ${fechaCorta(f.finPlan)}, avance ${f.progreso}%`}

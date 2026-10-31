@@ -10,7 +10,6 @@ import {
   Smartphone,
   ShieldCheck,
   BellRing,
-  ListChecks,
   Wallet,
   UsersRound,
   Settings
@@ -106,7 +105,6 @@ export const NAV_SECTIONS = [
     items: [
       { id: 'dashboard', label: 'Panel General', desc: 'KPIs y estado global', icon: Building2, tone: 'sky' },
       { id: 'obras', label: 'Obras y Reformas', desc: 'Fases, costes y partes', icon: HardHat, tone: 'amber' },
-      { id: 'avance', label: 'Avance de Obra', desc: 'Asignaciones, avance y certificación', icon: ListChecks, tone: 'emerald' },
       { id: 'avisos', label: 'Avisos y Pedidos', desc: 'Necesidades, material y subcontratas', icon: BellRing, tone: 'red' },
       { id: 'inbox', label: 'Audio / Email IA', desc: 'Captura y transcripción', icon: Mic, tone: 'violet' }
     ]

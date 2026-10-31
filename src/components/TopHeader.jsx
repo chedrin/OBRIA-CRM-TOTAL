@@ -8,7 +8,6 @@ import { Menu, Building2, Sparkles, Bell, Mic, Calculator, LogOut } from 'lucide
 const TAB_TEXT = {
   dashboard: { title: 'Panel General', desc: 'Visión ejecutiva de obras, tesorería y avance operativo' },
   obras: { title: 'Obras y Reformas', desc: 'Gestión de proyectos, fases constructivas, partes diarios y costes' },
-  avance: { title: 'Avance de Obra', desc: 'Asignaciones por partida, avance real y certificación' },
   avisos: { title: 'Avisos, Necesidades y Pedidos', desc: 'Avisos de obra en tiempo real, pedidos de material a proveedores y enlaces para subcontratas' },
   inbox: { title: 'Bandeja Audio / Email IA', desc: 'Captura por voz de visitas de obra y correos de clientes procesados con IA' },
   presupuestos: { title: 'Presupuestos & Mediciones IA', desc: 'Creación automática de partidas, capítulos e importes vinculados a obra', special: true },

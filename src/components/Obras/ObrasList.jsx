@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import ObraDetail from './ObraDetail';
@@ -9,6 +9,8 @@ import AiImprovementControl from '../Common/AiImprovementControl';
 import ViewModeSwitcher from '../Common/ViewModeSwitcher';
 import ObrasTabla from './ObrasTabla';
 import CronogramaObras from './CronogramaObras';
+import SeguimientoObra from '../Avance/SeguimientoObra';
+import { useNotifications } from '../../context/NotificationsContext';
 import EmptyState from '../Common/EmptyState';
 import { useUiPreferences } from '../../context/UiPreferencesContext';
 import {
@@ -20,7 +22,9 @@ import {
   User,
   ArrowRight,
   Sparkles,
-  ChartGantt
+  ChartGantt,
+  ListChecks,
+  X
 } from 'lucide-react';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
@@ -41,12 +45,35 @@ export default function ObrasList() {
   const [verCronograma, setVerCronograma] = useState(() => {
     try { return localStorage.getItem('obras-cronograma') === '1'; } catch { return false; }
   });
+  const guardarCronograma = (v) => {
+    try { localStorage.setItem('obras-cronograma', v ? '1' : '0'); } catch { /* sin almacenamiento */ }
+  };
   const alternarCronograma = () => {
     setVerCronograma(v => {
-      try { localStorage.setItem('obras-cronograma', v ? '0' : '1'); } catch { /* sin almacenamiento */ }
+      guardarCronograma(!v);
       return !v;
     });
   };
+
+  // Avance de obra (antes un apartado propio): se abre debajo del cronograma al pulsar una obra.
+  const [avance, setAvance] = useState(null); // { id, color }
+  const avanceRef = useRef(null);
+  const { target, setTarget } = useNotifications();
+  const verAvance = (id, color) => {
+    setAvance(prev => (prev?.id === id ? prev : { id, color }));
+    requestAnimationFrame(() => avanceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  // Llegada desde un aviso o notificación de una partida: cronograma + avance de esa obra.
+  // SeguimientoObra abre la partida y limpia el aviso.
+  useEffect(() => {
+    if (target?.section !== 'avance') return;
+    setSelectedObraId(null);
+    setVerCronograma(true);
+    guardarCronograma(true);
+    if (target.obraId) verAvance(target.obraId);
+    else setTarget(null);
+  }, [target]);
   const [abrirCroquis, setAbrirCroquis] = useState(false); // la ficha se abrió desde la miniatura del croquis
   const [showNewModal, setShowNewModal] = useState(false);
   const [modalStep, setModalStep] = useState(1); // 1: Seleccionar Presupuesto de origen, 2: Confirmar/Editar Datos de la Obra
@@ -243,7 +270,51 @@ export default function ObrasList() {
       </div>
 
       {verCronograma && (
-        <CronogramaObras obras={filteredObras} onOpen={setSelectedObraId} />
+        <>
+          <CronogramaObras obras={filteredObras} onOpen={setSelectedObraId} onSeleccionar={verAvance} seleccionadaId={avance?.id} />
+          <section ref={avanceRef} className="scroll-mt-4 space-y-3" aria-label="Avance de obra">
+            {(() => {
+              const obraAvance = avance && obras.find(o => o.id === avance.id);
+              if (!obraAvance) {
+                return (
+                  <div className="border border-dashed border-slate-700 rounded-2xl p-5 flex items-center gap-3 text-xs text-slate-400">
+                    <div className="w-10 h-10 shrink-0 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                      <ListChecks className="w-5 h-5" />
+                    </div>
+                    <p><strong className="text-slate-200">Avance de obra.</strong> Pulsa una obra del cronograma para ver aquí sus partidas, quién las lleva, el avance reportado y el certificado.</p>
+                  </div>
+                );
+              }
+              return (
+                <div key={obraAvance.id} className="border-t border-slate-800 pt-4 animate-in fade-in duration-200">
+                  <SeguimientoObra
+                    obraId={obraAvance.id}
+                    embebido
+                    cabecera={(
+                      <div className="flex items-center gap-2 min-w-0 flex-1 basis-full sm:basis-auto">
+                        <h2 className="flex items-center gap-2 min-w-0 text-base font-bold text-white">
+                          <ListChecks className="w-5 h-5 text-emerald-400 shrink-0" />
+                          <span className="sr-only sm:not-sr-only shrink-0">Avance de obra</span>
+                          <span className="hidden sm:inline text-slate-500 shrink-0">·</span>
+                          {avance.color && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: avance.color }} />}
+                          <span className="truncate">{obraAvance.titulo}</span>
+                        </h2>
+                        <button type="button" onClick={() => setSelectedObraId(obraAvance.id)}
+                          className="ml-auto shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 border border-slate-700 text-slate-300 hover:text-white">
+                          <ArrowRight className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Ficha de la obra</span><span className="sm:hidden">Ficha</span>
+                        </button>
+                        <button type="button" aria-label="Cerrar el avance de obra" title="Cerrar" onClick={() => setAvance(null)}
+                          className="shrink-0 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  />
+                </div>
+              );
+            })()}
+          </section>
+        </>
       )}
 
       {!verCronograma && viewMode !== 'tarjetas' && (
