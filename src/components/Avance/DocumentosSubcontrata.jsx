@@ -98,7 +98,7 @@ export function DocumentosLista({ obraId, target, docs, margin, docsReady = true
       const res = await fetch('/api/avance/docs', { method: 'POST', body: fd });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || `Error ${res.status}`);
-      notify(`${KIND_LABEL[form.kind]} guardado`);
+      notify(form.kind === 'factura' ? 'Factura guardada' : 'Presupuesto guardado');
       setForm(null);
       onChanged?.();
     } catch (err) {

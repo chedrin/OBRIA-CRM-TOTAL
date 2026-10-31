@@ -295,6 +295,7 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                                   <ShieldCheck className="w-3.5 h-3.5" /> {p.reported}%
                                 </button>
                               )}
+                              <button onClick={() => setDetailKey(p.key)} className={`${btnGhost} !px-2 !py-1`} title="Presupuesto y factura de la subcontrata de esta partida"><FileText className="w-4 h-4" /></button>
                               <button onClick={() => setAssigning({ faseId: p.faseId, partidaId: p.id, cambiar: p.assignees.length > 0 })} className={`${btnGhost} !px-2 !py-1`} title={p.assignees.length ? 'Cambiar quién hace esta partida' : 'Asignar partida'}><UserPlus className="w-4 h-4" /></button>
                             </div>
                           </div>
