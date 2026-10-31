@@ -1,6 +1,6 @@
 # Escaneo LiDAR (presupuestos y croquis)
 
-Se activa en **Ajustes › Escaneo LiDAR** (`empresaConfig.escaneoLidar.activo`, desactivado por defecto). Con él activo aparece **Subir escaneo LiDAR** en:
+Se activa en **Ajustes › Escaneo LiDAR** (`empresaConfig.escaneoLidar.activo`, desactivado por defecto). También se activa o desactiva con el interruptor **LiDAR** de la cabecera de Presupuestos IA (es el mismo ajuste). Con él activo aparece **Subir escaneo LiDAR** en:
 
 - **Presupuestos IA**, bloque de mediciones: añade una línea por estancia a las anotaciones (`- Salón: 5,2 x 4,1 x 2,5 m (superficie…, perímetro…, paredes…)`) y guarda la planta como `presupuesto.croquis`, que pasa a la obra al aceptarlo.
 - **Croquis** (presupuesto u obra), pestaña «Medidas y fotos»: dibuja el plano sin IA, con todas las medidas fijas (🔒), y rellena la tabla de mediciones.

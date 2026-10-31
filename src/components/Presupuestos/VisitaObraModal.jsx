@@ -15,7 +15,8 @@ import {
   Plus,
   Check,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  ScanLine
 } from 'lucide-react';
 import { isValidNif } from '../../utils/nifValidator';
 import confetti from 'canvas-confetti';
@@ -56,6 +57,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
     generateQuoteFromSiteVisit,
     addPresupuesto,
     empresaConfig,
+    updateEmpresaConfig,
     showNotification,
     referenceBudgets
   } = useApp();
@@ -104,6 +106,11 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
   // Croquis sacado del escaneo LiDAR: se guarda con el presupuesto generado.
   const [croquisEscaneo, setCroquisEscaneo] = useState(null);
   const lidarActivo = Boolean(empresaConfig?.escaneoLidar?.activo);
+  // Interruptor a mano en la cabecera (el mismo que en Ajustes › Escaneo LiDAR).
+  const cambiarLidar = () => {
+    updateEmpresaConfig({ escaneoLidar: { ...(empresaConfig?.escaneoLidar || {}), activo: !lidarActivo } });
+    showNotification(!lidarActivo ? 'Escaneo LiDAR activado: súbelo en el bloque de mediciones.' : 'Escaneo LiDAR desactivado.');
+  };
 
   // Documents State (PDF, Word, Excel)
   const [documentos, setDocumentos] = useState([]);
@@ -462,6 +469,22 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
             </div>
           </div>
 
+          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={lidarActivo}
+            onClick={cambiarLidar}
+            disabled={isProcessing}
+            title="Activa la subida y el visor 3D de escaneos LiDAR en este presupuesto"
+            className={`flex items-center gap-2 pl-2.5 pr-2 py-1.5 rounded-xl border text-xs font-bold transition ${lidarActivo ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-cyan-400'}`}
+          >
+            <ScanLine className="w-4 h-4" />
+            <span>LiDAR</span>
+            <span className={`relative w-8 h-5 rounded-full transition ${lidarActivo ? 'bg-cyan-500' : 'bg-slate-600'}`}>
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${lidarActivo ? 'left-3.5' : 'left-0.5'}`} />
+            </span>
+          </button>
           {!inline && (
             <button
               onClick={onClose} aria-label="Cerrar"
@@ -471,6 +494,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
               <X className="w-4 h-4" />
             </button>
           )}
+          </div>
         </div>
 
         {/* Processing Loading Overlay */}
