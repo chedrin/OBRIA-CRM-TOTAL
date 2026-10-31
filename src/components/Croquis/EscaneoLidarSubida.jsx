@@ -15,13 +15,15 @@ const ext = (nombre) => String(nombre).toLowerCase().split('.').pop();
  * Lee el archivo en el navegador, enseña lo encontrado y llama a onUsar(resultado) al confirmarlo.
  * Los modelos 3D (GLB, PLY, USDZ, LAS, nubes de puntos…) se abren en el visor 3D; OBJ y DXF se miden y también se ven en 3D.
  */
-export default function EscaneoLidarSubida({ onUsar, textoUsar = 'Usar el escaneo', ayuda = '' }) {
+export default function EscaneoLidarSubida({ onUsar, onArchivos3D, textoUsar = 'Usar el escaneo', ayuda = '' }) {
   const [leyendo, setLeyendo] = useState(false);
   const [error, setError] = useState('');
   const [resultado, setResultado] = useState(null);
   // Archivos del último escaneo que se pueden ver en 3D (el OBJ puede ir con su MTL y texturas).
   const [archivos3D, setArchivos3D] = useState(null);
   const [verVisor, setVerVisor] = useState(false);
+  // Avisa al padre de los archivos que se pueden ver en 3D (el croquis los guarda para «Ver escaneo 3D»).
+  const guardar3D = (lista) => { setArchivos3D(lista); if (lista) onArchivos3D?.(lista); };
 
   const elegir = async (e) => {
     const lista = Array.from(e.target.files || []);
@@ -34,11 +36,11 @@ export default function EscaneoLidarSubida({ onUsar, textoUsar = 'Usar el escane
     setArchivos3D(null);
     // Solo para ver: se abre directamente el visor.
     if (esVisible3D(file.name) && !MEDIBLES_3D.includes(x)) {
-      setArchivos3D(lista);
+      guardar3D(lista);
       setVerVisor(true);
       return;
     }
-    if (MEDIBLES_3D.includes(x)) setArchivos3D(lista);
+    if (MEDIBLES_3D.includes(x)) guardar3D(lista);
     setLeyendo(true);
     // Deja pintar el "Leyendo…" antes de procesar mallas grandes.
     await new Promise(r => setTimeout(r, 30));
@@ -48,7 +50,7 @@ export default function EscaneoLidarSubida({ onUsar, textoUsar = 'Usar el escane
       console.error(err);
       // Un TXT/CSV que no es una lista de medidas puede ser una nube de puntos.
       if ((x === 'txt' || x === 'csv') && pareceNubeTexto(await file.text().catch(() => ''))) {
-        setArchivos3D(lista);
+        guardar3D(lista);
         setVerVisor(true);
         return;
       }

@@ -3,7 +3,7 @@
 Se activa en **Ajustes › Escaneo LiDAR** (`empresaConfig.escaneoLidar.activo`, desactivado por defecto). También se activa o desactiva con el interruptor **LiDAR** de la cabecera de Presupuestos IA (es el mismo ajuste). Con él activo aparece **Subir escaneo LiDAR** en:
 
 - **Presupuestos IA**, bloque de mediciones: añade una línea por estancia a las anotaciones (`- Salón: 5,2 x 4,1 x 2,5 m (superficie…, perímetro…, paredes…)`) y guarda la planta como `presupuesto.croquis`, que pasa a la obra al aceptarlo.
-- **Croquis** (presupuesto u obra), pestaña «Medidas y fotos»: dibuja el plano sin IA, con todas las medidas fijas (🔒), y rellena la tabla de mediciones.
+- **Croquis** (presupuesto u obra), botón **Escaneo LiDAR** de la cabecera (siempre visible, también en el editor 2D) o pestaña «Medidas y fotos»; tras subir un modelo 3D aparece «Ver escaneo 3D» para volver a abrirlo en el visor: dibuja el plano sin IA, con todas las medidas fijas (🔒), y rellena la tabla de mediciones.
 
 El archivo se lee en el navegador (`src/utils/escaneoLidar.js`); no pasa por el servidor ni por la IA. Pruebas en `backend/escaneoLidar.test.js`.
 

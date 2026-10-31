@@ -25,7 +25,8 @@ import {
   AlertTriangle,
   Box,
   Lock,
-  LockOpen
+  LockOpen,
+  ScanLine
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import CroquisLienzo, { reajustarHuecos } from './CroquisLienzo';
@@ -66,6 +67,7 @@ const btnCls = 'px-2.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 
 const MAX_FOTOS = 8;
 // La vista 3D (three.js) solo se descarga al abrirla.
 const Croquis3D = lazy(() => import('./Croquis3D'));
+const VisorEscaneo3D = lazy(() => import('../Escaneo/VisorEscaneo3D'));
 
 const PALETA = [
   { tipo: 'room', label: 'Estancia', icon: Square },
@@ -109,7 +111,6 @@ const esCampoDeTexto = (el) => el && (el.tagName === 'INPUT' || el.tagName === '
  */
 export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = null, contexto = {}, cabecera = {}, onGuardar, onClose }) {
   const { empresaConfig, showNotification } = useApp();
-  const lidarActivo = Boolean(empresaConfig?.escaneoLidar?.activo);
   const planInicial = useMemo(() => (croquis?.plan ? normalizarCroquis(croquis.plan) : null), [croquis]);
 
   const [vista, setVista] = useState(planInicial?.rooms.length ? 'editor' : 'datos');
@@ -131,6 +132,10 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
   const [zoom, setZoom] = useState(1);
   const [sinGuardar, setSinGuardar] = useState(false);
   const [vista3d, setVista3d] = useState(false);
+  // Escaneo LiDAR: panel de subida bajo la cabecera y último escaneo para volver a verlo en 3D.
+  const [panelLidar, setPanelLidar] = useState(false);
+  const [escaneo3D, setEscaneo3D] = useState(null);
+  const [verEscaneo3D, setVerEscaneo3D] = useState(false);
   const [editCota, setEditCota] = useState(null); // { roomId, edge, x, y } al pulsar una cota del plano
   const fotosRef = useRef(fotos);
   fotosRef.current = fotos;
@@ -361,6 +366,7 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
     }
     if (plan.rooms.length && !window.confirm('Ya hay un croquis. ¿Sustituirlo por el del escaneo? (Podrás deshacerlo.)')) return;
     setError('');
+    setPanelLidar(false);
     reiniciarPlan(res.plan);
     setFilas(res.mediciones.length ? res.mediciones : [filaVacia()]);
     setVista('editor');
@@ -452,6 +458,14 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
+            <button onClick={() => setPanelLidar(v => !v)} aria-expanded={panelLidar} className={`${btnCls} ${panelLidar ? '!bg-cyan-500 !text-slate-950 !border-cyan-400' : '!border-cyan-500/40 !text-cyan-300'}`} title="Subir un escaneo LiDAR para dibujar el croquis y verlo en 3D">
+              <ScanLine className="w-3.5 h-3.5" /><span>Escaneo LiDAR</span>
+            </button>
+            {escaneo3D && (
+              <button onClick={() => setVerEscaneo3D(true)} className={`${btnCls} !border-cyan-500/40 !text-cyan-300`} title="Abrir el último escaneo subido en el visor 3D">
+                <Box className="w-3.5 h-3.5" /><span>Ver escaneo 3D</span>
+              </button>
+            )}
             {vista === 'editor' && (
               <>
                 <button onClick={deshacer} disabled={!hist.pasado.length} className={btnCls} title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><Undo2 className="w-3.5 h-3.5" /></button>
@@ -466,6 +480,19 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
           </div>
         </div>
 
+        {panelLidar && (
+          <div className="px-4 py-3 border-b border-cyan-500/30 bg-slate-950/80 shrink-0 space-y-1.5">
+            <p className="text-[11px] text-slate-400">Con medidas (JSON de RoomPlan, DXF, OBJ, CSV) el croquis se dibuja con las cotas reales. Los modelos 3D (GLB, USDZ, el ZIP de la app, PLY, LAS…) se abren en el visor con sus colores.</p>
+            <EscaneoLidarSubida onUsar={usarEscaneo} onArchivos3D={setEscaneo3D} textoUsar="Dibujar el croquis con el escaneo" />
+          </div>
+        )}
+
+        {verEscaneo3D && escaneo3D && (
+          <Suspense fallback={null}>
+            <VisorEscaneo3D archivos={escaneo3D} onClose={() => setVerEscaneo3D(false)} />
+          </Suspense>
+        )}
+
         {vista === 'datos' ? (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
             {error && (
@@ -474,16 +501,14 @@ export default function CroquisEditorModal({ titulo = 'Croquis 2D', croquis = nu
               </div>
             )}
 
-            {lidarActivo ? (
+            {!panelLidar && (
               <section className="space-y-2 bg-slate-950/60 border border-cyan-500/20 rounded-2xl p-3">
                 <div>
                   <h4 className="text-sm font-bold text-white">Escaneo LiDAR</h4>
-                  <p className="text-[11px] text-slate-400">Con un escaneo del iPhone o iPad Pro el croquis sale con las medidas reales, sin IA, y rellena las mediciones de abajo.</p>
+                  <p className="text-[11px] text-slate-400">Con un escaneo del iPhone o iPad Pro el croquis sale con las medidas reales, sin IA, y rellena las mediciones de abajo. También puedes verlo en 3D.</p>
                 </div>
-                <EscaneoLidarSubida onUsar={usarEscaneo} textoUsar="Dibujar el croquis con el escaneo" />
+                <EscaneoLidarSubida onUsar={usarEscaneo} onArchivos3D={setEscaneo3D} textoUsar="Dibujar el croquis con el escaneo" />
               </section>
-            ) : (
-              <p className="text-[11px] text-slate-500">¿Tienes un escaneo LiDAR de la vivienda? Activa su subida en Ajustes › Escaneo LiDAR.</p>
             )}
 
             <section className="space-y-2">
