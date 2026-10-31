@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import BarraProgreso from '../Common/BarraProgreso';
 import { useApp } from '../../context/AppContext';
 import {
@@ -28,11 +28,15 @@ import {
   CreditCard,
   KeyRound,
   Eye,
-  EyeOff
+  EyeOff,
+  Pencil
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
+import { calcularNomina } from '../../utils/nomina';
+import NominaDesglose, { SelectorMes, MESES } from './NominaDesglose';
+import FichaEmpleadoEditor from './FichaEmpleadoEditor';
 
 const TRADES_AI_MATCH = [
   { id: 'alicatado', label: 'Alicatado Porcelánico Rectificado Gran Formato', gremio: 'Albañilería' },
@@ -99,7 +103,9 @@ export default function ObrerosList() {
 
   // Export Gestoría Modal
   const [showGestoriaModal, setShowGestoriaModal] = useState(false);
-  const [mesNomina, setMesNomina] = useState('Octubre 2026');
+  const [periodoNomina, setPeriodoNomina] = useState(() => ({ mes: new Date().getMonth() + 1, anio: new Date().getFullYear() }));
+  const mesNomina = `${MESES[periodoNomina.mes - 1]} ${periodoNomina.anio}`;
+  const [editandoFicha, setEditandoFicha] = useState(false);
 
   // Rating Modal
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -187,49 +193,42 @@ export default function ObrerosList() {
     return matchesEstado && matchesCat && matchesSearch;
   });
 
-  // Payroll Calculation Helper
+  // Nómina del mes elegido (cálculo completo en utils/nomina.js)
   const calculatePayroll = (emp) => {
-    const base = Number(emp.salarioBaseMensual || 0);
-    const plus = Number(emp.plusConvenio || 0);
-    const horasExtras = Number(emp.horasExtras || 0);
-    const precioExtra = Number(emp.precioHoraExtra || 17.50);
-    const totalExtras = horasExtras * precioExtra;
-
-    const totalDevengado = base + plus + totalExtras;
-
-    // Deducción SS Trabajador: 6.35% (4.70% CC + 1.55% Desempleo + 0.10% FP)
-    const ssTrabajadorPct = 6.35;
-    const deduccionSS = Number((totalDevengado * (ssTrabajadorPct / 100)).toFixed(2));
-
-    // Retención IRPF (según Modelo 145 configurado)
-    const irpfPct = Number(emp.irpfPct || 12);
-    const retencionIrpf = Number((totalDevengado * (irpfPct / 100)).toFixed(2));
-
-    const totalDeducciones = deduccionSS + retencionIrpf;
-    const liquidoNeto = Number((totalDevengado - totalDeducciones).toFixed(2));
-
-    // Coste SS Empresa: ~31.4% (23.6% CC + 5.5% Desempleo + 0.2% FOGASA + 0.6% FP + 1.5% IT/IMS)
-    const ssEmpresaPct = 31.4;
-    const costeSSEmpresa = Number((totalDevengado * (ssEmpresaPct / 100)).toFixed(2));
-    const costeTotalEmpresa = Number((totalDevengado + costeSSEmpresa).toFixed(2));
-
+    const r = calcularNomina(emp, periodoNomina);
+    const base = r.conceptos.find(c => c.concepto === 'Salario base')?.importe || 0;
+    const totalExtras = r.conceptos.filter(c => c.tipo === 'extra').reduce((t, c) => t + c.importe, 0);
     return {
+      ...r,
       base,
-      plus,
-      horasExtras,
-      precioExtra,
+      plus: r.totalDevengado - base - totalExtras,
+      horasExtras: Number(emp.horasExtras || 0),
       totalExtras,
-      totalDevengado,
-      ssTrabajadorPct,
-      deduccionSS,
-      irpfPct,
-      retencionIrpf,
-      totalDeducciones,
-      liquidoNeto,
-      ssEmpresaPct,
-      costeSSEmpresa,
-      costeTotalEmpresa
+      deduccionSS: r.totalSSTrabajador,
+      irpfPct: r.irpf.aplicado,
+      liquidoNeto: r.liquido,
+      costeSSEmpresa: r.totalSSEmpresa,
+      costeTotalEmpresa: r.costeEmpresa
     };
+  };
+
+  // Mantener la ficha abierta al día con lo guardado (ausencias, bajas, ediciones)
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    const live = employees.find(e => e.id === selectedEmployee.id);
+    if (live && live !== selectedEmployee) setSelectedEmployee(live);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees]);
+
+  useEffect(() => {
+    if (!showDetailModal) setEditandoFicha(false);
+  }, [showDetailModal]);
+
+  const handleSaveFicha = (cambios) => {
+    if (!selectedEmployee) return;
+    updateEmployee(selectedEmployee.id, cambios);
+    setSelectedEmployee(prev => ({ ...prev, ...cambios }));
+    setEditandoFicha(false);
   };
 
   // Submit New Employee
@@ -819,9 +818,10 @@ export default function ObrerosList() {
                 <span>Simulador Pre-Nómina y Desglose Salarial Mensual</span>
               </h2>
               <p className="text-xs text-slate-400">
-                Cálculo automático de retenciones IRPF (Modelo 145), aportación a la Seguridad Social (6.35%) y coste total empresa
+                IRPF calculado con los datos del Modelo 145, Seguridad Social {periodoNomina.anio}, trienios, pagas extra, días y bajas de cada operario
               </p>
             </div>
+            <SelectorMes mes={periodoNomina.mes} anio={periodoNomina.anio} onChange={setPeriodoNomina} />
             
             <button
               onClick={() => setShowGestoriaModal(true)}
@@ -844,7 +844,7 @@ export default function ObrerosList() {
                       <img src={emp.foto} alt={emp.nombre} className="w-11 h-11 rounded-xl object-cover border border-slate-700" />
                       <div>
                         <h3 className="font-bold text-white text-sm">{emp.nombre} {emp.apellidos}</h3>
-                        <p className="text-xs text-amber-400">{emp.categoria} · {emp.tipoContrato}</p>
+                        <p className="text-xs text-amber-400">{emp.categoria} · {p.contrato}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -854,7 +854,7 @@ export default function ObrerosList() {
                   </div>
 
                   {/* Devengos & Deducciones Grid */}
-                  <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     {/* Left: Devengos (Percepciones Salariales) */}
                     <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-2">
                       <span className="text-[10px] uppercase font-black text-emerald-400 tracking-wider block">
@@ -865,7 +865,7 @@ export default function ObrerosList() {
                         <span className="font-mono">{p.base.toFixed(2)} €</span>
                       </div>
                       <div className="flex justify-between text-slate-300">
-                        <span>Plus Convenio:</span>
+                        <span>Pluses, antigüedad y pagas:</span>
                         <span className="font-mono">{p.plus.toFixed(2)} €</span>
                       </div>
                       <div className="flex justify-between text-slate-300">
@@ -884,7 +884,7 @@ export default function ObrerosList() {
                         II. Deducciones Nómina
                       </span>
                       <div className="flex justify-between text-slate-300">
-                        <span>Seg. Social ({p.ssTrabajadorPct}%):</span>
+                        <span>Seguridad Social:</span>
                         <span className="font-mono text-rose-400">-{p.deduccionSS.toFixed(2)} €</span>
                       </div>
                       <div className="flex justify-between text-slate-300">
@@ -893,7 +893,7 @@ export default function ObrerosList() {
                       </div>
                       <div className="flex justify-between text-slate-400 text-[10px]">
                         <span>Hijos: {emp.hijosACargo || 0} · {emp.situacionFamiliar}</span>
-                        <span>Mod. 145</span>
+                        <span>{p.irpf.manual ? 'IRPF a mano' : 'Mod. 145'}</span>
                       </div>
                       <div className="pt-2 border-t border-slate-800 flex justify-between font-bold text-white">
                         <span>Total Retenido:</span>
@@ -916,9 +916,17 @@ export default function ObrerosList() {
                       <span className="text-xs font-bold text-slate-300 font-mono">
                         {p.costeTotalEmpresa.toFixed(2)} €
                       </span>
-                      <span className="text-[10px] text-slate-500 block">Inc. SS Empresa (+{p.ssEmpresaPct}%)</span>
+                      <span className="text-[10px] text-slate-500 block">Inc. SS empresa (+{p.costeSSEmpresa.toFixed(2)} €)</span>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedEmployee(emp); setDetailActiveTab('laboral'); setEditandoFicha(false); setShowDetailModal(true); }}
+                    className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold"
+                  >
+                    Ver desglose y ajustar días, horas extra o bajas
+                  </button>
 
                 </div>
               );
@@ -1565,8 +1573,8 @@ export default function ObrerosList() {
       {/* ========================================================================= */}
       <AnimatePresence>
       {showDetailModal && selectedEmployee && (
-        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-5 my-8">
+        <ModalOverlay className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-start justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-4 sm:p-6 shadow-2xl space-y-5 my-4 sm:my-8">
             
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-slate-800 pb-4">
@@ -1592,11 +1600,32 @@ export default function ObrerosList() {
                 </div>
               </div>
 
-              <button onClick={() => setShowDetailModal(false)} aria-label="Cerrar" className="text-slate-400 hover:text-white p-1">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {!editandoFicha && (
+                  <button
+                    type="button"
+                    onClick={() => setEditandoFicha(true)}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5"
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> Editar ficha
+                  </button>
+                )}
+                <button onClick={() => { setShowDetailModal(false); setEditandoFicha(false); }} aria-label="Cerrar" className="text-slate-400 hover:text-white p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
+            {editandoFicha && (
+              <FichaEmpleadoEditor
+                key={selectedEmployee.id}
+                emp={selectedEmployee}
+                onSave={handleSaveFicha}
+                onCancel={() => setEditandoFicha(false)}
+              />
+            )}
+
+            {!editandoFicha && (<>
             {/* Internal Detail Tabs */}
             <div className="flex border-b border-slate-800 space-x-3 text-xs font-bold">
               <button
@@ -1676,66 +1705,35 @@ export default function ObrerosList() {
             )}
 
             {/* TAB CONTENT 2: LABORAL, NÓMINA & IRPF */}
-            {detailActiveTab === 'laboral' && (() => {
-              const p = calculatePayroll(selectedEmployee);
-
-              return (
-                <div className="space-y-4 text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Tipo de Contrato</span>
-                      <span className="text-sm font-bold text-white capitalize">{selectedEmployee.tipoContrato}</span>
-                      <span className="text-[10px] text-slate-400 block">{selectedEmployee.jornadaHorasSemana}h semanales</span>
-                    </div>
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Salario Base Pactado</span>
-                      <span className="text-sm font-bold text-amber-400 font-mono">{p.base.toFixed(2)} €/mes</span>
-                      <span className="text-[10px] text-slate-400 block">Plus: {p.plus.toFixed(2)} €</span>
-                    </div>
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Retención IRPF (Mod. 145)</span>
-                      <span className="text-sm font-bold text-rose-400 font-mono">{p.irpfPct}%</span>
-                      <span className="text-[10px] text-slate-400 block">{selectedEmployee.hijosACargo} hijos · {selectedEmployee.situacionFamiliar}</span>
-                    </div>
+            {detailActiveTab === 'laboral' && (
+              <div className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">Tipo de contrato</span>
+                    <span className="text-sm font-bold text-white">{calculatePayroll(selectedEmployee).contrato}</span>
+                    <span className="text-[10px] text-slate-400 block">{selectedEmployee.jornadaHorasSemana}h semanales · alta {selectedEmployee.fechaAlta}</span>
                   </div>
-
-                  {/* Pre-payroll simulation box */}
-                  <div className="bg-gradient-to-r from-slate-950 to-slate-900 p-4 rounded-xl border border-amber-500/30 space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <CreditCard className="w-4 h-4 text-amber-400" />
-                        <span>Simulación Nómina del Mes Actual</span>
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-mono">Días trabajados: {selectedEmployee.diasTrabajadosMes || 21}</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                      <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                        <span className="text-[10px] text-slate-400 block">Total Bruto</span>
-                        <span className="text-sm font-bold text-white font-mono">{p.totalDevengado.toFixed(2)} €</span>
-                      </div>
-                      <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                        <span className="text-[10px] text-slate-400 block">SS Obrero (6.35%)</span>
-                        <span className="text-sm font-bold text-rose-400 font-mono">-{p.deduccionSS.toFixed(2)} €</span>
-                      </div>
-                      <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                        <span className="text-[10px] text-slate-400 block">IRPF ({p.irpfPct}%)</span>
-                        <span className="text-sm font-bold text-rose-400 font-mono">-{p.retencionIrpf.toFixed(2)} €</span>
-                      </div>
-                      <div className="bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/30">
-                        <span className="text-[10px] text-amber-400 font-bold block">Sueldo Neto</span>
-                        <span className="text-sm font-black text-amber-300 font-mono">{p.liquidoNeto.toFixed(2)} €</span>
-                      </div>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
-                      <span>Aportación SS Empresa estimada (~31.4%): <strong className="text-slate-300 font-mono">+{p.costeSSEmpresa.toFixed(2)} €</strong></span>
-                      <span>Coste Total Empresa: <strong className="text-white font-mono">{p.costeTotalEmpresa.toFixed(2)} €</strong></span>
-                    </div>
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">Salario base pactado</span>
+                    <span className="text-sm font-bold text-amber-400 font-mono">{Number(selectedEmployee.salarioBaseMensual || 0).toFixed(2)} €/mes</span>
+                    <span className="text-[10px] text-slate-400 block">Plus convenio: {Number(selectedEmployee.plusConvenio || 0).toFixed(2)} €</span>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">Sueldo bruto anual</span>
+                    <span className="text-sm font-bold text-white font-mono">{calculatePayroll(selectedEmployee).retribucionAnual.toFixed(2)} €</span>
+                    <span className="text-[10px] text-slate-400 block">{selectedEmployee.hijosACargo || 0} hijos · {selectedEmployee.situacionFamiliar}</span>
                   </div>
                 </div>
-              );
-            })()}
+                <NominaDesglose
+                  key={selectedEmployee.id}
+                  emp={selectedEmployee}
+                  onGuardarVariables={(patch) => {
+                    updateEmployee(selectedEmployee.id, patch);
+                    setSelectedEmployee(prev => ({ ...prev, ...patch }));
+                  }}
+                />
+              </div>
+            )}
 
             {/* TAB CONTENT 3: VACACIONES & BAJAS */}
             {detailActiveTab === 'vacaciones' && (
@@ -1938,6 +1936,7 @@ export default function ObrerosList() {
                 Cerrar Ficha
               </button>
             </div>
+            </>)}
 
           </div>
         </ModalOverlay>
@@ -2149,7 +2148,7 @@ export default function ObrerosList() {
                     <th className="py-2.5 px-3">DNI / NAF</th>
                     <th className="py-2.5 px-3">Categoría</th>
                     <th className="py-2.5 px-3 text-right">Bruto Devengado</th>
-                    <th className="py-2.5 px-3 text-right">SS Obrero (6.35%)</th>
+                    <th className="py-2.5 px-3 text-right">SS trabajador</th>
                     <th className="py-2.5 px-3 text-right">IRPF</th>
                     <th className="py-2.5 px-3 text-right">Neto a Pagar</th>
                     <th className="py-2.5 px-3 text-right">SS Empresa</th>
