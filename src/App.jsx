@@ -15,7 +15,6 @@ import SubcontratasList from './components/Subcontratas/SubcontratasList';
 import PortalObreroView from './components/PortalObrero/PortalObreroView';
 import EmpresaConfig from './components/Configuracion/EmpresaConfig';
 import AvisosCenter from './components/Avisos/AvisosCenter';
-import SeguimientoObra from './components/Avance/SeguimientoObra';
 import PdfModal from './components/Common/PdfModal';
 import LoginObreroView from './components/Auth/LoginObreroView';
 import LoginAdminModal from './components/Auth/LoginAdminModal';
@@ -182,7 +181,6 @@ function MainLayout() {
           {activeTab === 'dashboard' && <Dashboard />}
           {activeTab === 'obras' && <ObrasList />}
           {activeTab === 'avisos' && <AvisosCenter />}
-          {activeTab === 'avance' && <SeguimientoObra />}
           {activeTab === 'inbox' && <AudioEmailInbox />}
           {activeTab === 'presupuestos' && <PresupuestosList />}
           {activeTab === 'facturas' && facturacionActivada && <FacturasList />}
