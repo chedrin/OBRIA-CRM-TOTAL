@@ -1960,6 +1960,13 @@ export function AppProvider({ children }) {
     showNotification('Ficha de subcontratista actualizada.');
   };
 
+  const deleteSubcontractor = (id) => {
+    const sub = subcontractors.find(s => s.id === id);
+    setSubcontractors(prev => prev.filter(s => s.id !== id));
+    addAuditLog('BAJA_SUBCONTRATA', sub ? `${sub.razonSocial} (CIF: ${sub.cif})` : `ID: ${id}`);
+    showNotification('Subcontrata eliminada.');
+  };
+
   const addSubcontractorBudget = (subId, budgetData) => {
     const newBud = {
       ...budgetData,
@@ -2365,6 +2372,7 @@ export function AppProvider({ children }) {
       setSubcontractors,
       addSubcontractor,
       updateSubcontractor,
+      deleteSubcontractor,
       addSubcontractorBudget,
       updateSubcontractorBudgetStatus,
       addSubcontractorInvoice,

@@ -29,12 +29,18 @@ import { buildGremioQuote } from '../../services/priceBaseService';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
+import FichaSubcontrataForm from './FichaSubcontrataForm';
+import DocumentosFicha from './DocumentosFicha';
+import ControlDocumentalObras from './ControlDocumentalObras';
+import useDocumentacionSubcontratas, { TONE_CLS, ESTADO_INFO } from './useDocumentacionSubcontratas';
+import { companyCompliance, requirementStatus, STATUS_INFO } from '../../utils/documentacionSubcontratas';
 
 export default function SubcontratasList() {
   const {
     subcontractors = [],
     addSubcontractor,
     updateSubcontractor,
+    deleteSubcontractor,
     addSubcontractorBudget,
     updateSubcontractorBudgetStatus,
     addSubcontractorInvoice,
@@ -59,26 +65,14 @@ export default function SubcontratasList() {
   const [filterPRLStatus, setFilterPRLStatus] = useState('todos'); // 'todos', 'vigente', 'proximo', 'caducado'
 
   // Subcontractor Detail Modal / Drawer
-  const [selectedSubcontractor, setSelectedSubcontractor] = useState(null);
+  // Se guarda el id para que la ficha abierta muestre siempre los datos al día.
+  const [selectedSubId, setSelectedSubId] = useState(null);
+  const selectedSubcontractor = subcontractors.find(s => s.id === selectedSubId) || null;
+  const setSelectedSubcontractor = (sub) => setSelectedSubId(sub ? sub.id : null);
+  const docState = useDocumentacionSubcontratas();
+  // Ficha en edición: null cerrada, 'nueva' alta, o el id de la subcontrata.
+  const [editingSubId, setEditingSubId] = useState(null);
   const [detailTab, setDetailTab] = useState('prl'); // 'prl', 'presupuestos', 'facturas', 'bitacora', 'scoring'
-
-  // New Subcontractor Modal
-  const [showAddSubModal, setShowAddSubModal] = useState(false);
-  const [newSubForm, setNewSubForm] = useState({
-    razonSocial: '',
-    nombreComercial: '',
-    cif: '',
-    gremio: 'Electricidad y Climatización',
-    personaContacto: '',
-    telefono: '',
-    telefonoUrgencias: '',
-    email: '',
-    direccion: '',
-    seguroRCCompania: 'Mapfre Empresas',
-    seguroRCPoliza: '',
-    seguroRCSuma: 300000,
-    seguroRCFechaCaducidad: '2027-12-31'
-  });
 
   // Add Budget to Subcontractor Modal
   const [showAddBudgetModal, setShowAddBudgetModal] = useState(false);
@@ -144,7 +138,7 @@ export default function SubcontratasList() {
     } else if (diffDays <= 30) {
       return { status: 'proximo', label: `Vence en ${diffDays} días`, color: 'bg-amber-400', badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/30' };
     } else {
-      return { status: 'vigente', label: 'Vigente y Apto', color: 'bg-emerald-400', badgeClass: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' };
+      return { status: 'vigente', label: 'Seguro vigente', color: 'bg-emerald-400', badgeClass: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' };
     }
   };
 
@@ -173,56 +167,26 @@ export default function SubcontratasList() {
   });
 
 
-  // Handle Add Subcontractor Submit
-  const handleAddSubSubmit = (e) => {
-    e.preventDefault();
-    if (!newSubForm.razonSocial || !newSubForm.cif) {
-      showNotification('Razón Social y CIF son obligatorios', 'error');
-      return;
+  // Alta o edición de la ficha
+  const handleSaveFicha = (datos) => {
+    if (editingSubId === 'nueva') {
+      const nueva = addSubcontractor(datos);
+      confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
+      setSelectedSubId(nueva.id);
+      setDetailTab('prl');
+    } else {
+      updateSubcontractor(editingSubId, datos);
     }
+    setEditingSubId(null);
+  };
 
-    const today = new Date();
-    const expiry = new Date(newSubForm.seguroRCFechaCaducidad);
-    const isApto = expiry > today;
-
-    addSubcontractor({
-      razonSocial: newSubForm.razonSocial,
-      nombreComercial: newSubForm.nombreComercial || newSubForm.razonSocial,
-      cif: newSubForm.cif.toUpperCase(),
-      gremio: newSubForm.gremio,
-      personaContacto: newSubForm.personaContacto,
-      telefono: newSubForm.telefono,
-      telefonoUrgencias: newSubForm.telefonoUrgencias || newSubForm.telefono,
-      email: newSubForm.email,
-      direccion: newSubForm.direccion,
-      prl: {
-        seguroRCCompania: newSubForm.seguroRCCompania,
-        seguroRCPoliza: newSubForm.seguroRCPoliza,
-        seguroRCSuma: Number(newSubForm.seguroRCSuma) || 300000,
-        seguroRCFechaCaducidad: newSubForm.seguroRCFechaCaducidad,
-        certificadoAEAT: 'vigente',
-        certificadoTGSS: 'vigente',
-        aptoEntrarObra: isApto
-      }
-    });
-
-    confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
-    setShowAddSubModal(false);
-    setNewSubForm({
-      razonSocial: '',
-      nombreComercial: '',
-      cif: '',
-      gremio: 'Electricidad y Climatización',
-      personaContacto: '',
-      telefono: '',
-      telefonoUrgencias: '',
-      email: '',
-      direccion: '',
-      seguroRCCompania: 'Mapfre Empresas',
-      seguroRCPoliza: '',
-      seguroRCSuma: 300000,
-      seguroRCFechaCaducidad: '2027-12-31'
-    });
+  const handleDeleteSub = () => {
+    const sub = subcontractors.find(s => s.id === editingSubId);
+    if (!sub) return;
+    if (!window.confirm(`¿Eliminar la subcontrata "${sub.razonSocial}"? Se borra su ficha con presupuestos, facturas y notas. Los documentos subidos quedan guardados en Supabase.`)) return;
+    deleteSubcontractor(sub.id);
+    setEditingSubId(null);
+    setSelectedSubId(null);
   };
 
   // Add Budget Submit
@@ -398,7 +362,7 @@ export default function SubcontratasList() {
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-3">
           <button
-            onClick={() => setShowAddSubModal(true)}
+            onClick={() => setEditingSubId('nueva')}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black flex items-center gap-2 transition shadow-lg shadow-indigo-600/20"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
@@ -419,6 +383,18 @@ export default function SubcontratasList() {
         >
           <Building2 className="w-4 h-4" />
           <span>Directorio & Control PRL ({subcontractors.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('documentacion_obras')}
+          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+            activeTab === 'documentacion_obras'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Documentación por obra</span>
         </button>
 
         <button
@@ -497,7 +473,7 @@ export default function SubcontratasList() {
                 className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none"
               >
                 <option value="todos">Estado Seguro PRL</option>
-                <option value="vigente">🟢 Vigente y Apto</option>
+                <option value="vigente">🟢 Seguro vigente</option>
                 <option value="proximo">🟡 Caduca &lt; 30 días</option>
                 <option value="caducado">🔴 Bloqueado / Caducado</option>
               </select>
@@ -571,6 +547,16 @@ export default function SubcontratasList() {
                       <span className="text-slate-400">{activeBudgets} obras en curso</span>
                     </div>
 
+                    {docState.ready && !docState.loading && !docState.error && (() => {
+                      const docs = companyCompliance(docState.docs, sub.id);
+                      return (
+                        <div className={`rounded-xl border px-3 py-1.5 text-[11px] font-bold flex items-center justify-between gap-2 ${TONE_CLS[ESTADO_INFO[docs.estado].tone]}`}>
+                          <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Documentación</span>
+                          <span>{docs.ok}/{docs.total} en regla{docs.warn ? ` · ${docs.warn} por caducar` : ''}</span>
+                        </div>
+                      );
+                    })()}
+
                   </div>
 
                   {/* Bottom Action */}
@@ -597,6 +583,15 @@ export default function SubcontratasList() {
           </div>
 
         </div>
+      )}
+
+      {activeTab === 'documentacion_obras' && (
+        <ControlDocumentalObras
+          subcontractors={subcontractors}
+          obras={obras}
+          docState={docState}
+          onOpenFicha={(id) => { setSelectedSubId(id); setDetailTab('prl'); }}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -1124,150 +1119,14 @@ export default function SubcontratasList() {
       {/* MODAL 1: ALTA NUEVA SUBCONTRATA (CON DATOS PRL Y SEGURO RC)               */}
       {/* ========================================================================= */}
       <AnimatePresence>
-      {showAddSubModal && (
-        <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-6 shadow-2xl space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-indigo-400" />
-                <span>Alta de Empresa Subcontratista (PRL & Ficha Técnica)</span>
-              </h3>
-              <button aria-label="Cerrar" onClick={() => setShowAddSubModal(false)} className="text-slate-400 hover:text-white">✕</button>
-            </div>
-
-            <form onSubmit={handleAddSubSubmit} className="space-y-4 text-xs">
-              <div>
-                <span className="text-[11px] font-black uppercase text-indigo-400 block mb-2">1. Datos Fiscales y Contacto</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-slate-400 block mb-1">Razón Social *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ej: ElectroSur Instalaciones SL"
-                      value={newSubForm.razonSocial}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, razonSocial: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">CIF / NIF *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="B84561234"
-                      value={newSubForm.cif}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, cif: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Gremio / Especialidad</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ej: Electricidad y Climatización"
-                      value={newSubForm.gremio}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, gremio: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Persona de Contacto</label>
-                    <input
-                      type="text"
-                      placeholder="Ej: Sergio Navas (Jefe Técnico)"
-                      value={newSubForm.personaContacto}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, personaContacto: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Teléfono Ordinario</label>
-                    <input
-                      type="text"
-                      placeholder="+34 91 555 7788"
-                      value={newSubForm.telefono}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, telefono: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Teléfono de Urgencias en Obra</label>
-                    <input
-                      type="text"
-                      placeholder="+34 600 112 233"
-                      value={newSubForm.telefonoUrgencias}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, telefonoUrgencias: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* PRL Seguros */}
-              <div className="pt-2 border-t border-slate-800">
-                <span className="text-[11px] font-black uppercase text-amber-400 block mb-2">2. Prevención de Riesgos Laborales (Seguro RC - Ley 32/2006)</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-slate-400 block mb-1">Aseguradora</label>
-                    <input
-                      type="text"
-                      value={newSubForm.seguroRCCompania}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, seguroRCCompania: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Nº Póliza Seguro RC</label>
-                    <input
-                      type="text"
-                      placeholder="POL-RC-982134"
-                      value={newSubForm.seguroRCPoliza}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, seguroRCPoliza: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Suma Asegurada (€)</label>
-                    <input
-                      type="number"
-                      value={newSubForm.seguroRCSuma}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, seguroRCSuma: Number(e.target.value) })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">Fecha de Caducidad de la Póliza</label>
-                    <input
-                      type="date"
-                      required
-                      value={newSubForm.seguroRCFechaCaducidad}
-                      onChange={(e) => setNewSubForm({ ...newSubForm, seguroRCFechaCaducidad: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowAddSubModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black transition shadow-lg shadow-indigo-600/30"
-                >
-                  Guardar Subcontrata
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalOverlay>
+      {editingSubId && (
+        <FichaSubcontrataForm
+          key={editingSubId}
+          subcontractor={editingSubId === 'nueva' ? null : subcontractors.find(s => s.id === editingSubId)}
+          onSave={handleSaveFicha}
+          onDelete={handleDeleteSub}
+          onClose={() => setEditingSubId(null)}
+        />
       )}
       </AnimatePresence>
 
@@ -1291,18 +1150,26 @@ export default function SubcontratasList() {
                 <p className="text-xs text-indigo-400 font-semibold">{selectedSubcontractor.gremio}</p>
               </div>
 
-              <button aria-label="Cerrar" onClick={() => setSelectedSubcontractor(null)} className="text-slate-400 hover:text-white">✕</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditingSubId(selectedSubcontractor.id)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-xl text-xs font-bold border border-slate-700 flex items-center gap-1.5"
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Editar ficha
+                </button>
+                <button aria-label="Cerrar" onClick={() => setSelectedSubcontractor(null)} className="text-slate-400 hover:text-white">✕</button>
+              </div>
             </div>
 
             {/* Sub-tabs */}
-            <div className="flex border-b border-slate-800 space-x-3 text-xs font-bold">
+            <div className="flex border-b border-slate-800 space-x-3 text-xs font-bold overflow-x-auto whitespace-nowrap">
               <button
                 onClick={() => setDetailTab('prl')}
                 className={`pb-2 border-b-2 transition ${
                   detailTab === 'prl' ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'
                 }`}
               >
-                1. Control PRL & Documental
+                1. Ficha, PRL y documentos
               </button>
               <button
                 onClick={() => setDetailTab('presupuestos')}
@@ -1347,7 +1214,7 @@ export default function SubcontratasList() {
                     <div className="flex items-center gap-3">
                       <ShieldCheck className="w-6 h-6 stroke-[2.2]" />
                       <div>
-                        <span className="text-[10px] uppercase font-bold block">Dictamen de Acceso a Obra</span>
+                        <span className="text-[10px] uppercase font-bold block">Seguro de responsabilidad civil</span>
                         <span className="text-base font-black">{prl.label}</span>
                       </div>
                     </div>
@@ -1363,14 +1230,42 @@ export default function SubcontratasList() {
                       <span className="text-[10px] text-slate-500 font-bold block uppercase">Suma Asegurada</span>
                       <span className="font-bold text-amber-400 text-sm font-mono">{Number(selectedSubcontractor.prl?.seguroRCSuma || 300000).toLocaleString('es-ES')} €</span>
                     </div>
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                      <span className="text-[10px] text-slate-500 font-bold block uppercase">Certificado AEAT (Hacienda)</span>
-                      <span className="font-bold text-emerald-400 text-sm">Al Corriente</span>
-                    </div>
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                      <span className="text-[10px] text-slate-500 font-bold block uppercase">Certificado TGSS (Seguridad Social)</span>
-                      <span className="font-bold text-emerald-400 text-sm">Al Corriente</span>
-                    </div>
+                    {[['aeat', 'Certificado AEAT (Hacienda)'], ['tgss', 'Certificado TGSS (Seguridad Social)']].map(([type, label]) => {
+                      const it = requirementStatus(docState.docs, selectedSubcontractor.id, type, '');
+                      const tone = STATUS_INFO[it.status].tone;
+                      return (
+                        <div key={type} className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                          <span className="text-[10px] text-slate-500 font-bold block uppercase">{label}</span>
+                          <span className={`font-bold text-sm ${tone === 'ok' ? 'text-emerald-400' : tone === 'warn' ? 'text-amber-400' : 'text-rose-400'}`}>
+                            {it.status === 'falta' ? 'Sin certificado subido' : it.status === 'caducado' ? 'Caducado' : `Al corriente${it.doc?.fecha_caducidad ? ` hasta ${it.doc.fecha_caducidad.split('-').reverse().join('/')}` : ''}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-slate-300">
+                    <span><span className="text-slate-500">Contacto:</span> {selectedSubcontractor.personaContacto || '—'}</span>
+                    <span><span className="text-slate-500">Teléfono:</span> {selectedSubcontractor.telefono || '—'}</span>
+                    <span><span className="text-slate-500">Urgencias:</span> {selectedSubcontractor.telefonoUrgencias || '—'}</span>
+                    <span className="truncate"><span className="text-slate-500">Correo:</span> {selectedSubcontractor.email || '—'}</span>
+                    <span className="sm:col-span-2"><span className="text-slate-500">Dirección:</span> {selectedSubcontractor.direccion || '—'}</span>
+                    <span><span className="text-slate-500">Nº REA:</span> {selectedSubcontractor.numeroREA || '—'}</span>
+                    <span><span className="text-slate-500">Forma de pago:</span> {selectedSubcontractor.formaPago || '—'}</span>
+                    <span className="sm:col-span-2 font-mono"><span className="text-slate-500 font-sans">IBAN:</span> {selectedSubcontractor.iban || '—'}</span>
+                    {selectedSubcontractor.observaciones && <span className="sm:col-span-2"><span className="text-slate-500">Observaciones:</span> {selectedSubcontractor.observaciones}</span>}
+                  </div>
+
+                  <div className="pt-1">
+                    <span className="text-[11px] font-black uppercase text-indigo-400 block mb-2">Documentos de la subcontrata</span>
+                    <DocumentosFicha
+                      subcontractor={selectedSubcontractor}
+                      docs={docState.docs}
+                      obras={obras}
+                      ready={docState.ready}
+                      error={docState.error}
+                      onChanged={docState.reload}
+                    />
                   </div>
                 </div>
               );

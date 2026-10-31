@@ -585,11 +585,11 @@ async function handleCertify(req, res) {
 // ---------------------------------------------------------------------------
 // Presupuesto y factura de la subcontrata (supabase_migration_documentos_subcontrata.sql)
 // ---------------------------------------------------------------------------
-const DOC_BUCKET = "subcontrata-docs";
-const MAX_DOC_BYTES = 15 * 1024 * 1024;
+export const DOC_BUCKET = "subcontrata-docs";
+export const MAX_DOC_BYTES = 15 * 1024 * 1024;
 const DOC_KINDS = new Set(["presupuesto", "factura"]);
 
-function detectDocType(buffer) {
+export function detectDocType(buffer) {
   if (buffer.length > 4 && buffer.slice(0, 4).toString("ascii") === "%PDF") return { mime: "application/pdf", ext: "pdf" };
   if (buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return { mime: "image/jpeg", ext: "jpg" };
   if (buffer.length > 8 && buffer.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { mime: "image/png", ext: "png" };
