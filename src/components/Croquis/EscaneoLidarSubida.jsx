@@ -74,7 +74,7 @@ export default function EscaneoLidarSubida({ onUsar, textoUsar = 'Usar el escane
           <span>{leyendo ? 'Leyendo el escaneo…' : 'Subir escaneo LiDAR'}</span>
           <input type="file" multiple accept={ACCEPT_TODO} onChange={elegir} className="hidden" disabled={leyendo} />
         </label>
-        <span className="text-[11px] text-slate-500">{ayuda || 'Mide: JSON (RoomPlan), DXF, OBJ, CSV o imagen del plano. Visor 3D: también GLB, PLY, USDZ, STL, LAS, XYZ y PTS.'}</span>
+        <span className="text-[11px] text-slate-500">{ayuda || 'Mide: JSON (RoomPlan), DXF, OBJ, CSV o imagen del plano. Visor 3D con colores: también GLB, USDZ, el ZIP de la app (OBJ + fotos), PLY, STL, LAS, XYZ y PTS.'}</span>
       </div>
 
       {error && (

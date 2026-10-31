@@ -1,7 +1,8 @@
 /**
  * ObraMaster - Carga de escaneos LiDAR para el visor 3D (todo en el navegador, sin subir nada al servidor).
  *
- * Mallas: GLB/GLTF, OBJ (+MTL y texturas si se eligen juntos), PLY, STL, FBX, USDZ/USD.
+ * Mallas: GLB/GLTF, OBJ (+MTL y texturas si se eligen juntos o en un ZIP), PLY, STL, FBX, USDZ/USD.
+ * Las mallas con textura o color se ven sin sombreado, con su color real.
  * Nubes de puntos: PLY sin caras, LAS (sin comprimir), PCD, XYZ/PTS/TXT/CSV.
  * Planos: DXF (2D o 3D).
  * E57 y LAZ no se leen en el navegador: el mensaje explica cómo convertirlos.
@@ -74,12 +75,68 @@ function prepararMallas(objeto, { forzarGris = false } = {}) {
 }
 
 /**
- * Carga los archivos elegidos y devuelve { objeto, formato, zArriba, avisos, nombre }.
+ * Color real del escaneo: la textura (fotos) o el color por vértice ya llevan la luz de la estancia,
+ * así que se muestran sin sombreado (como en la app del iPad). El material con luces queda en
+ * userData.matLuz y el de color real en userData.matFoto para poder alternarlos.
+ */
+export function prepararColorReal(objeto) {
+  let conColor = false;
+  objeto.traverse(o => {
+    if (!o.isMesh) return;
+    const lista = Array.isArray(o.material) ? o.material : [o.material];
+    const conVertices = Boolean(o.geometry.attributes.color);
+    if (!lista.some(m => m?.map) && !conVertices) return;
+    conColor = true;
+    const fotos = lista.map(m => {
+      if (m?.map && m.map.colorSpace === THREE.NoColorSpace) { m.map.colorSpace = THREE.SRGBColorSpace; if (m.map.image) m.map.needsUpdate = true; }
+      return new THREE.MeshBasicMaterial({
+        map: m?.map || null,
+        color: m?.map || conVertices ? 0xffffff : (m?.color || 0xcbd5e1),
+        vertexColors: conVertices && !m?.map,
+        side: THREE.DoubleSide,
+        transparent: Boolean(m?.transparent),
+        opacity: m?.opacity ?? 1,
+        alphaTest: m?.alphaTest || 0
+      });
+    });
+    o.userData.matLuz = o.material;
+    o.userData.matFoto = Array.isArray(o.material) ? fotos : fotos[0];
+    o.material = o.userData.matFoto;
+  });
+  return conColor;
+}
+
+/** Abre los ZIP elegidos (3D Scanner App y Polycam exportan OBJ + MTL + fotos en un ZIP). */
+async function expandirZips(archivos) {
+  const lista = Array.from(archivos || []);
+  if (!lista.some(f => extension(f.name) === 'zip')) return lista;
+  const { unzipSync } = await import('three/examples/jsm/libs/fflate.module.js');
+  const salida = [];
+  for (const f of lista) {
+    if (extension(f.name) !== 'zip') { salida.push(f); continue; }
+    let entradas;
+    try { entradas = unzipSync(new Uint8Array(await f.arrayBuffer())); } catch { throw errorVisor(`No se pudo abrir el ZIP ${f.name} (¿está dañado o protegido?).`); }
+    Object.entries(entradas).forEach(([ruta, datos]) => {
+      if (ruta.endsWith('/') || ruta.startsWith('__MACOSX') || ruta.split('/').pop().startsWith('.')) return;
+      salida.push(new File([datos], ruta.split('/').pop()));
+    });
+  }
+  return salida;
+}
+
+/**
+ * Carga los archivos elegidos y devuelve { objeto, formato, zArriba, avisos, nombre, conColor }.
  * `objeto` es un THREE.Object3D listo para añadir a la escena (sin girar ni escalar).
  */
-export async function cargarEscaneo3D(archivos) {
+export async function cargarEscaneo3D(archivosElegidos) {
+  const zip = Array.from(archivosElegidos || []).find(f => extension(f.name) === 'zip');
+  const r = await cargarModelo(await expandirZips(archivosElegidos));
+  return { ...r, nombre: zip ? zip.name : r.nombre, conColor: prepararColorReal(r.objeto) };
+}
+
+async function cargarModelo(archivos) {
   const principal = archivoPrincipal(archivos);
-  if (!principal) throw errorVisor('Elige un archivo 3D: GLB, OBJ, PLY, STL, USDZ, LAS, XYZ, PTS, PCD o DXF.');
+  if (!principal || extension(principal.name) === 'zip') throw errorVisor('Elige un archivo 3D (o un ZIP que lo contenga): GLB, OBJ, PLY, STL, USDZ, LAS, XYZ, PTS, PCD o DXF.');
   if (principal.size > MAX_MB_VISOR * 1024 * 1024) throw errorVisor(`El archivo pesa más de ${MAX_MB_VISOR} MB. Expórtalo con menos detalle o como nube reducida.`);
   const ext = extension(principal.name);
   const avisos = [];
@@ -162,7 +219,7 @@ export async function cargarEscaneo3D(archivos) {
         materiales.preload();
         loader.setMaterials(materiales);
       } else if (mtlNombre) {
-        avisos.push(`La malla usa «${mtlNombre}» y sus texturas: elígelos junto al OBJ para verla con color.`);
+        avisos.push(`La malla usa «${mtlNombre}» y sus fotos (JPG/PNG): elígelos junto al OBJ, o sube el ZIP que exporta la app, para verla con colores.`);
       }
       const obj = loader.parse(texto);
       return { ...base, objeto: prepararMallas(obj, { forzarGris: !mtl }), conservar: liberar };
@@ -221,7 +278,7 @@ export function contarGeometria(objeto) {
 export function liberarObjeto(objeto) {
   objeto?.traverse?.(o => {
     o.geometry?.dispose?.();
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    mats.filter(Boolean).forEach(m => { Object.values(m).forEach(v => v?.isTexture && v.dispose()); m.dispose?.(); });
+    const mats = [o.material, o.userData?.matLuz, o.userData?.matFoto].flat();
+    new Set(mats.filter(Boolean)).forEach(m => { Object.values(m).forEach(v => v?.isTexture && v.dispose()); m.dispose?.(); });
   });
 }

@@ -45,6 +45,8 @@ export default function VisorEscaneo3D({ archivos, onClose }) {
   const [error, setError] = useState('');
   const [info, setInfo] = useState(null);
   const [alambre, setAlambre] = useState(false);
+  // Con textura o color: por defecto se ve tal cual lo fotografió el escáner; «Luces» añade sombreado.
+  const [luces, setLuces] = useState(false);
   const [tamPunto, setTamPunto] = useState(4);
   const [zArriba, setZArriba] = useState(false);
   const [unidad, setUnidad] = useState(1);
@@ -69,7 +71,7 @@ export default function VisorEscaneo3D({ archivos, onClose }) {
     el.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b1220);
+    scene.background = new THREE.Color(0x2b2f36);
     scene.add(new THREE.HemisphereLight(0xffffff, 0x64748b, 2.4));
     const sol = new THREE.DirectionalLight(0xffffff, 1.6);
     sol.position.set(1, 2, 1.4);
@@ -188,7 +190,12 @@ export default function VisorEscaneo3D({ archivos, onClose }) {
         r.objeto.position.sub(caja.getCenter(new THREE.Vector3()));
         m.raiz.add(r.objeto);
         m.objeto = r.objeto;
-        r.objeto.traverse(o => (Array.isArray(o.material) ? o.material : [o.material]).filter(Boolean).forEach(mat => { mat.clippingPlanes = [m.plano]; }));
+        // Texturas nítidas al mirar el suelo o las paredes de lado.
+        const aniso = m.renderer.capabilities.getMaxAnisotropy();
+        r.objeto.traverse(o => [o.material, o.userData.matLuz, o.userData.matFoto].flat().filter(Boolean).forEach(mat => {
+          mat.clippingPlanes = [m.plano];
+          if (mat.map) { mat.map.anisotropy = aniso; if (mat.map.image) mat.map.needsUpdate = true; }
+        }));
         m.liberarUrls = r.conservar;
         m.plano2D = r.plano2D;
         // Unidades por tamaño (los escaneos de móvil vienen en metros).
@@ -199,7 +206,8 @@ export default function VisorEscaneo3D({ archivos, onClose }) {
         const zUp = r.zArriba || (['obj', 'ply', 'stl'].includes(r.formato) && ext.z < ext.y * 0.6 && ext.z < ext.x * 0.6);
         if (u !== 1) r.avisos.push(`El modelo parece estar en ${u === 0.01 ? 'centímetros' : 'milímetros'}: se ha pasado a metros. Cámbialo en «Unidades» si no es así.`);
         const conteo = contarGeometria(r.objeto);
-        setInfo({ formato: r.formato, nombre: r.nombre, conteo, avisos: r.avisos, dims: null, nube: conteo.puntos > 0 && !conteo.triangulos });
+        setInfo({ formato: r.formato, nombre: r.nombre, conteo, avisos: r.avisos, dims: null, nube: conteo.puntos > 0 && !conteo.triangulos, conColor: r.conColor });
+        setLuces(false);
         setUnidad(u);
         setZArriba(zUp);
         setEstado('listo');
@@ -228,13 +236,14 @@ export default function VisorEscaneo3D({ archivos, onClose }) {
     const m = motor.current;
     if (!m?.objeto) return;
     m.objeto.traverse(o => {
+      if (o.userData.matFoto) o.material = luces ? o.userData.matLuz : o.userData.matFoto;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.filter(Boolean).forEach(mat => {
         if (o.isPoints) { mat.size = m.diag * 0.0006 * tamPunto; mat.needsUpdate = true; }
         else if (o.isMesh) mat.wireframe = alambre;
       });
     });
-  }, [alambre, tamPunto, estado, unidad, zArriba]);
+  }, [alambre, luces, tamPunto, estado, unidad, zArriba]);
 
   // Medir: clic (sin arrastrar) en dos puntos del modelo.
   useEffect(() => {
@@ -364,6 +373,7 @@ export default function VisorEscaneo3D({ archivos, onClose }) {
                 <button type="button" className={btn(midiendo)} onClick={() => setMidiendo(v => !v)} title="Haz clic en dos puntos para medir"><Ruler className="w-3.5 h-3.5" />Medir</button>
                 {mediciones.length > 0 && <button type="button" className={btn()} onClick={borrarMediciones} title="Borrar medidas"><Trash2 className="w-3.5 h-3.5" /></button>}
                 <button type="button" className={btn(corte < 100)} onClick={() => setCorte(v => (v < 100 ? 100 : 85))} title="Quitar el techo para ver el interior">Sin techo</button>
+                {info?.conColor && <button type="button" className={btn(luces)} onClick={() => setLuces(v => !v)} title="Añadir sombreado para ver mejor el relieve (apagado: colores reales del escaneo)">Luces</button>}
                 {c?.triangulos > 0 && <button type="button" className={btn(alambre)} onClick={() => setAlambre(v => !v)} title="Ver las aristas de la malla">Alambre</button>}
                 <button type="button" className={btn(rejilla)} onClick={() => setRejilla(v => !v)} title="Rejilla del suelo"><Grid3x3 className="w-3.5 h-3.5" /></button>
                 <button type="button" className={btn(zArriba)} onClick={() => setZArriba(v => !v)} title="Si el modelo sale tumbado, cambia el eje vertical"><Move3d className="w-3.5 h-3.5" />Z arriba</button>

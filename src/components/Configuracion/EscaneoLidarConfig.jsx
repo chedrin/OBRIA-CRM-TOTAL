@@ -23,10 +23,10 @@ const FORMATOS = [
 
 // Solo visor 3D (se ven y se miden a mano, pero no dibujan el croquis).
 const FORMATOS_VISOR = [
-  ['GLB / glTF, USDZ, FBX', 'Modelos 3D con textura (Polycam, Scaniverse, el «Compartir» de Apple).'],
+  ['GLB / glTF, USDZ, FBX', 'Modelos 3D con textura: se ven con los colores reales, como en el iPad (Polycam, 3D Scanner App, Scaniverse).'],
   ['PLY, STL', 'Malla o nube de puntos (3D Scanner App, Polycam).'],
   ['LAS, PCD, XYZ, PTS', 'Nubes de puntos de escáner o topografía. LAZ y E57: conviértelos a LAS o PLY con CloudCompare (gratis).'],
-  ['OBJ + MTL + texturas', 'Elige los archivos a la vez para ver la malla con color.']
+  ['ZIP de la app (OBJ + MTL + fotos)', 'Súbelo tal cual: se ve con las texturas reales. También vale elegir los archivos a la vez.']
 ];
 
 export default function EscaneoLidarConfig() {
