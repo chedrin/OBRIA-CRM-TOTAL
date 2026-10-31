@@ -1629,9 +1629,11 @@ Devuelve SOLO un JSON válido con esta estructura:
           "precioVenta": 16.0,
           "codigoBase": "DEM-01"
         }
-      ]
+      ],
+      "notas": ["OBSERVACIONES: aspectos no incluidos o a confirmar de este capítulo (opcional, sin importe)"]
     }
-  ]
+  ],
+  "exclusiones": "Trabajos no incluidos en el presupuesto, en una frase (opcional)"
 }
 
 ${refBudgetsText ? `PRESUPUESTOS DE REFERENCIA DE LA EMPRESA (modelo de estilo y estructura):\n${refBudgetsText}\n` : ""}

@@ -145,6 +145,7 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
   let conceptosSugeridos = [];
   let resumenGeneral = '';
   let observacionesTecnicas = [];
+  let exclusiones = '';
   let generatedBy = '';
   let lastError = null;
   let backendError = null;
@@ -177,7 +178,14 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
       id: `cap-${Date.now()}-${capIdx}`,
       codigo: cap.codigo_capitulo || cap.codigo || String(capIdx + 1).padStart(2, '0'),
       nombre: (cap.nombre_capitulo || cap.nombre || `Capítulo ${capIdx + 1}`).replace(/^\d+\.\s*/, ''),
-      partidas: cap.partidas.map((p, pIdx) => toPartida(p, capIdx, pIdx))
+      partidas: [
+        ...cap.partidas.map((p, pIdx) => toPartida(p, capIdx, pIdx)),
+        // Notas del capítulo (OBSERVACIONES, NO INCLUYE...): texto sin importe al final del capítulo.
+        ...(Array.isArray(cap.notas) ? cap.notas : [])
+          .map(n => String(n || '').trim())
+          .filter(Boolean)
+          .map(n => ({ concepto: n, esNota: true, cantidad: 0, unidad: '', costeUnitario: 0, margenPct: 0 }))
+      ]
     }));
 
   // 1. Servidor: usa las claves del servidor, la memoria de la IA (Ajustes) y los presupuestos de referencia.
@@ -202,6 +210,7 @@ export async function processSiteVisitExpediente(expediente, catalog, aiConfig, 
     rawChapters = toChapters(result?.capitulos);
     if (rawChapters.length > 0) {
       resumenGeneral = result.resumen_obra || result.resumen || '';
+      exclusiones = typeof result.exclusiones === 'string' ? result.exclusiones.trim() : '';
       observacionesTecnicas = Array.isArray(result.observaciones_tecnicas) ? result.observaciones_tecnicas : [];
       generatedBy = 'el motor de IA del servidor (memoria de la IA + presupuestos de referencia)';
     }
@@ -272,6 +281,9 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
   // Calculate pricing
   const capitulosCalculados = rawChapters.map(cap => {
     const partidasCalc = cap.partidas.map(p => {
+      if (p.esNota) {
+        return { id: `partida-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`, ...p, precioVenta: 0, total: 0 };
+      }
       const coste = Number(p.costeUnitario || 10);
       const mPct = Number(p.margenPct || margen);
       const pvp = Number((coste * (1 + mPct / 100)).toFixed(2));
@@ -354,6 +366,7 @@ Procesa este expediente y devuelve el JSON estructurado con 'resumen', 'observac
     // Croquis del escaneo LiDAR subido en la visita (medidas reales).
     ...(expediente.croquis?.plan?.rooms?.length ? { croquis: expediente.croquis } : {}),
     observaciones_tecnicas: observacionesTecnicas,
+    ...(exclusiones ? { exclusiones } : {}),
     conceptos: conceptosSugeridos,
     capitulos: capitulosCalculados,
     partidas: allPartidas,
