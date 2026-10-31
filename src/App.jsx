@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { UiPreferencesProvider } from './context/UiPreferencesContext';
 import { NotificationsProvider } from './context/NotificationsContext';
@@ -51,6 +51,17 @@ function MainLayout() {
       return next;
     });
   };
+
+  // Cada sección se abre arriba, con la cabecera visible
+  useLayoutEffect(() => {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    } catch (e) {
+      window.scrollTo(0, 0);
+    }
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+    document.querySelectorAll('main').forEach((el) => { el.scrollTop = 0; });
+  }, [activeTab, route]);
 
   // Sync route on hashchange / popstate
   useEffect(() => {
