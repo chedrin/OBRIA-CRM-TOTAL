@@ -96,7 +96,7 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
 
   return (
     <ModalOverlay className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3">
-      <form onSubmit={submit} className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 max-h-[92vh] overflow-y-auto">
+      <form onSubmit={submit} className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 max-h-[92dvh] overflow-y-auto">
         <div className="flex justify-between items-center">
           <h3 className="font-black text-white flex items-center gap-2"><UserPlus className="w-4 h-4 text-amber-400" /> {preset?.cambiar ? 'Cambiar ejecutor' : 'Asignar ejecutor'}</h3>
           <button type="button" onClick={onClose} className="text-slate-400" aria-label="Cerrar"><X className="w-5 h-5" /></button>

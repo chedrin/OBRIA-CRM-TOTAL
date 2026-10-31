@@ -217,7 +217,7 @@ export default function DocumentosFaseModal({ obraId, fase, docs, margins, docsR
   const faseMargin = margins?.[`${fase.id}::`] || null;
   return (
     <ModalOverlay className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3" onClick={onClose}>
-      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-start gap-2">
           <div>
             <span className="text-[11px] text-slate-400">Presupuesto y factura de la subcontrata</span>

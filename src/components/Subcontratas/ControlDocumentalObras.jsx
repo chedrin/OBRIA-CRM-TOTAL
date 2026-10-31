@@ -227,7 +227,7 @@ export default function ControlDocumentalObras({ subcontractors = [], obras = []
 
       {upload && (
         <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3" onClick={() => setUpload(null)}>
-          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto space-y-2" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto space-y-2" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-bold text-white px-1">{subById.get(upload.subId)?.razonSocial}</p>
             <DocumentoForm
               subcontractorId={upload.subId}

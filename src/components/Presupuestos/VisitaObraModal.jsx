@@ -448,7 +448,7 @@ export default function VisitaObraModal({ isOpen, onClose, onQuoteCreated, inlin
     >
       <div className={inline
         ? 'bg-slate-900 border border-amber-500/40 rounded-3xl w-full shadow-xl flex flex-col text-slate-100'
-        : 'bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col text-slate-100 transform transition-all duration-200 ease-out scale-100'}>
+        : 'bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-4xl max-h-[92dvh] overflow-y-auto shadow-2xl flex flex-col text-slate-100 transform transition-all duration-200 ease-out scale-100'}>
         
         {/* Header */}
         <div className={`p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/70 rounded-t-3xl ${inline ? '' : 'sticky top-0 z-10'}`}>

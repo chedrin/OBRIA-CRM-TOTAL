@@ -798,7 +798,7 @@ export default function PortalObreroView() {
       <AnimatePresence>
       {showPhotoModal && (
         <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92dvh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Camera className="w-4 h-4 text-amber-400" />
               <span>Subir Foto de Avance a la Obra</span>
@@ -858,7 +858,7 @@ export default function PortalObreroView() {
       <AnimatePresence>
       {showVoiceModal && (
         <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92dvh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Mic className="w-4 h-4 text-amber-400" />
               <span>Nota de Voz de WhatsApp al Encargado</span>
@@ -905,7 +905,7 @@ export default function PortalObreroView() {
       <AnimatePresence>
       {showHorasModal && (
         <ModalOverlay className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl p-5 shadow-2xl space-y-4 max-h-[92dvh] overflow-y-auto">
             <h3 className="font-bold text-white text-sm flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-400" />
               <span>Imputar Horas y Consumo de Stock</span>
