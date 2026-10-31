@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLlenadoAnimado, RELLENO_ANIMADO } from '../Common/BarraProgreso';
 import {
-  ChevronDown, Loader2, UserPlus, ShieldCheck, History, AlertTriangle, Package, Building2, X, Trash2, RefreshCw, Flag, Link2
+  ChevronDown, Loader2, UserPlus, ShieldCheck, History, AlertTriangle, Package, Building2, X, Trash2, RefreshCw, Flag, Link2, FileText
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useNotifications } from '../../context/NotificationsContext';
 import { supabase, isSupabaseConfigured } from '../../services/supabaseClient';
-import { api, fmtDateTime, fmtDate, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
+import { api, fmtDateTime, fmtDate, fmtMoney, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import { STATUS, applyCertifiedToObra } from '../../utils/avanceObra';
 import useNotify from '../Avisos/useNotify';
 import AsignacionRapida from './AsignacionRapida';
 import { EnlaceAsignacionModal } from '../Avisos/EnlaceEnvio';
 import ModalOverlay from '../Common/ModalOverlay';
+import DocumentosFaseModal, { DocumentosLista, MargenBadge } from './DocumentosSubcontrata';
 
 // Panel del jefe de obra: árbol Fase > Partidas con el avance reportado por obreros y
 // subcontratas, el planificado según las fechas asignadas y el certificado (validado).
@@ -22,7 +23,8 @@ const LOG_LABEL = {
   certificacion: 'Certificado',
   bloqueo: 'Bloqueo / alerta',
   desbloqueo: 'Alerta resuelta',
-  asignacion: 'Asignación'
+  asignacion: 'Asignación',
+  documento: 'Presupuesto / factura'
 };
 
 function ProgressBars({ reported, certified, planned }) {
@@ -80,6 +82,7 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
   const [expanded, setExpanded] = useState({});
   const [assigning, setAssigning] = useState(null);
   const [detailKey, setDetailKey] = useState(null);
+  const [docsFase, setDocsFase] = useState(null); // fase cuya ventana de presupuesto/factura está abierta
   const reloadTimer = useRef(null);
 
   useEffect(() => {
@@ -137,6 +140,11 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
   const summary = data?.summary;
   const partidaByKey = useMemo(() => new Map((summary?.fases || []).flatMap((f) => f.partidas.map((p) => [p.key, { ...p, faseNombre: f.nombre }]))), [summary]);
   const detail = detailKey ? partidaByKey.get(detailKey) : null;
+  const margins = data?.margins?.byKey || {};
+  const docs = data?.docs || [];
+  const docsReady = data?.docsReady !== false;
+  // Ejecutores asignados a la fase entera (los heredan sus partidas salvo las que tengan el suyo).
+  const faseAssignees = useCallback((faseId) => (data?.assignments || []).filter((a) => a.fase_id === faseId && !a.partida_id), [data]);
 
   const certify = async (items, force = false) => {
     try {
@@ -190,12 +198,17 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
 
       {summary && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className={`grid grid-cols-2 gap-2 ${data.margins?.obra ? 'sm:grid-cols-6' : 'sm:grid-cols-5'}`}>
             <Kpi label="Reportado" value={`${summary.reported}%`} tone="text-amber-400" />
             <Kpi label="Certificado" value={`${summary.certified}%`} tone="text-emerald-400" />
             <Kpi label="Planificado hoy" value={summary.planned != null ? `${summary.planned}%` : '—'} tone="text-white" />
             <Kpi label="Bloqueadas / alerta" value={summary.blocked} tone={summary.blocked ? 'text-rose-400' : 'text-slate-300'} />
             <Kpi label="Pendientes de validar" value={summary.pendingValidation} tone={summary.pendingValidation ? 'text-sky-400' : 'text-slate-300'} />
+            {data.margins?.obra && (
+              <Kpi label={data.margins.obra.beneficio >= 0 ? 'Beneficio subcontratas' : 'Pérdida subcontratas'}
+                value={fmtMoney(data.margins.obra.beneficio)}
+                tone={data.margins.obra.beneficio >= 0 ? 'text-emerald-400' : 'text-rose-400'} />
+            )}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
@@ -225,7 +238,12 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                         <span className="font-bold text-white text-sm truncate">{fase.nombre}</span>
                         {fase.blocked > 0 && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 rounded px-1.5">{fase.blocked} en alerta</span>}
                         {fase.pendingValidation > 0 && <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 border border-sky-500/30 rounded px-1.5">{fase.pendingValidation} por validar</span>}
-                        {single && fase.partidas[0].assignees.map((a) => <AssigneeBadge key={a.id} a={a} obreros={obreros} />)}
+                        {(single ? fase.partidas[0].assignees : faseAssignees(fase.id)).map((a) => <AssigneeBadge key={a.id} a={a} obreros={obreros} />)}
+                        {!single && faseAssignees(fase.id).length > 0 && (() => {
+                          const propias = fase.partidas.filter((p) => p.assignees.some((a) => !a.heredada)).length;
+                          return propias > 0 ? <span className="text-[10px] text-slate-400">{propias} partida(s) con ejecutor propio</span> : null;
+                        })()}
+                        <MargenBadge m={margins[`${fase.id}::`]} />
                       </div>
                       <ProgressBars reported={fase.reported} certified={fase.certified} planned={fase.planned} />
                     </div>
@@ -234,8 +252,13 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                       <span className="block text-[10px] text-slate-400 tabular-nums">rep. {fase.reported}%{fase.planned != null ? ` · plan ${fase.planned}%` : ''}</span>
                     </div>
                     {single
-                      ? <button onClick={() => setDetailKey(fase.partidas[0].key)} className={`${btnGhost} !px-2 !py-1`} title="Detalle"><History className="w-4 h-4" /></button>
-                      : <button onClick={() => setAssigning({ faseId: fase.id })} className={`${btnGhost} !px-2 !py-1`} title="Asignar fase"><UserPlus className="w-4 h-4" /></button>}
+                      ? <button onClick={() => setDetailKey(fase.partidas[0].key)} className={`${btnGhost} !px-2 !py-1`} title="Detalle, presupuesto y factura"><History className="w-4 h-4" /></button>
+                      : (
+                        <div className="flex gap-1 shrink-0">
+                          <button onClick={() => setDocsFase(fase)} className={`${btnGhost} !px-2 !py-1`} title="Presupuesto y factura de la subcontrata"><FileText className="w-4 h-4" /></button>
+                          <button onClick={() => setAssigning({ faseId: fase.id })} className={`${btnGhost} !px-2 !py-1`} title="Asignar fase (sus partidas lo heredan)"><UserPlus className="w-4 h-4" /></button>
+                        </div>
+                      )}
                   </div>
 
                   {open && !single && (
@@ -251,6 +274,7 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                                 <span className="text-xs font-semibold text-white truncate max-w-[22rem]">{p.titulo}</span>
                                 <span className={`text-[10px] px-1.5 rounded border font-semibold ${st.cls}`}>{st.label}</span>
                                 {p.alert === 'material' && <span className="text-[10px] px-1.5 rounded border font-semibold bg-yellow-500/15 text-yellow-300 border-yellow-500/30 inline-flex items-center gap-1"><Package className="w-3 h-3" /> Falta material</span>}
+                                <MargenBadge m={margins[p.key]} />
                                 {p.readyForCertification && <span className="text-[10px] px-1.5 rounded border font-semibold bg-emerald-500/15 text-emerald-300 border-emerald-500/30 inline-flex items-center gap-1"><Flag className="w-3 h-3" /> Lista</span>}
                               </div>
                               <div className="flex flex-wrap gap-1">
@@ -271,7 +295,7 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                                   <ShieldCheck className="w-3.5 h-3.5" /> {p.reported}%
                                 </button>
                               )}
-                              <button onClick={() => setAssigning({ faseId: p.faseId, partidaId: p.id })} className={`${btnGhost} !px-2 !py-1`} title="Asignar partida"><UserPlus className="w-4 h-4" /></button>
+                              <button onClick={() => setAssigning({ faseId: p.faseId, partidaId: p.id, cambiar: p.assignees.length > 0 })} className={`${btnGhost} !px-2 !py-1`} title={p.assignees.length ? 'Cambiar quién hace esta partida' : 'Asignar partida'}><UserPlus className="w-4 h-4" /></button>
                             </div>
                           </div>
                         );
@@ -309,16 +333,32 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
         <AsignacionRapida obra={obra} preset={assigning} onClose={() => setAssigning(null)} onSaved={() => { notify('Asignación guardada'); load(); }} />
       )}
 
+      {docsFase && (
+        <DocumentosFaseModal
+          obraId={obraId}
+          fase={summary?.fases.find((f) => f.id === docsFase.id) || docsFase}
+          docs={docs}
+          margins={margins}
+          docsReady={docsReady}
+          faseAssignees={faseAssignees(docsFase.id)}
+          onClose={() => setDocsFase(null)}
+          onChanged={() => load()}
+        />
+      )}
+
       {detail && (
         <PartidaDetalle
           obraId={obraId}
           partida={detail}
+          docs={docs.filter((d) => d.fase_id === detail.faseId && (d.partida_id || '') === (detail.id || ''))}
+          margin={margins[detail.key]}
+          docsReady={docsReady}
           needs={(data?.needs || []).filter((n) => n.fase_id === detail.faseId && (n.partida_id || '') === (detail.id || ''))}
           obreros={obreros}
           onClose={() => setDetailKey(null)}
           onCertify={certify}
           onChanged={() => load()}
-          onAssign={() => setAssigning({ faseId: detail.faseId, partidaId: detail.id })}
+          onAssign={() => setAssigning({ faseId: detail.faseId, partidaId: detail.id, cambiar: detail.assignees.length > 0 })}
         />
       )}
     </div>
@@ -326,7 +366,7 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
 }
 
 /** Detalle de una partida: asignados, avisos abiertos, validación e historial con fotos. */
-function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, onChanged, onAssign }) {
+function PartidaDetalle({ obraId, partida, needs, docs, margin, docsReady, obreros, onClose, onCertify, onChanged, onAssign }) {
   const notify = useNotify();
   const [logs, setLogs] = useState(null);
   const [pct, setPct] = useState(partida.reported);
@@ -343,7 +383,7 @@ function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, o
 
   const removeAssignment = async (a) => {
     if (a.heredada) {
-      notify('Esta asignación viene de la fase: quítala desde la fase o asigna la partida a otro.', 'error');
+      notify('Esta asignación viene de la fase: pulsa "Cambiar" para poner otro ejecutor solo en esta partida.', 'error');
       return;
     }
     if (!window.confirm(`¿Quitar a ${a.assignee_name} de esta partida?`)) return;
@@ -406,7 +446,7 @@ function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, o
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold text-white">Ejecutores</h4>
-            <button onClick={onAssign} className={`${btnGhost} !py-1 !text-xs`}><UserPlus className="w-3.5 h-3.5" /> Asignar</button>
+            <button onClick={onAssign} className={`${btnGhost} !py-1 !text-xs`}><UserPlus className="w-3.5 h-3.5" /> {partida.assignees.length ? 'Cambiar' : 'Asignar'}</button>
           </div>
           {partida.assignees.length === 0 && <p className="text-xs text-slate-500">Sin asignar.</p>}
           {partida.assignees.map((a) => (
@@ -428,6 +468,18 @@ function PartidaDetalle({ obraId, partida, needs, obreros, onClose, onCertify, o
               </div>
             </div>
           ))}
+        </section>
+
+        <section className="space-y-2">
+          <h4 className="text-xs font-bold text-white flex items-center gap-1.5"><FileText className="w-4 h-4 text-amber-400" /> Presupuesto y factura de la subcontrata</h4>
+          <DocumentosLista
+            obraId={obraId}
+            target={{ faseId: partida.faseId, partidaId: partida.id, titulo: partida.titulo, importe: partida.importe, assignees: partida.assignees }}
+            docs={docs}
+            margin={margin}
+            docsReady={docsReady}
+            onChanged={onChanged}
+          />
         </section>
 
         {linkFor && <EnlaceAsignacionModal assignment={linkFor} onClose={() => setLinkFor(null)} />}

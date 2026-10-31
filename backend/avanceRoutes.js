@@ -19,6 +19,11 @@
  *   PATCH  /api/avance/assignments/:id      Admin: fechas, rendimiento, notas, responsable.
  *   DELETE /api/avance/assignments/:id      Admin: quita la asignación (queda inactiva).
  *   POST   /api/avance/certify              Admin: valida el avance reportado como certificado.
+ *   POST   /api/avance/docs                 Admin: presupuesto o factura de la subcontrata de una
+ *                                           fase o partida (importe + archivo PDF/foto opcional).
+ *   PATCH  /api/avance/docs/:id             Admin: corrige número, fecha, importes o notas.
+ *   DELETE /api/avance/docs/:id             Admin: quita el documento (queda inactivo).
+ *   GET    /api/avance/docs/:id/file        Admin: enlace firmado (10 min) para abrir el archivo.
  */
 
 import {
@@ -27,6 +32,7 @@ import {
   httpError,
   readJson,
   readForm,
+  readMultipart,
   rateLimited,
   getObra,
   getAppRecord,
@@ -39,6 +45,7 @@ import {
   avanceLink,
   createSubToken
 } from "./notificaciones.js";
+import crypto from "node:crypto";
 import { getAdminClient, isSupabaseReady } from "./authRoutes.js";
 import {
   computeAvance,
@@ -48,7 +55,8 @@ import {
   itemKey,
   normalizeReport,
   STATUS,
-  WHOLE_PHASE
+  WHOLE_PHASE,
+  subcontractMargins
 } from "../src/utils/avanceObra.js";
 
 const UUID = "[0-9a-fA-F-]{36}";
@@ -378,12 +386,19 @@ async function handleReport(req, res, parseMultipart) {
 async function handleObraSummary(res, obraId) {
   const state = await loadObraState(obraId);
   const admin = getAdminClient();
-  const [needs, logs] = await Promise.all([
+  const [needs, logs, docs] = await Promise.all([
     admin.from("worksite_needs").select("id, created_at, category, urgency, status, description, fase_id, partida_id, partida_label, reported_by_name, reported_by_type")
       .eq("obra_id", obraId).not("status", "in", "(resuelto,descartada,entregado)").order("created_at", { ascending: false }).limit(100),
-    admin.from("execution_logs").select("*").eq("obra_id", obraId).order("created_at", { ascending: false }).limit(40)
+    admin.from("execution_logs").select("*").eq("obra_id", obraId).order("created_at", { ascending: false }).limit(40),
+    admin.from("subcontract_documents").select("*").eq("obra_id", obraId).eq("is_active", true).order("created_at")
   ]);
+  const docRows = docs.error ? [] : docs.data || [];
+  const margins = subcontractMargins(flattenPlan(state.obra), docRows);
   sendJson(res, 200, {
+    // Sin la migración de documentos, el panel sigue funcionando y avisa de que falta.
+    docs: docRows,
+    docsReady: !docs.error,
+    margins: { obra: margins.obra, byKey: Object.fromEntries(margins.byKey) },
     summary: computeAvance(state.obra, { progress: state.progress, assignments: state.assignments }),
     assignments: state.assignments,
     progress: state.progress,
@@ -450,6 +465,13 @@ async function handleCreateAssignments(req, res) {
   if (body.replace) {
     const { error } = await admin.from("work_assignments").update({ is_active: false })
       .eq("obra_id", String(obra.id)).eq("fase_id", fase.id).in("partida_id", targets).eq("is_active", true);
+    if (error) throw new Error(error.message);
+  }
+  // Asignar la fase entera "a todas sus partidas": las partidas con ejecutor propio
+  // lo pierden y vuelven a heredar el de la fase (luego se puede cambiar cada una).
+  if (body.reset_partidas && !partidaIds.length) {
+    const { error } = await admin.from("work_assignments").update({ is_active: false })
+      .eq("obra_id", String(obra.id)).eq("fase_id", fase.id).neq("partida_id", WHOLE_PHASE).eq("is_active", true);
     if (error) throw new Error(error.message);
   }
   const fields = assignmentFields(body);
@@ -560,6 +582,115 @@ async function handleCertify(req, res) {
   sendJson(res, 200, { progress: saved, certified: saved.map((r) => ({ key: itemKey(r.fase_id, r.partida_id), pct: r.certified_pct })) });
 }
 
+// ---------------------------------------------------------------------------
+// Presupuesto y factura de la subcontrata (supabase_migration_documentos_subcontrata.sql)
+// ---------------------------------------------------------------------------
+const DOC_BUCKET = "subcontrata-docs";
+const MAX_DOC_BYTES = 15 * 1024 * 1024;
+const DOC_KINDS = new Set(["presupuesto", "factura"]);
+
+function detectDocType(buffer) {
+  if (buffer.length > 4 && buffer.slice(0, 4).toString("ascii") === "%PDF") return { mime: "application/pdf", ext: "pdf" };
+  if (buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return { mime: "image/jpeg", ext: "jpg" };
+  if (buffer.length > 8 && buffer.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { mime: "image/png", ext: "png" };
+  if (buffer.length > 12 && buffer.slice(0, 4).toString("ascii") === "RIFF" && buffer.slice(8, 12).toString("ascii") === "WEBP") return { mime: "image/webp", ext: "webp" };
+  return null;
+}
+
+const money = (value) => {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+};
+
+function docFields(body) {
+  const row = {};
+  if (body.numero !== undefined) row.numero = clip(body.numero, 80) || null;
+  if (body.fecha !== undefined) row.fecha = DATE.test(body.fecha || "") ? body.fecha : null;
+  if (body.notes !== undefined) row.notes = clip(body.notes, 1000) || null;
+  if (body.iva_pct !== undefined) {
+    const iva = money(body.iva_pct);
+    if (iva === null || iva > 100) throw httpError(400, "IVA incorrecto.");
+    row.iva_pct = iva;
+  }
+  if (body.base_amount !== undefined) {
+    const base = money(body.base_amount);
+    if (base === null) throw httpError(400, "Pon el importe sin IVA (base imponible).");
+    row.base_amount = base;
+  }
+  return row;
+}
+
+const withTotal = (row, current = {}) => {
+  const base = row.base_amount ?? current.base_amount;
+  const iva = row.iva_pct ?? current.iva_pct ?? 21;
+  return base === undefined ? row : { ...row, total_amount: Math.round(Number(base) * (1 + Number(iva) / 100) * 100) / 100 };
+};
+
+async function handleCreateDoc(req, res, parseMultipart) {
+  const { fields, files } = await readMultipart(req, parseMultipart);
+  const obra = await getObra(ID(fields.obra_id));
+  if (!obra) throw httpError(404, "Obra no encontrada.");
+  const found = findPartida(flattenPlan(obra), ID(fields.fase_id), ID(fields.partida_id));
+  if (!found) throw httpError(400, "La fase o partida no existe en la obra.");
+  const kind = DOC_KINDS.has(fields.kind) ? fields.kind : null;
+  if (!kind) throw httpError(400, "Indica si es presupuesto o factura.");
+  const row = withTotal(docFields({ base_amount: "", iva_pct: 21, ...fields }));
+
+  const admin = getAdminClient();
+  // Quién lo emite: la asignación de subcontrata elegida o, si no, la ficha indicada.
+  let assignment = null;
+  if (fields.assignment_id && new RegExp(`^${UUID}$`).test(fields.assignment_id)) {
+    const { data } = await admin.from("work_assignments").select("*").eq("id", fields.assignment_id).maybeSingle();
+    if (data && data.obra_id === String(obra.id) && data.assignee_type === "subcontrata") assignment = data;
+  }
+  const subId = assignment?.subcontractor_id || ID(fields.subcontractor_id) || null;
+  const sub = subId && !assignment ? await getAppRecord("subcontractors", subId) : null;
+  const subName = clip(assignment?.assignee_name || sub?.nombreComercial || sub?.razonSocial || fields.subcontractor_name, 200);
+  if (!subName) throw httpError(400, "Elige la subcontrata.");
+
+  const file = (files.archivo || [])[0];
+  if (file) {
+    if (file.size > MAX_DOC_BYTES) throw httpError(413, "El archivo pasa de 15 MB.");
+    const type = detectDocType(file.buffer);
+    if (!type) throw httpError(400, "Solo se admiten PDF o fotos (JPG, PNG, WEBP).");
+    const folder = String(obra.id).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 60);
+    const objectPath = `${folder}/${kind}/${crypto.randomUUID()}.${type.ext}`;
+    const { error } = await admin.storage.from(DOC_BUCKET).upload(objectPath, file.buffer, { contentType: type.mime, upsert: false });
+    if (error) throw new Error(`No se pudo guardar el archivo: ${error.message}`);
+    Object.assign(row, { file_path: objectPath, file_name: clip(file.originalname, 200), file_mime: type.mime });
+  }
+
+  const key = { obra_id: String(obra.id), fase_id: found.fase.id, partida_id: found.partida.id || WHOLE_PHASE };
+  const { data, error } = await admin.from("subcontract_documents").insert({
+    ...key,
+    ...row,
+    kind,
+    assignment_id: assignment?.id || null,
+    subcontractor_id: subId,
+    subcontractor_name: subName,
+    created_by: req.user?.id || null
+  }).select().single();
+  if (error) throw new Error(error.message);
+  await admin.from("execution_logs").insert({
+    ...key,
+    kind: "documento",
+    notes: `${kind === "factura" ? "Factura" : "Presupuesto"} de ${subName}${row.numero ? ` nº ${row.numero}` : ""}: ${row.base_amount.toLocaleString("es-ES", { minimumFractionDigits: 2 })} € + IVA`,
+    author_type: "admin",
+    author_name: clip(req.user?.full_name, 200) || "Administración",
+    author_user: req.user?.id || null
+  });
+  sendJson(res, 201, data);
+}
+
+async function handleDocFile(res, id) {
+  const admin = getAdminClient();
+  const { data } = await admin.from("subcontract_documents").select("file_path").eq("id", id).maybeSingle();
+  if (!data?.file_path) throw httpError(404, "Este documento no tiene archivo.");
+  const { data: signed, error } = await admin.storage.from(DOC_BUCKET).createSignedUrl(data.file_path, 600);
+  if (error) throw new Error(error.message);
+  sendJson(res, 200, { url: signed.signedUrl });
+}
+
 export async function handleAvanceRoutes(req, res, pathname, query, { parseMultipart }) {
   if (!pathname.startsWith("/api/avance/")) return false;
   const routes = [
@@ -582,7 +713,26 @@ export async function handleAvanceRoutes(req, res, pathname, query, { parseMulti
         sendJson(res, 200, { ok: true });
       }
     }],
-    [/^\/api\/avance\/certify$/, { POST: () => { requireAdmin(req); return handleCertify(req, res); } }]
+    [/^\/api\/avance\/certify$/, { POST: () => { requireAdmin(req); return handleCertify(req, res); } }],
+    [/^\/api\/avance\/docs$/, { POST: () => { requireAdmin(req); return handleCreateDoc(req, res, parseMultipart); } }],
+    [new RegExp(`^/api/avance/docs/(${UUID})$`), {
+      PATCH: async (id) => {
+        requireAdmin(req);
+        const admin = getAdminClient();
+        const { data: current } = await admin.from("subcontract_documents").select("base_amount, iva_pct").eq("id", id).maybeSingle();
+        if (!current) throw httpError(404, "Documento no encontrado.");
+        const { data, error } = await admin.from("subcontract_documents").update(withTotal(docFields(await readJson(req)), current)).eq("id", id).select().single();
+        if (error) throw new Error(error.message);
+        sendJson(res, 200, data);
+      },
+      DELETE: async (id) => {
+        requireAdmin(req);
+        const { error } = await getAdminClient().from("subcontract_documents").update({ is_active: false }).eq("id", id);
+        if (error) throw new Error(error.message);
+        sendJson(res, 200, { ok: true });
+      }
+    }],
+    [new RegExp(`^/api/avance/docs/(${UUID})/file$`), { GET: (id) => { requireAdmin(req); return handleDocFile(res, id); } }]
   ];
 
   for (const [re, methods] of routes) {

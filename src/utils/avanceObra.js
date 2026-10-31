@@ -236,3 +236,79 @@ export function applyCertifiedToObra(obra, certifiedByKey) {
   const progreso = weighted(plan.fases.flatMap((f) => f.partidas.map((p) => ({ ...p, v: p.progresoObra }))), weight, 'v') ?? 0;
   return { fases, progreso };
 }
+
+// ---------------------------------------------------------------------------
+// Presupuesto y factura de subcontratas: beneficio o pérdida por fase y partida
+// ---------------------------------------------------------------------------
+const round2 = (v) => Math.round(num(v) * 100) / 100;
+
+function docTotals(docs) {
+  const presupuestos = docs.filter((d) => d.kind === 'presupuesto');
+  const facturas = docs.filter((d) => d.kind === 'factura');
+  const presupuesto = round2(presupuestos.reduce((s, d) => s + num(d.base_amount), 0));
+  const factura = round2(facturas.reduce((s, d) => s + num(d.base_amount), 0));
+  // La factura manda: es el coste real. Mientras no llegue, cuenta su presupuesto.
+  return { presupuesto, factura, hasPresupuesto: presupuestos.length > 0, hasFactura: facturas.length > 0, coste: facturas.length ? factura : presupuesto };
+}
+
+function margin(ingreso, parts) {
+  const coste = round2(parts.reduce((s, t) => s + t.coste, 0));
+  const presupuesto = round2(parts.reduce((s, t) => s + t.presupuesto, 0));
+  const factura = round2(parts.reduce((s, t) => s + t.factura, 0));
+  const facturadas = parts.filter((t) => t.hasFactura).length;
+  const beneficio = round2(ingreso - coste);
+  return {
+    ingreso: round2(ingreso),
+    presupuesto,
+    factura,
+    coste,
+    beneficio,
+    pct: ingreso > 0 ? Math.round((beneficio / ingreso) * 1000) / 10 : null,
+    fuente: facturadas === parts.length ? 'factura' : facturadas ? 'mixto' : 'presupuesto',
+    // Lo que la factura se pasa (o se queda corta) frente a su presupuesto, si hay de los dos.
+    desviacion: parts.some((t) => t.hasFactura && t.hasPresupuesto)
+      ? round2(parts.filter((t) => t.hasFactura && t.hasPresupuesto).reduce((s, t) => s + t.factura - t.presupuesto, 0))
+      : null
+  };
+}
+
+/**
+ * Beneficio o pérdida de cada fase y partida con subcontrata: lo que cobramos al
+ * cliente (importe de la partida o fase en el presupuesto firmado) menos el coste
+ * de la subcontrata (base imponible de su factura o, si aún no hay, de su presupuesto).
+ * Un documento de fase (partida_id '') cubre la fase entera; uno de partida, solo esa partida.
+ * Devuelve { byKey: Map<itemKey, margen>, obra: margen | null }. La clave de la fase es itemKey(fase, '').
+ */
+export function subcontractMargins(plan, docs = []) {
+  const active = docs.filter((d) => d.is_active !== false);
+  const byKey = new Map();
+  const faseMargins = [];
+  for (const fase of plan.fases) {
+    const faseDocs = active.filter((d) => String(d.fase_id) === fase.id && !d.partida_id);
+    const parts = [];
+    let ingreso = 0;
+    if (!fase.partidas[0]?.faseCompleta) {
+      for (const p of fase.partidas) {
+        const own = active.filter((d) => String(d.fase_id) === fase.id && String(d.partida_id) === p.id);
+        if (!own.length) continue;
+        const totals = docTotals(own);
+        byKey.set(itemKey(fase.id, p.id), margin(p.importe, [totals]));
+        parts.push(totals);
+        ingreso += p.importe;
+      }
+    }
+    if (faseDocs.length) {
+      parts.push(docTotals(faseDocs));
+      ingreso = fase.importe; // el documento de fase cubre todas sus partidas
+    }
+    if (!parts.length) continue;
+    const m = margin(ingreso, parts);
+    byKey.set(itemKey(fase.id, WHOLE_PHASE), m);
+    faseMargins.push(m);
+  }
+  const obra = faseMargins.length
+    ? margin(faseMargins.reduce((s, m) => s + m.ingreso, 0), faseMargins.map((m) => ({ ...m, hasFactura: m.fuente === 'factura', hasPresupuesto: m.presupuesto > 0 })))
+    : null;
+  if (obra) obra.desviacion = faseMargins.some((m) => m.desviacion != null) ? round2(faseMargins.reduce((s, m) => s + (m.desviacion || 0), 0)) : null;
+  return { byKey, obra };
+}
