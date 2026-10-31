@@ -8,6 +8,7 @@ import { calculateObraScheduling } from '../../services/obraBudgetSyncService';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import ViewModeSwitcher from '../Common/ViewModeSwitcher';
 import ObrasTabla from './ObrasTabla';
+import CronogramaObras from './CronogramaObras';
 import EmptyState from '../Common/EmptyState';
 import { useUiPreferences } from '../../context/UiPreferencesContext';
 import {
@@ -18,7 +19,8 @@ import {
   MapPin,
   User,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  ChartGantt
 } from 'lucide-react';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
@@ -35,6 +37,16 @@ export default function ObrasList() {
   const { viewMode } = useUiPreferences();
   const [filterState, setFilterState] = useState('todas'); // todas, en_curso, presupuestada, finalizada
   const [searchQuery, setSearchQuery] = useState('');
+  // Cronograma (diagrama de inicios y finales): se recuerda en este navegador.
+  const [verCronograma, setVerCronograma] = useState(() => {
+    try { return localStorage.getItem('obras-cronograma') === '1'; } catch { return false; }
+  });
+  const alternarCronograma = () => {
+    setVerCronograma(v => {
+      try { localStorage.setItem('obras-cronograma', v ? '0' : '1'); } catch { /* sin almacenamiento */ }
+      return !v;
+    });
+  };
   const [abrirCroquis, setAbrirCroquis] = useState(false); // la ficha se abrió desde la miniatura del croquis
   const [showNewModal, setShowNewModal] = useState(false);
   const [modalStep, setModalStep] = useState(1); // 1: Seleccionar Presupuesto de origen, 2: Confirmar/Editar Datos de la Obra
@@ -168,7 +180,21 @@ export default function ObrasList() {
       {/* Top Bar with Search & New Obra */}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-2">
-        <ViewModeSwitcher />
+        <button
+          type="button"
+          onClick={alternarCronograma}
+          aria-pressed={verCronograma}
+          title="Ver los inicios y finales de las obras en un diagrama"
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+            verCronograma
+              ? 'bg-amber-500 text-slate-950 border-amber-500 shadow'
+              : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+          }`}
+        >
+          <ChartGantt className="w-4 h-4" />
+          <span>Cronograma</span>
+        </button>
+        {!verCronograma && <ViewModeSwitcher />}
         <button
           onClick={handleOpenNewModal}
           className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
@@ -216,11 +242,15 @@ export default function ObrasList() {
         </div>
       </div>
 
-      {viewMode !== 'tarjetas' && (
+      {verCronograma && (
+        <CronogramaObras obras={filteredObras} onOpen={setSelectedObraId} />
+      )}
+
+      {!verCronograma && viewMode !== 'tarjetas' && (
         <ObrasTabla obras={filteredObras} compact={viewMode === 'compacta'} onOpen={setSelectedObraId} />
       )}
 
-      {viewMode === 'tarjetas' && filteredObras.length === 0 && (
+      {!verCronograma && viewMode === 'tarjetas' && filteredObras.length === 0 && (
         obras.length === 0 ? (
           <EmptyState icon={HardHat} title="Todavía no hay obras" actionLabel="Nueva Obra" actionIcon={Plus} onAction={handleOpenNewModal}>
             Crea tu primera obra o convierte un presupuesto aceptado desde Presupuestos.
@@ -233,7 +263,7 @@ export default function ObrasList() {
       )}
 
       {/* Works Cards Grid */}
-      {viewMode === 'tarjetas' && (
+      {!verCronograma && viewMode === 'tarjetas' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredObras.map(obra => {
           const isEnCurso = obra.estado === 'en_curso';
