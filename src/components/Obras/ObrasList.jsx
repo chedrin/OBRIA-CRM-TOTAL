@@ -27,6 +27,7 @@ import {
   X
 } from 'lucide-react';
 import ModalOverlay from '../Common/ModalOverlay';
+import { fasesObraPorDefecto } from '../../utils/obraDefaults';
 import { AnimatePresence } from 'motion/react';
 
 export default function ObrasList() {
@@ -152,13 +153,7 @@ export default function ObrasList() {
         fechaInicio: new Date().toISOString().split('T')[0],
         fechaFinEstimada: new Date(Date.now() + 60 * 86400000).toISOString().split('T')[0],
         notas: '',
-        fases: [
-          { id: `f-${Date.now()}-1`, nombre: 'Demoliciones y Desescombro', progreso: 0, estado: 'pendiente', dias: 4, responsable: 'Por asignar' },
-          { id: `f-${Date.now()}-2`, nombre: 'Instalaciones (Fontanería y Luz)', progreso: 0, estado: 'pendiente', dias: 8, responsable: 'Por asignar' },
-          { id: `f-${Date.now()}-3`, nombre: 'Albañilería y Alicatados', progreso: 0, estado: 'pendiente', dias: 10, responsable: 'Por asignar' },
-          { id: `f-${Date.now()}-4`, nombre: 'Pintura y Carpinterías', progreso: 0, estado: 'pendiente', dias: 6, responsable: 'Por asignar' },
-          { id: `f-${Date.now()}-5`, nombre: 'Limpieza y Entrega de Llaves', progreso: 0, estado: 'pendiente', dias: 2, responsable: 'Por asignar' }
-        ]
+        fases: fasesObraPorDefecto()
       });
     }
     setModalStep(2);
@@ -188,13 +183,7 @@ export default function ObrasList() {
       presupuestoTotal: Number(formData.presupuestoTotal),
       margenEsperadoPct: Number(formData.margenEsperadoPct),
       estado: 'en_curso',
-      fases: [
-        { id: `f-${Date.now()}-1`, nombre: 'Demoliciones y Desescombro', progreso: 0, estado: 'pendiente', dias: 4, responsable: 'Por asignar' },
-        { id: `f-${Date.now()}-2`, nombre: 'Instalaciones (Fontanería y Luz)', progreso: 0, estado: 'pendiente', dias: 8, responsable: 'Por asignar' },
-        { id: `f-${Date.now()}-3`, nombre: 'Albañilería y Alicatados', progreso: 0, estado: 'pendiente', dias: 10, responsable: 'Por asignar' },
-        { id: `f-${Date.now()}-4`, nombre: 'Pintura y Carpinterías', progreso: 0, estado: 'pendiente', dias: 6, responsable: 'Por asignar' },
-        { id: `f-${Date.now()}-5`, nombre: 'Limpieza y Entrega de Llaves', progreso: 0, estado: 'pendiente', dias: 2, responsable: 'Por asignar' }
-      ]
+      fases: fasesObraPorDefecto()
     });
 
     setShowNewModal(false);

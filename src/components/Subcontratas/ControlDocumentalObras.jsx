@@ -3,6 +3,7 @@ import { ShieldCheck, Settings2, Plus, X, Loader2, RefreshCw, ChevronRight } fro
 import { api, btnGhost, btnPrimary, inputCls } from '../../services/avisosApi';
 import useNotify from '../Avisos/useNotify';
 import ModalOverlay from '../Common/ModalOverlay';
+import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 import { DOC_TYPES, docType, obraCompliance, requiredFor } from '../../utils/documentacionSubcontratas';
 import { TONE_CLS, ESTADO_INFO } from './useDocumentacionSubcontratas';
 import { DocumentoForm, EstadoChip, MigracionAviso, openDocFile } from './DocumentosFicha';
@@ -25,6 +26,7 @@ export default function ControlDocumentalObras({ subcontractors = [], obras = []
   const [editReq, setEditReq] = useState(null); // lista de tipos mientras se edita
   const [upload, setUpload] = useState(null); // { subId, initial }
   const [addSub, setAddSub] = useState('');
+  const { crear } = useQuickCreate();
   const [saving, setSaving] = useState(false);
 
   const subById = useMemo(() => new Map(subcontractors.map((s) => [String(s.id), s])), [subcontractors]);
@@ -211,17 +213,16 @@ export default function ControlDocumentalObras({ subcontractors = [], obras = []
             })}
           </div>
 
-          {disponibles.length > 0 && (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <select value={addSub} onChange={(e) => setAddSub(e.target.value)} className={inputCls}>
+          <div className="flex flex-col sm:flex-row gap-2">
+              <select value={addSub} onChange={conCrear(crear, setAddSub)} className={inputCls}>
                 <option value="">Añadir otra subcontrata a esta obra…</option>
                 {disponibles.map((s) => <option key={s.id} value={s.id}>{s.razonSocial}</option>)}
+                <OpcionesCrear tipos={['subcontrata']} />
               </select>
               <button type="button" disabled={!addSub || saving} onClick={addToObra} className={`${btnPrimary} !text-xs shrink-0`}>
                 <Plus className="w-3.5 h-3.5" /> Añadir
               </button>
-            </div>
-          )}
+          </div>
         </div>
       )}
 

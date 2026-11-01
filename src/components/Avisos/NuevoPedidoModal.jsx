@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Loader2, Send, FileText, Search } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
+import { useQuickCreate, useAlCrear } from '../Common/QuickCreate';
 import { ItemsEditor, emptyItem } from './NecesidadesPanel';
 import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 
@@ -13,6 +14,7 @@ import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 export default function NuevoPedidoModal({ onClose, onDone, initial = {} }) {
   const { obras = [] } = useApp() || {};
   const showNotification = useNotify();
+  const { crear } = useQuickCreate();
   const [suppliers, setSuppliers] = useState([]);
   const [obraIds, setObraIds] = useState(initial.obraIds || []);
   const [obraSearch, setObraSearch] = useState('');
@@ -57,6 +59,17 @@ export default function NuevoPedidoModal({ onClose, onDone, initial = {} }) {
     }
   };
   const toggleSupplier = (id) => setSupplierIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const nuevoProveedor = async () => {
+    const p = await crear('proveedor');
+    if (p) setSupplierIds((prev) => [...prev, p.id]);
+  };
+  const nuevaObra = async () => {
+    const o = await crear('obra');
+    if (!o) return;
+    setObraIds((prev) => [...prev, o.id]);
+    if (!addressTouched && obraIds.length === 0) setForm((prev) => ({ ...prev, delivery_address: o.direccion || '' }));
+  };
+  useAlCrear('proveedor', (p) => setSuppliers((prev) => (prev.some((s) => s.id === p.id) ? prev : [...prev, p])));
 
   const chosen = suppliers.filter((s) => supplierIds.includes(s.id));
   const withoutEmail = chosen.filter((s) => !s.email);
@@ -113,23 +126,22 @@ export default function NuevoPedidoModal({ onClose, onDone, initial = {} }) {
                 {o.estado !== 'en_curso' && <span className="ml-auto text-[10px] text-slate-500">{o.estado}</span>}
               </label>
             ))}
+            <button type="button" onClick={nuevaObra} className="w-full text-left px-3 py-2 text-sm font-semibold text-amber-400 hover:bg-slate-800/60">➕ Crear nueva obra</button>
           </div>
         </section>
 
         <section className="space-y-2">
           <h4 className="text-sm font-bold text-white">Proveedores</h4>
-          {suppliers.length === 0 ? (
-            <p className="text-xs text-slate-500">No hay proveedores: dalos de alta en la pestaña Proveedores.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {suppliers.map((s) => (
-                <button type="button" key={s.id} onClick={() => toggleSupplier(s.id)} title={s.email || 'Sin correo'}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${supplierIds.includes(s.id) ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>
-                  {s.name}{!s.email && ' (sin correo)'}
-                </button>
-              ))}
-            </div>
-          )}
+          {suppliers.length === 0 && <p className="text-xs text-slate-500">Aún no hay proveedores.</p>}
+          <div className="flex flex-wrap gap-2">
+            {suppliers.map((s) => (
+              <button type="button" key={s.id} onClick={() => toggleSupplier(s.id)} title={s.email || 'Sin correo'}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${supplierIds.includes(s.id) ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>
+                {s.name}{!s.email && ' (sin correo)'}
+              </button>
+            ))}
+            <button type="button" onClick={nuevoProveedor} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-dashed border-amber-500/60 text-amber-400 hover:bg-amber-500/10">➕ Crear nuevo proveedor</button>
+          </div>
           <select value={form.kind} onChange={set('kind')} className={`${inputCls} !w-auto`}>
             <option value="pedido">Pedido (que lo sirvan)</option>
             <option value="solicitud_presupuesto">Pedir precio y plazo (comparar)</option>

@@ -5,6 +5,7 @@ import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import { flattenPlan } from '../../utils/avanceObra';
 import EnlaceEnvio from '../Avisos/EnlaceEnvio';
 import ModalOverlay from '../Common/ModalOverlay';
+import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 
 /**
  * Asignación rápida de ejecutores: una fase completa (se hereda en todas sus
@@ -14,6 +15,7 @@ import ModalOverlay from '../Common/ModalOverlay';
  */
 export default function AsignacionRapida({ obra, preset = null, onClose, onSaved }) {
   const { obreros = [], subcontractors = [] } = useApp() || {};
+  const { crear } = useQuickCreate();
   const plan = useMemo(() => flattenPlan(obra), [obra]);
   const [faseId, setFaseId] = useState(preset?.faseId || plan.fases[0]?.id || '');
   const fase = plan.fases.find((f) => f.id === faseId);
@@ -134,9 +136,10 @@ export default function AsignacionRapida({ obra, preset = null, onClose, onSaved
           ))}
         </div>
 
-        <select value={who} onChange={(e) => setWho(e.target.value)} className={inputCls}>
+        <select value={who} onChange={conCrear(crear, setWho)} className={inputCls}>
           <option value="">{type === 'obrero_interno' ? 'Obrero…' : 'Subcontrata…'}</option>
           {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          <OpcionesCrear tipos={[type === 'obrero_interno' ? 'obrero' : 'subcontrata']} />
         </select>
         {type === 'subcontrata' && (
           <div className="grid grid-cols-[1fr_auto] gap-2">
