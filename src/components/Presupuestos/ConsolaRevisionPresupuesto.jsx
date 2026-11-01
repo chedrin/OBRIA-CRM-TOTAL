@@ -16,13 +16,15 @@ import {
   BadgeCheck,
   AlertTriangle,
   Receipt,
-  PencilRuler
+  PencilRuler,
+  Lock,
+  FilePlus2
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
 import CroquisEditorModal from '../Croquis/CroquisEditorModal';
 import VersionesPresupuesto from './VersionesPresupuesto';
 import { recordBudgetEditDebounced } from '../../services/backendAiService';
-import { capitulosDe, estaAprobado, recalcularPartida, recalcularTotales } from '../../utils/presupuestoRevision';
+import { capitulosDe, estaAprobado, estaBloqueado, recalcularPartida, recalcularTotales } from '../../utils/presupuestoRevision';
 
 const BOTON_SECUNDARIO = 'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition whitespace-nowrap';
 
@@ -84,6 +86,11 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
 
   const capitulos = capitulosDe(quote);
   const aprobado = estaAprobado(quote);
+  // Aceptado o facturado: solo lectura; los cambios van en una revisión nueva.
+  const bloqueado = estaBloqueado(quote);
+  const anadirRevision = () => {
+    if (window.confirm(`¿Añadir una revisión a ${quote.numero}? La versión ${quote.version || 1} quedará guardada como modificada, con la fecha y los cambios${aprobado ? '. Hasta que el cliente firme la revisión, la obra y la facturación siguen con la versión firmada' : ''}.`)) nuevaVersionPresupuesto(quote.id);
+  };
 
   // Guarda capítulos y totales. Si ya estaba aprobado, queda "Revisado" (lo marca el contexto).
   const guardarCapitulos = (nuevos, extra = {}) => {
@@ -308,10 +315,31 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>Revisado el {quote.fechaRevision} (Rev. {quote.revisionNumero || 1}) · nueva aceptación del cliente el {quote.fechaNuevaAceptacion}.</span>
         </div>
-      ) : aprobado && (
+      ) : bloqueado ? null : aprobado && (
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-xs text-slate-400 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
           <span>Presupuesto aprobado. Si lo modificas quedará marcado como <strong className="text-violet-400">Revisado</strong> y necesitará una nueva aceptación del cliente.</span>
+        </div>
+      )}
+
+      {/* Aceptado o facturado: bloqueado, solo se puede añadir una revisión */}
+      {bloqueado && (
+        <div role="status" className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3 text-xs">
+            <Lock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-white">Presupuesto {quote.estado === 'facturado' ? 'facturado' : 'aceptado'}: no se puede modificar</p>
+              <p className="text-slate-300 mt-0.5">Para cambiarlo, añade una revisión. Sustituye a esta versión, que queda guardada como modificada con la fecha y los cambios.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={anadirRevision}
+            className="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shrink-0 active:scale-95"
+          >
+            <FilePlus2 className="w-4 h-4" />
+            <span>Añadir revisión</span>
+          </button>
         </div>
       )}
 
@@ -319,9 +347,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
       <VersionesPresupuesto
         pres={quote}
         onPdf={(data) => setPdfModalData({ type: 'presupuesto', data: { ...data, empresa: empresaConfig } })}
-        onNuevaVersion={(p) => {
-          if (window.confirm(`¿Crear la versión ${(p.version || 1) + 1} de ${p.numero}? La versión ${p.version || 1} queda guardada${aprobado ? ' y la obra sigue con ella hasta que el cliente firme la nueva' : ''}.`)) nuevaVersionPresupuesto(p.id);
-        }}
+        onNuevaVersion={anadirRevision}
       />
 
       {/* Datos del presupuesto: obra, cliente y condiciones */}
@@ -338,7 +364,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           {showDatos ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
         </button>
         {showDatos && (
-          <div className="p-4 pt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <fieldset disabled={bloqueado} className="p-4 pt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 border-0 m-0 min-w-0 disabled:opacity-70">
             {CAMPOS_CABECERA.map(campo => (
               <label key={campo.id} className={`text-[11px] text-slate-400 font-semibold space-y-1 ${campo.span === 4 ? 'sm:col-span-2 lg:col-span-4' : campo.span === 2 ? 'sm:col-span-2' : ''}`}>
                 <span className="block">{campo.label}</span>
@@ -359,7 +385,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
                 )}
               </label>
             ))}
-          </div>
+          </fieldset>
         )}
       </div>
 
@@ -412,7 +438,8 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
         </div>
       )}
 
-      {/* Hierarchical Chapters & Items Breakdown */}
+      {/* Hierarchical Chapters & Items Breakdown (solo lectura si está aceptado o facturado) */}
+      <fieldset disabled={bloqueado} className="space-y-6 border-0 p-0 m-0 min-w-0">
       <div className="space-y-4">
         {capitulos.map((cap) => {
           const isCollapsed = collapsedChapters[cap.id];
@@ -591,6 +618,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
         <Plus className="w-4 h-4 text-amber-400" />
         Añadir capítulo
       </button>
+      </fieldset>
 
       {/* Summary Recap Card */}
       <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">

@@ -1,6 +1,6 @@
 import React from 'react';
 import { History, FileText, FilePlus2 } from 'lucide-react';
-import { versionesDe } from '../../utils/presupuestoRevision';
+import { versionesDe, cambiosEntreVersiones } from '../../utils/presupuestoRevision';
 
 const eur = (n) => Number(n || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
 
@@ -24,7 +24,12 @@ export function datosVersionPdf(pres, v) {
  */
 export default function VersionesPresupuesto({ pres, onPdf, onNuevaVersion, className = '' }) {
   if (!pres) return null;
-  const anteriores = [...versionesDe(pres)].reverse();
+  const guardadas = versionesDe(pres);
+  // Cada versión guardada con lo que cambió en la que la sustituyó (guardado al firmar o calculado).
+  const anteriores = guardadas.map((v, i) => ({
+    ...v,
+    cambios: v.cambios || cambiosEntreVersiones(v.contenido, i + 1 < guardadas.length ? guardadas[i + 1].contenido : pres)
+  })).reverse();
   const actual = pres.version || 1;
   const sinFirmar = Boolean(pres.pendienteNuevaAceptacion);
 
@@ -40,10 +45,10 @@ export default function VersionesPresupuesto({ pres, onPdf, onNuevaVersion, clas
             type="button"
             onClick={() => onNuevaVersion(pres)}
             className="px-3 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-            title="Guarda la versión actual y crea otra de este presupuesto para la misma obra"
+            title="La versión actual queda guardada como modificada y la revisión la sustituye"
           >
             <FilePlus2 className="w-3.5 h-3.5" />
-            <span>Nueva versión</span>
+            <span>Añadir revisión</span>
           </button>
         )}
       </div>
@@ -60,19 +65,32 @@ export default function VersionesPresupuesto({ pres, onPdf, onNuevaVersion, clas
           </button>
         </li>
         {anteriores.map(v => (
-          <li key={`${v.version}-${v.guardadaEl}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
-            <span className="text-slate-300">
-              <strong className="text-slate-100">v{v.version}</strong> · {eur(v.totalConIva)}
-              <span className="ml-2 text-slate-500">{ESTADO[v.estado] || v.estado}{v.fecha ? ` · ${v.fecha}` : ''} · guardada el {v.guardadaEl}</span>
-            </span>
-            <button type="button" onClick={() => onPdf?.(datosVersionPdf(pres, v))} className="text-slate-300 hover:text-white font-semibold flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5" /> PDF
-            </button>
+          <li key={`${v.version}-${v.guardadaEl}`} className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-slate-300">
+                <strong className="text-slate-100">v{v.version}</strong> · {eur(v.totalConIva)}
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border bg-slate-800 text-slate-300 border-slate-700">Modificado el {v.guardadaEl}</span>
+                <span className="ml-2 text-slate-500">{ESTADO[v.estado] || v.estado}{v.fecha ? ` · ${v.fecha}` : ''}</span>
+              </span>
+              <button type="button" onClick={() => onPdf?.(datosVersionPdf(pres, v))} className="text-slate-300 hover:text-white font-semibold flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5" /> PDF
+              </button>
+            </div>
+            {v.cambios.length > 0 ? (
+              <details>
+                <summary className="cursor-pointer text-[11px] text-slate-400 hover:text-slate-200">{v.cambios.length} cambio(s) en la revisión que la sustituye</summary>
+                <ul className="mt-1 ml-4 list-disc space-y-0.5 text-[11px] text-slate-400">
+                  {v.cambios.map((c, i) => <li key={i}>{c}</li>)}
+                </ul>
+              </details>
+            ) : (
+              <p className="text-[11px] text-slate-500">Sin cambios todavía en la revisión que la sustituye.</p>
+            )}
           </li>
         ))}
       </ul>
       {anteriores.length === 0 && (
-        <p className="text-[11px] text-slate-500">Al crear una versión nueva (o al modificar un presupuesto ya aprobado), la versión anterior queda guardada aquí.</p>
+        <p className="text-[11px] text-slate-500">Al añadir una revisión, la versión anterior queda guardada aquí como modificada, con la fecha y los cambios.</p>
       )}
     </div>
   );

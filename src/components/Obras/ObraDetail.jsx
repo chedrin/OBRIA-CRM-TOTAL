@@ -280,9 +280,9 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
     if (alPresupuesto) {
       const pres = coberturaMaterial.presupuesto;
       const { cambios } = cambiosAnadirNecesidad(pres, necesidad);
-      editarPresupuesto(pres.id, cambios);
+      editarPresupuesto(pres.id, cambios, { nuevaRevision: true });
       showNotification(estaAprobado(pres)
-        ? `"${necesidad.concepto}" añadido a ${pres.numero} como versión nueva: el cliente tiene que firmarla. La versión anterior queda guardada.`
+        ? `"${necesidad.concepto}" añadido a ${pres.numero} en una revisión nueva: el cliente tiene que firmarla. La versión anterior queda guardada como modificada.`
         : `"${necesidad.concepto}" añadido como partida a ${pres.numero}.`);
       necesidad.enPresupuesto = pres.id;
     }
@@ -1459,7 +1459,7 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
                       Solo a necesidades
                     </button>
                     <button type="submit" value="presupuesto" className="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-white font-bold rounded-xl">
-                      {estaAprobado(coberturaMaterial.presupuesto) ? 'Añadir y generar versión nueva del presupuesto' : 'Añadir también al presupuesto'}
+                      {estaAprobado(coberturaMaterial.presupuesto) ? 'Añadir y generar revisión del presupuesto' : 'Añadir también al presupuesto'}
                     </button>
                   </>
                 ) : (

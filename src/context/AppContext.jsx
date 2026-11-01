@@ -40,7 +40,7 @@ import {
   calculatePhaseWeightedProgress,
   repairAndSyncObrasWithBudgets
 } from '../services/obraBudgetSyncService';
-import { conRevision, datosNuevaAceptacion, datosNuevaVersion, presupuestoVigente, capitulosDe } from '../utils/presupuestoRevision';
+import { conRevision, datosNuevaAceptacion, datosNuevaVersion, presupuestoVigente, capitulosDe, estaBloqueado } from '../utils/presupuestoRevision';
 import { cambiosObra, cambiosPresupuesto } from '../utils/historialObra';
 import { registrarSucesos, cambioDiferido } from '../services/historialService';
 import {
@@ -1262,6 +1262,7 @@ export function AppProvider({ children }) {
   const refineQuoteWithVoiceCommand = async (quoteId, commandText) => {
     const targetQuote = presupuestos.find(p => p.id === quoteId);
     if (!targetQuote) return null;
+    if (avisoBloqueado(targetQuote)) return null;
 
     const refinedQuote = await applyVoiceCommandToQuote(targetQuote, commandText, empresaConfig.aiConfig);
     // Si ya estaba aprobado, el ajuste por IA también lo deja "Revisado".
@@ -1309,8 +1310,16 @@ export function AppProvider({ children }) {
     return newPres;
   };
 
+  // Un presupuesto aceptado o facturado no se modifica: solo se le añade una revisión.
+  const avisoBloqueado = (pres) => {
+    if (!estaBloqueado(pres)) return false;
+    showNotification(`${pres.numero} está ${pres.estado === 'facturado' ? 'facturado' : 'aceptado'} y no se puede modificar. Pulsa "Añadir revisión": la versión actual quedará guardada como modificada.`, 'error');
+    return true;
+  };
+
   const updatePresupuesto = (id, updates) => {
     const actual = presupuestos.find(p => p.id === id);
+    if (actual && !updates.estado && ('partidas' in updates || 'capitulos' in updates) && avisoBloqueado(actual)) return;
     if (actual) {
       if (!updates.estado) historialPresupuesto(actual, updates);
       const obra = obraDePresupuesto(actual);
@@ -1380,10 +1389,18 @@ export function AppProvider({ children }) {
 
   // Edición de contenido (cabecera, capítulos, partidas). Sin aviso: se llama al escribir.
   // Si el presupuesto ya estaba aprobado queda "Revisado" y pendiente de nueva aceptación.
-  const editarPresupuesto = (id, updates) => {
+  // Con `nuevaRevision`, si está aceptado o facturado se añade antes una revisión (la actual queda guardada).
+  const editarPresupuesto = (id, updates, { nuevaRevision = false } = {}) => {
     const actual = presupuestos.find(p => p.id === id);
-    if (actual) historialPresupuesto(actual, updates);
-    setPresupuestos(prev => prev.map(p => (p.id === id ? { ...p, ...conRevision(p, updates) } : p)));
+    if (!actual) return false;
+    if (!nuevaRevision && avisoBloqueado(actual)) return false;
+    historialPresupuesto(actual, updates);
+    setPresupuestos(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const base = estaBloqueado(p) ? { ...p, ...datosNuevaVersion(p) } : p;
+      return { ...base, ...conRevision(base, updates) };
+    }));
+    return true;
   };
 
   // El cliente acepta la versión revisada: la obra pasa a seguir esta versión.
@@ -1413,7 +1430,7 @@ export function AppProvider({ children }) {
     const obra = obraDePresupuesto(pres);
     if (obra) historial(obra.id, [{ tipo: 'presupuesto', titulo: `Presupuesto ${pres.numero}: versión ${nueva.version} creada`, detalle: `La versión ${pres.version || 1} queda guardada${marcas.pendienteNuevaAceptacion ? '; la nueva necesita la firma del cliente' : ''}.` }]);
     addAuditLog('PRESUPUESTO_NUEVA_VERSION', `Presupuesto ${pres.numero}: versión ${nueva.version} (la ${pres.version || 1} queda en el historial)`);
-    showNotification(`Versión ${nueva.version} de ${pres.numero} creada. La versión ${pres.version || 1} queda guardada.`);
+    showNotification(`Revisión añadida: ${pres.numero} v${nueva.version}. La versión ${pres.version || 1} queda guardada como modificada.`);
     return nueva;
   };
 
