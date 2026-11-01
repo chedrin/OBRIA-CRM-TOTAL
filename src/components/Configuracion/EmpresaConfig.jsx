@@ -30,6 +30,7 @@ import DatosEjemploConfig from './DatosEjemploConfig';
 import NotificacionesConfig from './NotificacionesConfig';
 import CorreosConfig from './CorreosConfig';
 import EscaneoLidarConfig from './EscaneoLidarConfig';
+import Pestanas from '../Common/Pestanas';
 
 export default function EmpresaConfig() {
   const { empresaConfig, updateEmpresaConfig, auditLogs, referenceBudgets, showNotification, facturacionActivada, demoDataCount } = useApp();
@@ -72,8 +73,11 @@ export default function EmpresaConfig() {
       )}
 
       {/* Subtabs Navigation */}
-      <div role="tablist" aria-label="Secciones de ajustes" className="flex flex-nowrap md:flex-wrap gap-1.5 border-b border-slate-800 pb-2 min-w-0 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        {[
+      <Pestanas
+        ariaLabel="Secciones de ajustes"
+        value={activeSubTab}
+        onChange={setActiveSubTab}
+        tabs={[
           { id: 'perfil_director', label: 'Perfil Director & Empresa', icon: Building2, badge: 'Acreditado' },
           { id: 'plantilla_pdf', label: 'Plantilla PDF', icon: FileSignature },
           { id: 'motor_ia', label: 'Motor Central IA (BYOK)', icon: Sparkles, badge: 'Multimodal' },
@@ -85,41 +89,12 @@ export default function EmpresaConfig() {
           { id: 'notificaciones', label: 'Notificaciones', icon: BellRing },
           { id: 'correos', label: 'Correos y plantillas', icon: Mail },
           { id: 'datos_ejemplo', label: 'Datos de ejemplo', icon: Database, count: demoDataCount },
-          { id: 'verifactu', label: 'Facturación (VeriFactu)', icon: ShieldCheck, badge: facturacionActivada ? 'Activada' : 'Desactivada' },
+          { id: 'verifactu', label: 'Facturación (VeriFactu)', icon: ShieldCheck, badge: facturacionActivada ? 'Activada' : 'Desactivada', badgeTone: facturacionActivada ? undefined : 'slate' },
           { id: 'ticketbai', label: 'TicketBAI (País Vasco)', icon: QrCode },
           { id: 'sii_facturae', label: 'SII & Facturae B2B', icon: FileSpreadsheet },
           { id: 'audit', label: 'Registro de Auditoría e Inalterabilidad', icon: History, count: auditLogs?.length }
-        ].map(t => {
-          const Icon = t.icon;
-          const isActive = activeSubTab === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setActiveSubTab(t.id)}
-              role="tab"
-              aria-selected={isActive}
-              className={`shrink-0 whitespace-nowrap px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 border-b-2 ${
-                isActive
-                  ? 'border-amber-400 text-amber-400 bg-slate-900/80 font-bold'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{t.label}</span>
-              {t.badge && (
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-mono font-bold">
-                  {t.badge}
-                </span>
-              )}
-              {t.count !== undefined && (
-                <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded-full font-bold">
-                  {t.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+        ]}
+      />
 
       {/* TAB PERFIL DIRECTOR & EMPRESA */}
       {activeSubTab === 'perfil_director' && <PerfilDirectorConfig />}

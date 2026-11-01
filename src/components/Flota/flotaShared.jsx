@@ -5,6 +5,7 @@ import { api, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import ModalOverlay from '../Common/ModalOverlay';
 import { OpcionesCrear, conCrear, useQuickCreate, useAlCrear } from '../Common/QuickCreate';
 import { ESTADO_ALERTA, ESTADOS_ACTIVO, labelEstado } from '../../utils/flota';
+import PestanasComunes from '../Common/Pestanas';
 
 // Piezas comunes de Inventario, Flota, Alquileres y Centro de alertas.
 
@@ -253,17 +254,11 @@ export function SelectProveedor({ value, onChange, proveedores = [], categoria, 
 
 export const inputSm = `${inputCls} !py-1.5 text-xs`;
 
-/** Pestañas de una ficha. */
+/** Pestañas de una ficha (usa la barra común de la app). */
 export function Pestanas({ tabs, value, onChange }) {
   return (
-    <div className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1 border-b border-slate-800">
-      {tabs.map((t) => (
-        <button key={t.id} type="button" onClick={() => onChange(t.id)}
-          className={`shrink-0 px-3 py-1.5 rounded-t-lg text-xs font-bold border-b-2 transition ${value === t.id ? 'border-amber-500 text-amber-300' : 'border-transparent text-slate-400 hover:text-white'}`}>
-          {t.label}{t.badge ? <span className="ml-1 text-[10px] text-slate-500">{t.badge}</span> : null}
-        </button>
-      ))}
-    </div>
+    <PestanasComunes size="sm" ariaLabel="Secciones de la ficha" value={value} onChange={onChange}
+      tabs={tabs.map(({ badge, ...t }) => ({ ...t, count: badge || undefined }))} />
   );
 }
 

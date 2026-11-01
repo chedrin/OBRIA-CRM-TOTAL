@@ -37,6 +37,7 @@ import { AnimatePresence } from 'motion/react';
 import { calcularNomina } from '../../utils/nomina';
 import NominaDesglose, { SelectorMes, MESES } from './NominaDesglose';
 import FichaEmpleadoEditor from './FichaEmpleadoEditor';
+import Pestanas from '../Common/Pestanas';
 
 const TRADES_AI_MATCH = [
   { id: 'alicatado', label: 'Alicatado Porcelánico Rectificado Gran Formato', gremio: 'Albañilería' },
@@ -515,55 +516,18 @@ export default function ObrerosList() {
       </div>
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex border-b border-slate-800 space-x-1 sm:space-x-4 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('plantilla')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'plantilla'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Fichas & Plantilla Laboral ({employees.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('nominas')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'nominas'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <CreditCard className="w-4 h-4" />
-          <span>Simulador & Confección de Nóminas</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('vacaciones')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'vacaciones'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Calendar className="w-4 h-4" />
-          <span>Vacaciones, Ausencias & Bajas IT</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('evaluaciones_ia')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'evaluaciones_ia'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Sparkles className="w-4 h-4" />
-          <span>Scoring & Recomendador de Gremios IA</span>
-        </button>
-      </div>
+      <Pestanas
+        ariaLabel="Secciones de equipo"
+        accent="amber"
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { id: 'plantilla', label: 'Fichas & Plantilla Laboral', icon: Users, count: employees.length },
+          { id: 'nominas', label: 'Simulador & Confección de Nóminas', icon: CreditCard },
+          { id: 'vacaciones', label: 'Vacaciones, Ausencias & Bajas IT', icon: Calendar },
+          { id: 'evaluaciones_ia', label: 'Scoring & Recomendador de Gremios IA', icon: Sparkles }
+          ]}
+      />
 
       {/* ========================================================================= */}
       {/* TAB 1: PLANTILLA & FICHAS LABORALES                                       */}
@@ -1627,40 +1591,18 @@ export default function ObrerosList() {
 
             {!editandoFicha && (<>
             {/* Internal Detail Tabs */}
-            <div className="flex border-b border-slate-800 space-x-3 text-xs font-bold">
-              <button
-                onClick={() => setDetailActiveTab('personal')}
-                className={`pb-2.5 border-b-2 transition ${
-                  detailActiveTab === 'personal' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                1. Datos Personales & Banco
-              </button>
-              <button
-                onClick={() => setDetailActiveTab('laboral')}
-                className={`pb-2.5 border-b-2 transition ${
-                  detailActiveTab === 'laboral' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                2. Contrato, Nómina & IRPF
-              </button>
-              <button
-                onClick={() => setDetailActiveTab('vacaciones')}
-                className={`pb-2.5 border-b-2 transition ${
-                  detailActiveTab === 'vacaciones' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                3. Vacaciones & Bajas IT
-              </button>
-              <button
-                onClick={() => setDetailActiveTab('acceso')}
-                className={`pb-2.5 border-b-2 transition ${
-                  detailActiveTab === 'acceso' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                4. Acceso Móvil PWA
-              </button>
-            </div>
+            <Pestanas
+              ariaLabel="Secciones de la ficha"
+              accent="amber" size="sm"
+              value={detailActiveTab}
+              onChange={setDetailActiveTab}
+              tabs={[
+                { id: 'personal', label: '1. Datos Personales & Banco' },
+                { id: 'laboral', label: '2. Contrato, Nómina & IRPF' },
+                { id: 'vacaciones', label: '3. Vacaciones & Bajas IT' },
+                { id: 'acceso', label: '4. Acceso Móvil PWA' }
+                ]}
+            />
 
             {/* TAB CONTENT 1: PERSONAL & BANCO */}
             {detailActiveTab === 'personal' && (

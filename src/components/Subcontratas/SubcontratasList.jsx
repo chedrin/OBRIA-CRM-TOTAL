@@ -36,6 +36,7 @@ import DocumentosFicha from './DocumentosFicha';
 import ControlDocumentalObras from './ControlDocumentalObras';
 import useDocumentacionSubcontratas, { TONE_CLS, ESTADO_INFO } from './useDocumentacionSubcontratas';
 import { companyCompliance, requirementStatus, STATUS_INFO } from '../../utils/documentacionSubcontratas';
+import Pestanas from '../Common/Pestanas';
 
 export default function SubcontratasList() {
   const {
@@ -375,67 +376,19 @@ export default function SubcontratasList() {
       </div>
 
       {/* Main Tabs Navigation */}
-      <div className="flex border-b border-slate-800 space-x-1 sm:space-x-4 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('directorio')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'directorio'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Building2 className="w-4 h-4" />
-          <span>Directorio & Control PRL ({subcontractors.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('documentacion_obras')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'documentacion_obras'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Documentación por obra</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('presupuestos_comparador')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'presupuestos_comparador'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Presupuestos de Gremios & Comparador IA</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('facturas_desviaciones')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'facturas_desviaciones'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Receipt className="w-4 h-4" />
-          <span>Facturas Recibidas & Desviaciones</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('base_precios')}
-          className={`pb-3 px-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeTab === 'base_precios'
-              ? 'border-indigo-500 text-indigo-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Database className="w-4 h-4" />
-          <span>Base de Precios Oficial ({basePrecios.length} partidas)</span>
-        </button>
-      </div>
+      <Pestanas
+        ariaLabel="Secciones de subcontratas"
+        accent="indigo"
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { id: 'directorio', label: 'Directorio & Control PRL', icon: Building2, count: subcontractors.length },
+          { id: 'documentacion_obras', label: 'Documentación por obra', icon: ShieldCheck },
+          { id: 'presupuestos_comparador', label: 'Presupuestos de Gremios & Comparador IA', icon: FileText },
+          { id: 'facturas_desviaciones', label: 'Facturas Recibidas & Desviaciones', icon: Receipt },
+          { id: 'base_precios', label: 'Base de Precios Oficial', icon: Database, count: basePrecios.length }
+          ]}
+      />
 
       {/* ========================================================================= */}
       {/* TAB 1: DIRECTORIO DE SUBCONTRATAS & CONTROL PRL (SEGUROS RC)              */}
@@ -1171,48 +1124,19 @@ export default function SubcontratasList() {
             </div>
 
             {/* Sub-tabs */}
-            <div className="flex border-b border-slate-800 space-x-3 text-xs font-bold overflow-x-auto whitespace-nowrap">
-              <button
-                onClick={() => setDetailTab('prl')}
-                className={`pb-2 border-b-2 transition ${
-                  detailTab === 'prl' ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                1. Ficha, PRL y documentos
-              </button>
-              <button
-                onClick={() => setDetailTab('presupuestos')}
-                className={`pb-2 border-b-2 transition ${
-                  detailTab === 'presupuestos' ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                2. Presupuestos Obras ({(selectedSubcontractor.presupuestosVinculados || []).length})
-              </button>
-              <button
-                onClick={() => setDetailTab('facturas')}
-                className={`pb-2 border-b-2 transition ${
-                  detailTab === 'facturas' ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                3. Facturas & Desviaciones ({(selectedSubcontractor.facturasRecibidas || []).length})
-              </button>
-              <button
-                onClick={() => setDetailTab('bitacora')}
-                className={`pb-2 border-b-2 transition ${
-                  detailTab === 'bitacora' ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                4. Bitácora de Incidencias
-              </button>
-              <button
-                onClick={() => setDetailTab('scoring')}
-                className={`pb-2 border-b-2 transition ${
-                  detailTab === 'scoring' ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'
-                }`}
-              >
-                5. Evaluación & Scoring
-              </button>
-            </div>
+            <Pestanas
+              ariaLabel="Secciones de la ficha"
+              accent="indigo" size="sm"
+              value={detailTab}
+              onChange={setDetailTab}
+              tabs={[
+                { id: 'prl', label: '1. Ficha, PRL y documentos' },
+                { id: 'presupuestos', label: '2. Presupuestos Obras', count: (selectedSubcontractor.presupuestosVinculados || []).length },
+                { id: 'facturas', label: '3. Facturas & Desviaciones', count: (selectedSubcontractor.facturasRecibidas || []).length },
+                { id: 'bitacora', label: '4. Bitácora de Incidencias' },
+                { id: 'scoring', label: '5. Evaluación & Scoring' }
+                ]}
+            />
 
             {/* TAB 1: PRL */}
             {detailTab === 'prl' && (() => {
