@@ -188,7 +188,7 @@ export default function AvisosCenter() {
 
       {tab === 'avisos' && <AvisosList onOpen={openNotification} />}
       {tab === 'necesidades' && <NecesidadesPanel key={needsKey} focusId={focusId} />}
-      {tab === 'pedidos' && <PedidosPanel onOpenNeed={openNeed} />}
+      {tab === 'pedidos' && <PedidosPanel onOpenNeed={openNeed} focusId={focusId} />}
       {tab === 'partes' && <PartesPanel focusId={focusId} />}
       {tab === 'enlaces' && <EnlacesPanel />}
       {tab === 'proveedores' && <ProveedoresPanel />}

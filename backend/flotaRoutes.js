@@ -40,7 +40,7 @@ import { MAX_DOC_BYTES, detectDocType } from "./avanceRoutes.js";
 import { sendPushForNotification } from "./webPush.js";
 import { sendEmail, isValidEmail } from "./emailService.js";
 import { isWhatsAppCloudConfigured, sendWhatsAppCloud } from "./whatsapp.js";
-import { ACCIONES_MOVIMIENTO } from "../src/utils/flota.js";
+import { ACCIONES_MOVIMIENTO, marcarAlquileresSinPrecio } from "../src/utils/flota.js";
 
 export const FLOTA_BUCKET = "flota-docs";
 const MIGRATION = "supabase_schema_inventario_flota.sql";
@@ -190,7 +190,7 @@ const REGISTROS = {
 const RENTAL_FIELDS = {
   supplier_id: ID, arrendador_nombre: T(200), obra_id: T(120), numero_contrato: T(120),
   fecha_inicio: DATE, fecha_prevista_devolucion: DATE, tarifa: NUM, tarifa_periodo: E(["dia", "semana", "mes"]),
-  transporte: NUM, fianza: NUM, iva_pct: NUM, importe_final: NUM, numero_factura: T(120), contrato_path: PATH, notas: T(4000)
+  transporte: NUM, fianza: NUM, iva_pct: NUM, importe_final: NUM, numero_factura: T(120), contrato_path: PATH, factura_path: PATH, notas: T(4000)
 };
 
 const quien = (req) => ({ updated_by: ID(req.user?.id), updated_by_name: clip(req.user?.full_name || req.user?.username, 200) || "Administración" });
@@ -560,6 +560,7 @@ async function handleReturnRental(req, res, id) {
   const upd = { estado: "devuelto", fecha_devolucion: fecha };
   if (body.importe_final !== undefined && body.importe_final !== "") upd.importe_final = NUM(body.importe_final);
   if (body.numero_factura) upd.numero_factura = clip(body.numero_factura, 120);
+  if (PATH(body.factura_path)) upd.factura_path = PATH(body.factura_path);
   const data = await run(db().from("asset_rentals").update(upd).eq("id", id).select().single(), "el alquiler");
   const antes = await getAsset(r.asset_id);
   if (antes.tipo_adquisicion === "alquiler" && antes.estado !== "baja") {
@@ -814,7 +815,12 @@ export async function handleFlotaRoutes(req, res, pathname, query, { parseMultip
         const { data, error } = await db().from("fleet_costes").select("*").eq("obra_id", obra).order("fecha", { ascending: false });
         if (error && isMissing(error)) return sendJson(res, 200, []);
         if (error) throw dbError(error);
-        sendJson(res, 200, data || []);
+        const costes = data || [];
+        // Alquileres sin precio de la factura: salen como pendientes, no como gasto.
+        const rentals = costes.some((c) => c.origen === "alquiler")
+          ? (await db().from("asset_rentals").select("*").eq("obra_id", obra)).data || []
+          : [];
+        sendJson(res, 200, marcarAlquileresSinPrecio(costes, rentals));
       }
     }],
     [/^\/api\/flota\/archivo$/, { POST: () => handleUpload(req, res, parseMultipart), GET: () => handleOpenFile(res, query.get("path")) }]

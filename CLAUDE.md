@@ -36,6 +36,7 @@ Pendiente:
 - Crear registros desde los desplegables (`Common/QuickCreate.jsx`, `ComboCrear.jsx`, `CampoProveedor.jsx`): opciones "Crear nuevo proveedor/subcontrata/obra/operario" que abren el alta encima y vuelven al formulario con el registro elegido. Para añadirlo a otro `<select>`: `<OpcionesCrear tipos={[...]} />` y `onChange={conCrear(crear, setValor)}`. Sin SQL nuevo.
 - Histórico diario de cada obra (doc `docs/historial-obra.md`, pestaña "Histórico diario" en la obra): Pedro debe ejecutar `supabase_schema_historial_obra.sql`.
 - Inventario, maquinaria, flota, alquileres y centro de alertas (doc `docs/inventario-flota.md`, sección "Recursos"; código en `backend/flotaRoutes.js`, `src/components/Flota/`, `src/utils/flota.js`): Pedro debe ejecutar `supabase_schema_inventario_flota.sql` y configurar en Centro de alertas > Cuándo avisar el correo/WhatsApp. pg_cron opcional. Costes de flota y alquileres salen en Gastos vs Ingresos de la obra sin duplicarse en `facturas_proveedores`.
+- Precio o factura al recibir material y al devolver alquileres (`src/utils/gastoPedido.js`, `Avisos/RecepcionPedido.jsx`, `Flota/AlquileresView.jsx`): con importe crea/actualiza el gasto de la obra (`facturas_proveedores` con `pedidoId`); sin importe queda "Falta precio" y no cuenta. Alquileres: nueva columna `asset_rentals.factura_path` en `supabase_schema_inventario_flota.sql` (volver a ejecutarlo si ya se ejecutó).
 Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.
 
 ## Diagnóstico sugerido del login, en orden

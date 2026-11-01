@@ -2,16 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Truck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
+import PedidosEnviados from './PedidosEnviados';
+import { pedidoPendienteDePrecio } from '../../utils/gastoPedido';
 import { api, ORDER_STATUS, RESPONSE_STATUS, fmtDate, fmtDateTime, fmtMoney, inputCls } from '../../services/avisosApi';
 
 // Todos los pedidos enviados a proveedores: cuándo los sirven, a qué precio y para qué obras.
-export default function PedidosPanel({ onOpenNeed }) {
-  const { obras = [] } = useApp() || {};
+export default function PedidosPanel({ onOpenNeed, focusId = null }) {
+  const { obras = [], facturasProveedores = [] } = useApp() || {};
   const showNotification = useNotify();
   const [orders, setOrders] = useState(null);
   const [suppliers, setSuppliers] = useState([]);
   const [filter, setFilter] = useState('pendientes');
   const [obra, setObra] = useState('');
+  const [abierto, setAbierto] = useState(focusId);
+  useEffect(() => { if (focusId) setAbierto(focusId); }, [focusId]);
 
   useEffect(() => {
     Promise.all([api('/api/material-orders'), api('/api/suppliers')])
@@ -30,13 +34,15 @@ export default function PedidosPanel({ onOpenNeed }) {
     // Primero lo que se sirve antes; sin fecha, al final.
     .sort((a, b) => (a.delivery_date || '9999').localeCompare(b.delivery_date || '9999') || b.created_at.localeCompare(a.created_at));
 
+  const sinPrecio = (orders || []).filter((o) => pedidoPendienteDePrecio(o, facturasProveedores)).length;
+
   if (!orders) return <div className="py-10 flex justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin" /></div>;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
-        {[['pendientes', 'Pendientes de recibir'], ['todos', 'Todos']].map(([id, label]) => (
-          <button key={id} onClick={() => setFilter(id)}
+        {[['pendientes', 'Pendientes de recibir'], ['sin_precio', `Entregados sin precio${sinPrecio ? ` (${sinPrecio})` : ''}`], ['todos', 'Todos']].map(([id, label]) => (
+          <button key={id} onClick={() => { setFilter(id); setAbierto(null); }}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${filter === id ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>{label}</button>
         ))}
         <select value={obra} onChange={(e) => setObra(e.target.value)} className={`${inputCls} !w-auto !py-1.5 text-xs`}>
@@ -45,7 +51,9 @@ export default function PedidosPanel({ onOpenNeed }) {
         </select>
       </div>
 
-      {shown.length === 0 ? (
+      {(filter === 'sin_precio' || abierto) ? (
+        <PedidosEnviados key={abierto || 'sin'} suppliers={suppliers} onOpenNeed={onOpenNeed} focusId={abierto} soloSinPrecio={filter === 'sin_precio'} />
+      ) : shown.length === 0 ? (
         <p className="text-center py-10 text-sm text-slate-500">No hay pedidos {filter === 'pendientes' ? 'pendientes' : ''}.</p>
       ) : (
         <ul className="space-y-2">
@@ -55,7 +63,7 @@ export default function PedidosPanel({ onOpenNeed }) {
             const late = o.delivery_date && o.status !== 'entregado' && o.delivery_date < new Date().toISOString().slice(0, 10);
             return (
               <li key={o.id}>
-                <button onClick={() => o.need_id && onOpenNeed(o.need_id)}
+                <button onClick={() => (['enviado', 'confirmado', 'entregado'].includes(o.status) ? setAbierto(o.id) : o.need_id && onOpenNeed(o.need_id))}
                   className="w-full text-left bg-slate-900 border border-slate-800 rounded-2xl p-3 hover:bg-slate-800/60 transition flex flex-wrap gap-3 items-start">
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-bold text-white">
@@ -81,6 +89,7 @@ export default function PedidosPanel({ onOpenNeed }) {
                       </span>
                     )}
                     {o.quoted_amount != null && <span className="font-bold text-white">{fmtMoney(o.quoted_amount)}</span>}
+                    {pedidoPendienteDePrecio(o, facturasProveedores) && <span className="text-[10px] font-bold border rounded-full px-2 py-0.5 bg-amber-500/15 text-amber-300 border-amber-500/40">Falta precio</span>}
                   </span>
                 </button>
               </li>

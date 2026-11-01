@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Save, Sparkles, Loader2, PackageCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Save, Sparkles, Loader2 } from 'lucide-react';
+import RecepcionPedido from './RecepcionPedido';
 import useNotify from './useNotify';
 import { api, RESPONSE_STATUS, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 
@@ -7,7 +8,7 @@ import { api, RESPONSE_STATUS, fmtDateTime, inputCls, btnPrimary, btnGhost } fro
  * Respuesta del proveedor a un pedido ya enviado: estado, cuándo lo sirven, importe,
  * notas y el correo de respuesta pegado (la IA puede rellenar los campos a partir de él).
  */
-export default function RespuestaProveedor({ order, onChange }) {
+export default function RespuestaProveedor({ order, supplierName, onChange }) {
   const showNotification = useNotify();
   const [form, setForm] = useState({
     response_status: order.response_status || 'pendiente',
@@ -17,6 +18,10 @@ export default function RespuestaProveedor({ order, onChange }) {
     supplier_reply: order.supplier_reply || ''
   });
   const [busy, setBusy] = useState('');
+  // El precio puesto al recibir el material (RecepcionPedido) actualiza el importe.
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, quoted_amount: order.quoted_amount ?? '' }));
+  }, [order.quoted_amount]);
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   const run = async (key, fn) => {
@@ -30,10 +35,10 @@ export default function RespuestaProveedor({ order, onChange }) {
     }
   };
 
-  const save = (extra = {}) => run(extra.delivered ? 'delivered' : 'save', async () => {
-    const updated = await api(`/api/material-orders/${order.id}/response`, { method: 'PATCH', body: { ...form, ...extra } });
+  const save = () => run('save', async () => {
+    const updated = await api(`/api/material-orders/${order.id}/response`, { method: 'PATCH', body: form });
     onChange(updated);
-    showNotification(extra.delivered ? 'Pedido marcado como entregado' : 'Respuesta guardada');
+    showNotification('Respuesta guardada');
   });
 
   const readWithAi = () => run('ai', async () => {
@@ -86,11 +91,11 @@ export default function RespuestaProveedor({ order, onChange }) {
         <button onClick={() => save()} disabled={Boolean(busy)} className={btnGhost}>
           {busy === 'save' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Guardar respuesta
         </button>
-        {order.status !== 'entregado' && (
-          <button onClick={() => save({ delivered: true })} disabled={Boolean(busy)} className={btnPrimary}>
-            {busy === 'delivered' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />} Marcar como entregado
-          </button>
-        )}
+      </div>
+
+      {/* Al recibir el material se pide el precio o la factura para asignar el gasto a la obra. */}
+      <div className="flex justify-end">
+        <RecepcionPedido order={order} supplierName={supplierName} onChange={onChange} disabled={Boolean(busy)} />
       </div>
     </div>
   );

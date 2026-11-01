@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import {
-  Plus, Upload, ExternalLink, Trash2, Edit2, TrendingUp, TrendingDown, Receipt, Download, Loader2, CheckCircle2, Clock, FileText
+  Plus, Upload, ExternalLink, Trash2, Edit2, TrendingUp, TrendingDown, Receipt, Download, Loader2, CheckCircle2, Clock, FileText, AlertTriangle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useNotifications } from '../../context/NotificationsContext';
 import { api, fmtDate, fmtMoney, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import ModalOverlay from '../Common/ModalOverlay';
 import CampoProveedor from '../Common/CampoProveedor';
 import { CATEGORIAS_GASTO, labelCategoria, importesGasto, resumenObra } from '../../utils/gastosIngresosObra';
+import { obraIdsPedido, pedidoPendienteDePrecio } from '../../utils/gastoPedido';
+import { alquileresPendientesDePrecio } from '../../utils/flota';
 
 // Gastos ejecutados de la obra (facturas de material, proveedores, subcontratas, licencias,
 // combustible...), ingresos (facturas emitidas al cliente) y la comparación, sin IVA.
@@ -70,6 +73,8 @@ export default function GastosIngresosObra({ obra }) {
 
   const [subDocs, setSubDocs] = useState([]);
   const [flotaCostes, setFlotaCostes] = useState([]);
+  const [pedidos, setPedidos] = useState([]);
+  const { setTarget } = useNotifications();
   const [filtro, setFiltro] = useState('todas');
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -92,6 +97,18 @@ export default function GastosIngresosObra({ obra }) {
       .catch(() => { if (vivo) setFlotaCostes([]); });
     return () => { vivo = false; };
   }, [obra.id]);
+
+  // Pedidos a proveedor de la obra (para avisar de los entregados sin precio).
+  useEffect(() => {
+    let vivo = true;
+    api('/api/material-orders')
+      .then((list) => { if (vivo) setPedidos((list || []).filter((o) => obraIdsPedido(o).includes(obra.id))); })
+      .catch(() => { if (vivo) setPedidos([]); });
+    return () => { vivo = false; };
+  }, [obra.id]);
+
+  const pedidosSinPrecio = pedidos.filter((o) => pedidoPendienteDePrecio(o, facturasProveedores));
+  const alquileresSinPrecio = alquileresPendientesDePrecio(obra.id, flotaCostes);
 
   const r = useMemo(
     () => resumenObra({ obra, presupuestos, facturas, facturasProveedores, subDocs, flotaCostes }),
@@ -244,6 +261,28 @@ export default function GastosIngresosObra({ obra }) {
           detalle={r.margenPct != null ? `Margen ${String(r.margenPct).replace('.', ',')} % sobre lo facturado` : 'Sin facturas emitidas todavía'} />
       </div>
 
+      {(pedidosSinPrecio.length > 0 || alquileresSinPrecio.length > 0) && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-100 space-y-2">
+          <p className="font-bold flex items-center gap-2 text-amber-200">
+            <AlertTriangle className="w-4 h-4" /> Pendiente de precio: no cuenta en los gastos hasta que pongas el precio o la factura del proveedor
+          </p>
+          <ul className="space-y-1">
+            {pedidosSinPrecio.map((o) => (
+              <li key={o.id} className="flex flex-wrap items-center gap-2">
+                <span className="flex-1 min-w-0 truncate">Material entregado{o.delivery_date ? ` el ${fmtDate(o.delivery_date)}` : ''}: {(o.items || []).map((it) => it.material).filter(Boolean).join(', ') || o.subject}</span>
+                <button type="button" onClick={() => { setTarget?.({ section: 'pedidos', id: o.id }); setActiveTab?.('avisos'); }} className="underline font-semibold">Poner precio</button>
+              </li>
+            ))}
+            {alquileresSinPrecio.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center gap-2">
+                <span className="flex-1 min-w-0 truncate">{c.concepto} · {c.proveedor}</span>
+                <button type="button" onClick={() => setActiveTab?.('alquileres')} className="underline font-semibold">Poner precio</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-bold text-white text-sm">Gastos frente a ingresos</h3>
@@ -318,6 +357,7 @@ export default function GastosIngresosObra({ obra }) {
                       <span className="font-semibold text-white truncate">{g.proveedor}</span>
                       {g.numero && <span className="font-mono text-slate-400">{g.numero}</span>}
                       {g.origen === 'subcontrata' && <span className="text-[10px] text-violet-300">· desde Avance de obra</span>}
+                      {g.registro?.pedidoId && <span className="text-[10px] text-amber-300">· pedido a proveedor</span>}
                       {g.origen === 'flota' && (
                         <button type="button" onClick={() => setActiveTab?.(g.registro.origen === 'alquiler' ? 'alquileres' : 'flota')} className="text-[10px] text-sky-300 hover:underline">
                           · desde {g.registro.origen === 'alquiler' ? 'Alquileres' : 'Flota'}{g.registro.origen === 'alquiler' && /en curso/.test(g.concepto) ? ' (hasta hoy)' : ''}
