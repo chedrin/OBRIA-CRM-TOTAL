@@ -18,7 +18,8 @@ import {
   Receipt,
   PencilRuler,
   Lock,
-  FilePlus2
+  FilePlus2,
+  HardHat
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
 import CroquisEditorModal from '../Croquis/CroquisEditorModal';
@@ -52,7 +53,7 @@ const CAMPOS_CABECERA = [
   { id: 'notasLegales', label: 'Condiciones y notas', span: 4, multiline: true }
 ];
 
-export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar, estadoFacturacion = null }) {
+export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar, onAceptarObra, estadoFacturacion = null }) {
   const {
     presupuestos,
     obras,
@@ -307,6 +308,17 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           </div>
 
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
+            {onAceptarObra && !['aceptado', 'firmado', 'facturado'].includes(quote.estado) && (
+              <button
+                type="button"
+                onClick={() => onAceptarObra(quote)}
+                title="El cliente acepta: convertir el presupuesto en obra"
+                className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition active:scale-95 whitespace-nowrap"
+              >
+                <HardHat className="w-4 h-4 shrink-0" />
+                <span>Aceptar → Obra</span>
+              </button>
+            )}
             {onFacturar && (
               <button
                 type="button"

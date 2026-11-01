@@ -66,6 +66,17 @@ export default function PresupuestosList() {
     />
   );
 
+  const convertirObraModal = presupuestoAObra && (
+    <ConvertirObraModal
+      presupuesto={presupuestoAObra}
+      onClose={() => setPresupuestoAObra(null)}
+      onConfirm={(datosObra) => {
+        handleAceptarPresupuesto(presupuestoAObra, datosObra);
+        setPresupuestoAObra(null);
+      }}
+    />
+  );
+
   if (viewMode === 'revision_consola' && selectedQuoteId) {
     return (
       <>
@@ -73,9 +84,11 @@ export default function PresupuestosList() {
           quoteId={selectedQuoteId}
           onBack={() => setViewMode('list')}
           onFacturar={facturar}
+          onAceptarObra={(pres) => setPresupuestoAObra(pres)}
           estadoFacturacion={estadosFacturacion.get(selectedQuoteId) || null}
         />
         {emitirFacturaModal}
+        {convertirObraModal}
       </>
     );
   }
@@ -167,16 +180,7 @@ export default function PresupuestosList() {
       />}
 
       {/* Paso de confirmación: presupuesto aceptado -> obra activa */}
-      {presupuestoAObra && (
-        <ConvertirObraModal
-          presupuesto={presupuestoAObra}
-          onClose={() => setPresupuestoAObra(null)}
-          onConfirm={(datosObra) => {
-            handleAceptarPresupuesto(presupuestoAObra, datosObra);
-            setPresupuestoAObra(null);
-          }}
-        />
-      )}
+      {convertirObraModal}
 
       {/* Emitir factura desde el presupuesto (datos del cliente e IVA de la obra) */}
       {emitirFacturaModal}
