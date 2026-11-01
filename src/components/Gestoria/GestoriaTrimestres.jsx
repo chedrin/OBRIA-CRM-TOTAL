@@ -10,12 +10,14 @@ import {
 } from 'lucide-react';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
+import { CATEGORIAS_GASTO } from '../../utils/gastosIngresosObra';
 
 export default function GestoriaTrimestres() {
   const {
     facturas,
     facturasProveedores,
     addFacturaProveedor,
+    obras = [],
     showNotification
   } = useApp();
 
@@ -29,7 +31,8 @@ export default function GestoriaTrimestres() {
     cif: '',
     numeroProveedor: '',
     concepto: '',
-    categoria: 'Materiales', // Materiales, Subcontratas, Suministros, Estructura / Alquiler
+    categoria: 'Materiales', // ver CATEGORIAS_GASTO
+    obraId: '',
     baseImponible: '',
     tipoIvaPct: 21,
     retencionIrpfPct: 0,
@@ -85,6 +88,7 @@ export default function GestoriaTrimestres() {
       numeroProveedor: gastoForm.numeroProveedor || `FAC-${Date.now().toString().slice(-4)}`,
       concepto: gastoForm.concepto,
       categoria: gastoForm.categoria,
+      obraId: gastoForm.obraId || undefined,
       trimestre: trimestreSeleccionado,
       ano: 2026,
       fecha: gastoForm.fecha,
@@ -103,6 +107,7 @@ export default function GestoriaTrimestres() {
       numeroProveedor: '',
       concepto: '',
       categoria: 'Materiales',
+      obraId: '',
       baseImponible: '',
       tipoIvaPct: 21,
       retencionIrpfPct: 0,
@@ -646,10 +651,19 @@ export default function GestoriaTrimestres() {
                   onChange={(e) => setGastoForm({ ...gastoForm, categoria: e.target.value })}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white"
                 >
-                  <option value="Materiales">Materiales de Construcción</option>
-                  <option value="Subcontratas">Subcontratas de Gremios</option>
-                  <option value="Suministros">Suministros y Herramientas</option>
-                  <option value="Estructura / Alquiler">Alquiler de Nave y Oficina</option>
+                  {CATEGORIAS_GASTO.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Obra (para el control de gastos de la obra)</label>
+                <select
+                  value={gastoForm.obraId}
+                  onChange={(e) => setGastoForm({ ...gastoForm, obraId: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white"
+                >
+                  <option value="">Gasto general (sin obra)</option>
+                  {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo ? `${o.codigo} · ` : ''}{o.titulo}</option>)}
                 </select>
               </div>
 

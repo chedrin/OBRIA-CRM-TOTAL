@@ -15,7 +15,7 @@
 const redondear = (n) => Math.round(Number(n || 0) * 100) / 100;
 
 /** Base vigente de cada factura original (las rectificativas se aplican sobre su original). */
-function basesVigentes(facturas) {
+export function basesVigentes(facturas) {
   const porId = new Map(facturas.map(f => [f.id, f]));
   // Factura original de una rectificativa (también si rectifica a otra rectificativa).
   const raiz = (f) => {
