@@ -519,12 +519,12 @@ function SuperaPresupuesto({ pres, estado, exceso, versionSinFirmar, onNuevaVers
         <button type="button" onClick={onNuevaVersion} className="text-left rounded-xl border border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 p-3 transition">
           <span className="flex items-center gap-2 text-xs font-bold text-violet-200">
             <FilePlus2 className="w-4 h-4" />
-            {versionSinFirmar ? `Ir a la versión ${pres?.version || 2} sin firmar` : 'Nuevo presupuesto para que lo firme el cliente'}
+            {versionSinFirmar ? `Ir a la versión ${pres?.version || 2} sin firmar` : 'Añadir revisión para que la firme el cliente'}
           </span>
           <span className="block text-[11px] text-slate-300 mt-1">
             {versionSinFirmar
               ? 'Ya hay una versión nueva: complétala, envíala y registra la aceptación del cliente.'
-              : `Crea la versión ${(pres?.version || 1) + 1} de este presupuesto en la misma obra. La versión actual queda guardada.`}
+              : `Crea la versión ${(pres?.version || 1) + 1} de este presupuesto en la misma obra. La actual queda guardada como modificada, con la fecha y los cambios.`}
           </span>
         </button>
         <button type="button" onClick={onRectificar} className="text-left rounded-xl border border-slate-700 bg-slate-950 hover:bg-slate-800 p-3 transition">

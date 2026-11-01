@@ -15,6 +15,10 @@ const CAMPOS_CONTENIDO = [
 
 const ahora = () => new Date().toISOString().replace('T', ' ').substring(0, 16);
 
+// Aceptado o facturado (y sin revisión en curso): no se modifica, solo se le añade una revisión.
+export const ESTADOS_BLOQUEADOS = ['aceptado', 'firmado', 'facturado'];
+export const estaBloqueado = (p) => Boolean(p) && ESTADOS_BLOQUEADOS.includes(p.estado) && !p.pendienteNuevaAceptacion;
+
 export const estaAprobado = (p) => Boolean(p) && (ESTADOS_APROBADOS.includes(p.estado) || p.aprobadoPorDirector === true);
 
 const copiaContenido = (p) => JSON.parse(JSON.stringify(
@@ -75,10 +79,17 @@ export function datosNuevaVersion(pres) {
   return marcasVersionNueva(pres);
 }
 
-// El cliente acepta la versión revisada.
+// El cliente acepta la versión revisada: la anterior queda como "modificada" con la fecha y sus cambios.
 export function datosNuevaAceptacion(pres) {
   const fecha = ahora();
+  const versiones = versionesDe(pres);
+  const cerrarUltima = versiones.length && !versiones[versiones.length - 1].cambios;
   return {
+    ...(cerrarUltima ? {
+      versiones: versiones.map((v, i) => (i === versiones.length - 1
+        ? { ...v, sustituidaEl: fecha, cambios: cambiosEntreVersiones(v.contenido, pres) }
+        : v))
+    } : {}),
     pendienteNuevaAceptacion: false,
     versionAceptada: null,
     fechaNuevaAceptacion: fecha,
@@ -147,4 +158,46 @@ export function recalcularTotales(capitulos, tipoIvaPct, margenPorDefecto) {
     costeTotal,
     margenGlobalPct: baseImponible > 0 ? Number((((baseImponible - costeTotal) / baseImponible) * 100).toFixed(1)) : margenPorDefecto
   };
+}
+
+// ---- Cambios entre dos versiones (para el historial "modificado con fecha y cambios") ----
+
+const ETIQUETAS = {
+  obraTitulo: 'Nombre de la obra', cliente: 'Cliente', nif: 'NIF', telefono: 'Teléfono', email: 'Email',
+  direccion: 'Dirección', fecha: 'Fecha', validezDias: 'Validez (días)', tipoIvaPct: 'IVA (%)', notasLegales: 'Condiciones y notas'
+};
+const eur = (n) => `${(Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+const nombrePartida = (p) => p.concepto || p.codigo || 'Partida sin nombre';
+const corto = (t) => { const s = String(t ?? ''); return s.length > 60 ? `${s.slice(0, 57)}...` : s; };
+
+/** Lista de cambios (textos) de la versión `antes` a la versión `despues`. */
+export function cambiosEntreVersiones(antes = {}, despues = {}) {
+  const cambios = [];
+  for (const [campo, etiqueta] of Object.entries(ETIQUETAS)) {
+    const a = antes[campo] ?? '';
+    const d = despues[campo] ?? '';
+    if (String(a) !== String(d)) cambios.push(`${etiqueta}: «${corto(a)}» → «${corto(d)}»`);
+  }
+  const partidas = (p) => capitulosDe(p).flatMap(c => c.partidas.map(it => ({ ...it, capitulo: c.nombre })));
+  const previas = new Map(partidas(antes).map(p => [p.id, p]));
+  const nuevas = new Map(partidas(despues).map(p => [p.id, p]));
+  for (const [id, n] of nuevas) {
+    const a = previas.get(id);
+    if (!a) {
+      cambios.push(`Partida añadida: ${nombrePartida(n)} (${n.cantidad ?? 0} ${n.unidad || 'ud'}, ${eur(n.total)})`);
+      continue;
+    }
+    const det = [];
+    if ((a.concepto || '') !== (n.concepto || '')) det.push(`concepto «${corto(a.concepto)}» → «${corto(n.concepto)}»`);
+    if (Number(a.cantidad || 0) !== Number(n.cantidad || 0)) det.push(`cantidad ${a.cantidad ?? 0} → ${n.cantidad ?? 0}`);
+    if (Number(a.precioVenta || 0) !== Number(n.precioVenta || 0)) det.push(`precio ${eur(a.precioVenta)} → ${eur(n.precioVenta)}`);
+    if (det.length) cambios.push(`Partida modificada: ${nombrePartida(n)}: ${det.join(', ')}`);
+  }
+  for (const [id, a] of previas) {
+    if (!nuevas.has(id)) cambios.push(`Partida quitada: ${nombrePartida(a)} (${eur(a.total)})`);
+  }
+  if (Number(antes.totalConIva || 0) !== Number(despues.totalConIva || 0)) {
+    cambios.push(`Total con IVA: ${eur(antes.totalConIva)} → ${eur(despues.totalConIva)}`);
+  }
+  return cambios;
 }

@@ -73,3 +73,31 @@ test("añadir la necesidad al presupuesto crea la partida en Ampliaciones y suma
   assert.equal(v2.pendienteNuevaAceptacion, true);
   assert.equal(presupuestoVigente(v2).baseImponible, 10000);
 });
+
+import { estaBloqueado, cambiosEntreVersiones } from "../src/utils/presupuestoRevision.js";
+
+test("aceptado o facturado queda bloqueado hasta añadir una revisión", () => {
+  assert.equal(estaBloqueado(firmado), true);
+  assert.equal(estaBloqueado({ ...firmado, estado: "facturado" }), true);
+  assert.equal(estaBloqueado({ ...firmado, estado: "enviado_cliente" }), false);
+  const rev = { ...firmado, ...datosNuevaVersion(firmado) };
+  assert.equal(estaBloqueado(rev), false, "la revisión sin firmar se puede editar");
+  const ok = { ...rev, ...datosNuevaAceptacion(rev) };
+  assert.equal(estaBloqueado(ok), true, "firmada la revisión, vuelve a bloquearse");
+});
+
+test("al firmar la revisión, la versión anterior queda como modificada con fecha y cambios", () => {
+  const v1 = { ...firmado, partidas: [{ id: "a", concepto: "Solado", cantidad: 10, unidad: "m2", precioVenta: 30, total: 300 }] };
+  const rev = { ...v1, ...datosNuevaVersion(v1) };
+  const editada = { ...rev, ...conRevision(rev, {
+    partidas: [{ id: "a", concepto: "Solado", cantidad: 12, unidad: "m2", precioVenta: 30, total: 360 }, { id: "b", concepto: "Rodapié", cantidad: 5, unidad: "ml", precioVenta: 8, total: 40 }],
+    totalConIva: 11440
+  }) };
+  const firmada = { ...editada, ...datosNuevaAceptacion(editada) };
+  const [antigua] = firmada.versiones;
+  assert.ok(antigua.sustituidaEl);
+  assert.ok(antigua.cambios.some(c => c.startsWith("Partida modificada: Solado") && c.includes("cantidad 10 → 12")));
+  assert.ok(antigua.cambios.some(c => c.startsWith("Partida añadida: Rodapié")));
+  assert.ok(antigua.cambios.some(c => c.startsWith("Total con IVA")));
+  assert.deepEqual(cambiosEntreVersiones(v1, v1), []);
+});
