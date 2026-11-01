@@ -30,7 +30,8 @@ import {
   agruparPorDia,
   filtrarEventos,
   contarPorTipo,
-  diaLocal
+  diaLocal,
+  unificarEventos
 } from '../../utils/historialObra';
 import {
   EVENTO_HISTORIAL,
@@ -178,7 +179,7 @@ export default function HistorialObra({ obra }) {
     setError('');
     try {
       const data = await cargarHistorial(obra.id);
-      setEventos(data.eventos || []);
+      setEventos(unificarEventos(data.eventos));
       setFaltan(data.faltan || []);
       setListo(data.listo !== false);
     } catch (err) {
@@ -202,7 +203,8 @@ export default function HistorialObra({ obra }) {
 
   const limites = useMemo(() => {
     if (rango === 'todo') return { desde: '', hasta: '' };
-    if (rango === 'fechas') return { desde, hasta };
+    // Si se ponen al revés, se entiende el periodo igual.
+    if (rango === 'fechas') return desde && hasta && desde > hasta ? { desde: hasta, hasta: desde } : { desde, hasta };
     return { desde: restarDias(Number(rango) - 1), hasta: '' };
   }, [rango, desde, hasta]);
 
@@ -409,7 +411,7 @@ export default function HistorialObra({ obra }) {
                   const hora = horaDe(ev.fecha);
                   const items = ev.datos?.items || [];
                   return (
-                    <li key={ev.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex gap-3">
+                    <li key={ev.clave || ev.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex gap-3">
                       <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${COLOR[info.color]}`}>
                         <Icono className="w-4 h-4" />
                       </div>

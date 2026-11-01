@@ -58,6 +58,28 @@ const instante = (e) => {
   return Number.isNaN(t) ? 0 : t;
 };
 
+/**
+ * Quita sucesos repetidos (mismo id y mismo contenido, p. ej. un parte diario guardado dos veces)
+ * y da a cada uno una `clave` única para la lista: con dos sucesos del mismo id, React dejaba
+ * uno pegado en pantalla al filtrar.
+ */
+export function unificarEventos(eventos) {
+  const vistos = new Set();
+  const usadas = new Map();
+  const out = [];
+  for (const e of eventos || []) {
+    if (!e) continue;
+    const firma = JSON.stringify([e.id, e.fecha, e.tipo, e.titulo, e.detalle || '']);
+    if (vistos.has(firma)) continue;
+    vistos.add(firma);
+    const base = String(e.id ?? '');
+    const n = usadas.get(base) || 0;
+    usadas.set(base, n + 1);
+    out.push({ ...e, clave: n ? `${base}#${n}` : base });
+  }
+  return out;
+}
+
 export function ordenarEventos(eventos) {
   return [...eventos].sort((a, b) => instante(b) - instante(a));
 }

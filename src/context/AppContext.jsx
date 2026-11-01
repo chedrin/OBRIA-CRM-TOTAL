@@ -295,7 +295,10 @@ export function AppProvider({ children }) {
 
     const unsubEvidence = realtimeSync.subscribe('WORKER_EVIDENCE_UPLOADED', (payload) => {
       const { obraId, entry } = payload;
-      setObras(prev => prev.map(o => o.id === obraId ? { ...o, diario: [entry, ...(o.diario || [])] } : o));
+      // El parte puede llegar repetido (la misma pestaña o la nube ya lo tienen): no se duplica.
+      setObras(prev => prev.map(o => (o.id === obraId && !(o.diario || []).some(d => d.id === entry?.id))
+        ? { ...o, diario: [entry, ...(o.diario || [])] }
+        : o));
       setActiveRealtimeAlert({
         type: 'evidence',
         msg: `📸 [Realtime] Nueva foto/parte diario recibido desde obra: "${entry.resumen?.substring(0, 45)}..."`,
