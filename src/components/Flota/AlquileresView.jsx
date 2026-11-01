@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { CalendarClock, Plus, Undo2, Repeat, Edit2 } from 'lucide-react';
+import { CalendarClock, Plus, Undo2, Repeat, Edit2, AlertTriangle, Receipt } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { api, fmtDate, fmtMoney, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
-import { TIPOS_ACTIVO, PERIODOS_TARIFA, costeAlquiler, costePrevistoAlquiler, labelDe } from '../../utils/flota';
+import { TIPOS_ACTIVO, PERIODOS_TARIFA, costeAlquiler, costePrevistoAlquiler, alquilerPendienteDePrecio, labelDe } from '../../utils/flota';
 import { useFlota, Cabecera, Cargando, SinMigracion, EstadoAlerta, Vacio, Modal, Campo, Rejilla, useFormulario, CampoArchivo, subirArchivo, SelectObra, SelectProveedor, BotonArchivo, num, hoy } from './flotaShared';
 import FichaActivo from './FichaActivo';
 
@@ -26,6 +26,7 @@ export default function AlquileresView() {
   const enCurso = (data?.alquileres || []).filter((r) => r.estado === 'activo');
   const costeCurso = enCurso.reduce((s, r) => s + costeAlquiler(r).base, 0);
   const obraNombre = (id) => obras.find((o) => o.id === id)?.titulo || '';
+  const sinPrecio = (data?.alquileres || []).filter((r) => r.obra_id && alquilerPendienteDePrecio(r));
 
   if (loading && !data) return <Cargando />;
   if (error || data?.listo === false) return <><Cabecera icon={CalendarClock} titulo="Alquileres" tono="text-orange-400" /><SinMigracion error={error} /></>;
@@ -42,6 +43,16 @@ export default function AlquileresView() {
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3 col-span-2 sm:col-span-1"><span className="block text-[11px] text-slate-400 font-semibold">Coste acumulado en curso (sin IVA)</span><span className="text-xl font-black text-white tabular-nums">{fmtMoney(costeCurso)}</span></div>
       </div>
 
+      {sinPrecio.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            {sinPrecio.length === 1 ? 'Hay 1 alquiler' : `Hay ${sinPrecio.length} alquileres`} sin precio ni factura del arrendador: no se asignan a los gastos de la obra hasta que lo pongas.
+            {' '}<button type="button" onClick={() => setVista(sinPrecio.some((r) => r.estado !== 'activo') ? 'cerrados' : 'activos')} className="underline font-semibold">Verlos</button>
+          </span>
+        </div>
+      )}
+
       <div className="flex gap-2 mb-3">
         {[['activos', 'En curso'], ['cerrados', 'Devueltos y sustituidos']].map(([id, l]) => (
           <button key={id} type="button" onClick={() => setVista(id)}
@@ -55,6 +66,7 @@ export default function AlquileresView() {
             const a = activosPorId.get(r.asset_id);
             const c = costeAlquiler(r);
             const al = alertaDe(r);
+            const pendiente = alquilerPendienteDePrecio(r);
             return (
               <div key={r.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex flex-col md:flex-row md:items-center gap-3">
                 <button type="button" onClick={() => a && setFicha(a.id)} className="flex-1 min-w-0 text-left">
@@ -63,6 +75,7 @@ export default function AlquileresView() {
                     {al && <EstadoAlerta estado={al.estado}>{diasHasta(r.fecha_prevista_devolucion) < 0 ? `Devolución atrasada ${-diasHasta(r.fecha_prevista_devolucion)} d` : diasHasta(r.fecha_prevista_devolucion) === 0 ? 'Se devuelve hoy' : `Quedan ${diasHasta(r.fecha_prevista_devolucion)} d`}</EstadoAlerta>}
                     {r.sustituye_a_rental_id && <span className="text-[10px] text-sky-300 border border-sky-500/30 rounded-md px-1.5 py-0.5">Sustitución</span>}
                     {r.estado === 'sustituido' && <span className="text-[10px] text-slate-400 border border-slate-600 rounded-md px-1.5 py-0.5">Sustituido</span>}
+                    {pendiente && <span className="text-[10px] font-bold text-amber-300 border border-amber-500/40 bg-amber-500/10 rounded-md px-1.5 py-0.5">Falta precio · no cuenta en gastos</span>}
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {r.arrendador || 'Arrendadora'}{r.numero_contrato ? ` · contrato ${r.numero_contrato}` : ''} · {labelDe(TIPOS_ACTIVO, a?.tipo)}
@@ -74,7 +87,8 @@ export default function AlquileresView() {
                   {r.motivo_sustitucion && <p className="text-[11px] text-slate-500">Motivo: {r.motivo_sustitucion}</p>}
                 </button>
                 <div className="md:text-right shrink-0">
-                  <p className="text-lg font-black text-white tabular-nums">{fmtMoney(c.base)}</p>
+                  <p className={`text-lg font-black tabular-nums ${pendiente ? 'text-slate-500 line-through' : 'text-white'}`} title={pendiente ? 'Calculado con la tarifa; no cuenta hasta poner el precio de la factura' : undefined}>{fmtMoney(c.base)}</p>
+                  {r.estado !== 'activo' && r.importe_final != null && <p className="text-[11px] text-emerald-400">Facturado{r.numero_factura ? ` · ${r.numero_factura}` : ''}</p>}
                   <p className="text-[11px] text-slate-500">
                     {c.estimado ? `${c.dias} días hasta hoy · ` : ''}{fmtMoney(r.tarifa)} {labelDe(PERIODOS_TARIFA, r.tarifa_periodo)}{Number(r.transporte) ? ` + ${fmtMoney(r.transporte)} portes` : ''}
                   </p>
@@ -82,10 +96,17 @@ export default function AlquileresView() {
                 </div>
                 <div className="flex flex-wrap gap-1.5 shrink-0">
                   <BotonArchivo path={r.contrato_path} label="Contrato" />
+                  <BotonArchivo path={r.factura_path} label="Factura" />
+                  {pendiente && r.estado !== 'activo' && (
+                    <button type="button" onClick={() => setModal({ t: 'precio', r })} className={`${btnPrimary} !py-1.5 text-xs`}><Receipt className="w-4 h-4" /> Poner precio</button>
+                  )}
                   {r.estado === 'activo' && <>
                     <button type="button" onClick={() => setModal({ t: 'devolver', r })} className={`${btnGhost} !py-1.5 text-xs`}><Undo2 className="w-4 h-4" /> Devolver</button>
                     <button type="button" onClick={() => setModal({ t: 'sustituir', r, a })} className={`${btnGhost} !py-1.5 text-xs`}><Repeat className="w-4 h-4" /> Sustituir</button>
                   </>}
+                  {r.estado !== 'activo' && !pendiente && (
+                    <button type="button" onClick={() => setModal({ t: 'precio', r })} className={`${btnGhost} !py-1.5 text-xs`} title="Cambiar el precio o la factura"><Receipt className="w-4 h-4" /> Precio</button>
+                  )}
                   <button type="button" onClick={() => setModal({ t: 'editar', r })} className={`${btnGhost} !py-1.5 text-xs`} aria-label="Editar"><Edit2 className="w-4 h-4" /></button>
                 </div>
               </div>
@@ -96,7 +117,7 @@ export default function AlquileresView() {
 
       <AnimatePresence>
         {(modal?.t === 'nuevo' || modal?.t === 'editar') && <AlquilerForm key="form" alquiler={modal.r} datos={data} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />}
-        {modal?.t === 'devolver' && <DevolverModal key="dev" alquiler={modal.r} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />}
+        {(modal?.t === 'devolver' || modal?.t === 'precio') && <DevolverModal key="dev" alquiler={modal.r} soloPrecio={modal.t === 'precio'} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />}
         {modal?.t === 'sustituir' && <SustituirAlquilerModal key="sus" alquiler={modal.r} activo={modal.a} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />}
         {ficha && <FichaActivo key={ficha} activoId={ficha} datos={data} onClose={() => setFicha(null)} onChanged={reload} />}
       </AnimatePresence>
@@ -111,7 +132,7 @@ function AlquilerForm({ alquiler, datos, onClose, onSaved }) {
   const { form, set, setForm, busy, error, enviar } = useFormulario({
     que: 'nuevo', asset_id: '', nombre: '', tipo: 'maquinaria_ligera', marca: '', modelo: '', numero_serie: '',
     supplier_id: '', arrendador_nombre: '', obra_id: '', numero_contrato: '', fecha_inicio: hoy(), fecha_prevista_devolucion: '',
-    tarifa: '', tarifa_periodo: 'dia', transporte: '', fianza: '', iva_pct: '21', importe_final: '', numero_factura: '', notas: '', archivo: null,
+    tarifa: '', tarifa_periodo: 'dia', transporte: '', fianza: '', iva_pct: '21', importe_final: '', numero_factura: '', notas: '', archivo: null, factura: null,
     ...(alquiler ? Object.fromEntries(Object.entries(alquiler).map(([k, v]) => [k, v ?? ''])) : {})
   });
   const previsto = form.fecha_prevista_devolucion && form.fecha_inicio && num(form.tarifa) !== null
@@ -138,6 +159,7 @@ function AlquilerForm({ alquiler, datos, onClose, onSaved }) {
     } else {
       body.importe_final = num(form.importe_final);
       body.numero_factura = form.numero_factura;
+      if (form.factura) body.factura_path = (await subirArchivo(form.factura, 'alquileres')).path;
       await api(`/api/flota/alquileres/${alquiler.id}`, { method: 'PATCH', body });
       showNotification?.('Alquiler actualizado');
     }
@@ -200,6 +222,7 @@ function AlquilerForm({ alquiler, datos, onClose, onSaved }) {
           <>
             <Campo label="Importe de la factura (sin IVA)" ayuda="Si lo pones, manda sobre el cálculo"><input type="number" step="0.01" min="0" value={form.importe_final} onChange={set('importe_final')} className={inputCls} /></Campo>
             <Campo label="Nº de factura"><input value={form.numero_factura} onChange={set('numero_factura')} className={inputCls} /></Campo>
+            <Campo label="Factura del arrendador"><CampoArchivo file={form.factura} onChange={set('factura')} actual={alquiler?.factura_path} label="Adjuntar factura" /></Campo>
           </>
         )}
         <Campo label="Contrato / albarán"><CampoArchivo file={form.archivo} onChange={set('archivo')} actual={alquiler?.contrato_path} /></Campo>
@@ -209,23 +232,54 @@ function AlquilerForm({ alquiler, datos, onClose, onSaved }) {
   );
 }
 
-function DevolverModal({ alquiler, onClose, onSaved }) {
+function DevolverModal({ alquiler, soloPrecio = false, onClose, onSaved }) {
   const { showNotification } = useApp() || {};
-  const { form, set, busy, error, enviar } = useFormulario({ fecha_devolucion: hoy(), importe_final: '', numero_factura: '' });
-  const calculado = costeAlquiler({ ...alquiler, fecha_devolucion: form.fecha_devolucion }).base;
+  const { form, set, setForm, busy, error, enviar } = useFormulario({
+    fecha_devolucion: alquiler.fecha_devolucion || hoy(),
+    importe_final: alquiler.importe_final ?? '',
+    numero_factura: alquiler.numero_factura || '',
+    factura: null
+  });
+  const calculado = costeAlquiler({ ...alquiler, importe_final: null, fecha_devolucion: form.fecha_devolucion }).base;
+  const importe = num(form.importe_final);
+  const sinPrecio = importe === null;
   const guardar = enviar(async () => {
-    await api(`/api/flota/alquileres/${alquiler.id}/devolver`, { method: 'POST', body: { ...form, importe_final: num(form.importe_final) } });
-    showNotification?.('Alquiler cerrado');
+    if (sinPrecio && form.factura) throw new Error('Con la factura, escribe también su importe sin IVA para poder asignarlo a la obra.');
+    const factura = form.factura ? await subirArchivo(form.factura, 'alquileres') : null;
+    if (soloPrecio) {
+      await api(`/api/flota/alquileres/${alquiler.id}`, {
+        method: 'PATCH',
+        body: { importe_final: importe, numero_factura: form.numero_factura, ...(factura ? { factura_path: factura.path } : {}) }
+      });
+    } else {
+      await api(`/api/flota/alquileres/${alquiler.id}/devolver`, {
+        method: 'POST',
+        body: { fecha_devolucion: form.fecha_devolucion, importe_final: importe, numero_factura: form.numero_factura, ...(factura ? { factura_path: factura.path } : {}) }
+      });
+    }
+    if (sinPrecio && alquiler.obra_id) showNotification?.('Guardado sin precio: no se asignará a los gastos de la obra hasta que pongas el precio o la factura.', 'warning');
+    else showNotification?.(soloPrecio ? 'Precio actualizado en los gastos de la obra' : 'Alquiler cerrado y asignado a los gastos de la obra');
     onSaved();
   });
   return (
-    <Modal titulo="Devolver al arrendador" icon={Undo2} ancho="max-w-md" onClose={onClose} onSubmit={guardar} busy={busy} error={error} submitLabel="Cerrar alquiler">
+    <Modal titulo={soloPrecio ? 'Precio del alquiler' : 'Devolver al arrendador'} icon={soloPrecio ? Receipt : Undo2} ancho="max-w-md" onClose={onClose} onSubmit={guardar} busy={busy} error={error}
+      submitLabel={soloPrecio ? 'Guardar precio' : sinPrecio ? 'Cerrar sin precio' : 'Cerrar alquiler'}>
+      <p className="text-xs text-slate-400">¿Cuánto ha cobrado el arrendador? Pon el importe de su factura (sin IVA) y adjúntala si la tienes.</p>
       <Rejilla>
-        <Campo label="Fecha de devolución"><input type="date" value={form.fecha_devolucion} onChange={set('fecha_devolucion')} className={inputCls} /></Campo>
-        <Campo label="Importe facturado (sin IVA)" ayuda={`Calculado: ${fmtMoney(calculado)}`}><input type="number" step="0.01" min="0" value={form.importe_final} onChange={set('importe_final')} placeholder={String(calculado)} className={inputCls} /></Campo>
-        <Campo label="Nº de factura" full><input value={form.numero_factura} onChange={set('numero_factura')} className={inputCls} /></Campo>
+        {!soloPrecio && <Campo label="Fecha de devolución"><input type="date" value={form.fecha_devolucion} onChange={set('fecha_devolucion')} className={inputCls} /></Campo>}
+        <Campo label="Importe facturado (sin IVA)" ayuda={<>Según la tarifa: {fmtMoney(calculado)} · <button type="button" className="underline" onClick={() => setForm((f) => ({ ...f, importe_final: String(calculado) }))}>usarlo</button></>}>
+          <input type="number" step="0.01" min="0" value={form.importe_final} onChange={set('importe_final')} placeholder="0,00" className={inputCls} />
+        </Campo>
+        <Campo label="Nº de factura"><input value={form.numero_factura} onChange={set('numero_factura')} className={inputCls} /></Campo>
+        <Campo label="Factura del arrendador"><CampoArchivo file={form.factura} onChange={set('factura')} actual={alquiler.factura_path} label="Adjuntar factura" /></Campo>
       </Rejilla>
-      <p className="text-[11px] text-slate-500">El coste queda imputado a la obra y sale en su pestaña Gastos vs ingresos.</p>
+      {sinPrecio && alquiler.obra_id ? (
+        <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-200 flex gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" /> Sin precio ni factura, este alquiler no se asignará a los gastos de la obra hasta que lo incluyas. Quedará marcado como pendiente y podrás ponerlo después.
+        </p>
+      ) : (
+        <p className="text-[11px] text-slate-500">El coste queda imputado a la obra y sale en su pestaña Gastos vs ingresos. Podrás cambiar el precio después.</p>
+      )}
     </Modal>
   );
 }

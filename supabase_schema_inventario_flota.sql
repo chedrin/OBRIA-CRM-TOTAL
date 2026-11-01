@@ -503,6 +503,9 @@ create table if not exists public.asset_rentals (
   constraint asset_rentals_fechas check (fecha_prevista_devolucion >= fecha_inicio
                                          and (fecha_devolucion is null or fecha_devolucion >= fecha_inicio))
 );
+-- Factura del arrendador (PDF o foto). Sin importe_final el alquiler cerrado no cuenta como gasto.
+alter table public.asset_rentals add column if not exists factura_path text;
+
 create index if not exists asset_rentals_activos_idx on public.asset_rentals (fecha_prevista_devolucion) where estado = 'activo';
 create index if not exists asset_rentals_obra_idx on public.asset_rentals (obra_id) where obra_id is not null;
 create index if not exists asset_rentals_asset_idx on public.asset_rentals (asset_id);

@@ -37,6 +37,12 @@ Repostajes, taller e ITV/seguro imputados a una obra y los alquileres aparecen e
 con la etiqueta "desde Flota" o "desde Alquileres". No se duplican en `facturas_proveedores`: si ya existe un gasto
 manual con el mismo número de factura e importe, se muestra solo una vez.
 
+Al devolver un alquiler se pide el importe de la factura del arrendador (sin IVA), su número y el PDF o foto
+(`asset_rentals.factura_path`). Un alquiler cerrado sin importe facturado, o en curso sin tarifa, **no cuenta** en los
+gastos de la obra: sale como "Falta precio" en Alquileres y como pendiente en Gastos vs Ingresos hasta que se pulse
+"Poner precio". El precio se puede cambiar después con el botón "Precio". Mientras el alquiler sigue en curso con
+tarifa, cuenta el coste calculado hasta hoy.
+
 ## Portal del Obrero
 
 El operario ve el vehículo que conduce (ITV, seguro y teléfono de asistencia), lo que lleva a bordo y las

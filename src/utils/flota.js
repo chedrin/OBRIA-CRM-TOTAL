@@ -253,6 +253,34 @@ export function costeAlquiler(r, hoy = new Date().toISOString().slice(0, 10)) {
   return { base: r2(periodos * Number(r.tarifa || 0) + Number(r.transporte || 0)), dias, periodos, estimado: !r.fecha_devolucion };
 }
 
+/**
+ * Alquiler sin precio de la factura: no cuenta como gasto de la obra hasta que se ponga.
+ * Pasa al cerrarlo (devuelto o sustituido) sin importe facturado, o si sigue en curso sin tarifa.
+ */
+export function alquilerPendienteDePrecio(r) {
+  if (!r) return false;
+  const sinImporte = r.importe_final === null || r.importe_final === undefined || r.importe_final === '';
+  return sinImporte && (r.estado !== 'activo' || !Number(r.tarifa));
+}
+
+/**
+ * Marca en los costes de flota (vista fleet_costes) los alquileres sin precio de la factura
+ * (pendiente_precio) y usa la factura subida como justificante si la hay.
+ */
+export function marcarAlquileresSinPrecio(costes = [], rentals = []) {
+  const porId = new Map(rentals.map((r) => [r.id, r]));
+  return costes.map((c) => {
+    const r = c.origen === 'alquiler' ? porId.get(c.id) : null;
+    if (!r) return c;
+    return {
+      ...c,
+      pendiente_precio: alquilerPendienteDePrecio(r),
+      rental_estado: r.estado,
+      ...(r.factura_path ? { file_path: r.factura_path } : {})
+    };
+  });
+}
+
 /** Coste previsto del alquiler completo (hasta la fecha prevista de devolución). */
 export function costePrevistoAlquiler(r) {
   return costeAlquiler({ ...r, fecha_devolucion: r.fecha_devolucion || r.fecha_prevista_devolucion, importe_final: null });
@@ -299,6 +327,10 @@ export function ubicacionTexto(a, { obras = [], vehiculos = [] } = {}) {
 
 const CATEGORIA_COSTE = { combustible: 'Combustible', alquiler: 'Maquinaria', mantenimiento: 'Maquinaria', itv: 'Otros', seguro: 'Otros' };
 
+/** Alquileres de la obra que esperan el precio o la factura (marcados por /api/flota/costes). */
+export const alquileresPendientesDePrecio = (obraId, costes = []) =>
+  costes.filter((c) => c && c.pendiente_precio && String(c.obra_id) === String(obraId));
+
 /**
  * Costes de flota imputados a una obra (vista fleet_costes) en el formato de gastos de
  * utils/gastosIngresosObra.js. origen 'flota': se editan en Inventario y flota.
@@ -306,6 +338,8 @@ const CATEGORIA_COSTE = { combustible: 'Combustible', alquiler: 'Maquinaria', ma
 export function gastosFlota(obraId, costes = []) {
   return costes
     .filter((c) => c && String(c.obra_id) === String(obraId))
+    // Alquiler cerrado sin precio de la factura: sale como pendiente, no como gasto.
+    .filter((c) => !c.pendiente_precio)
     .map((c) => ({
       id: `flota-${c.origen}-${c.id}`,
       origen: 'flota',

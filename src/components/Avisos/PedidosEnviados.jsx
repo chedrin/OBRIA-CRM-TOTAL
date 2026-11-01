@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, X, Truck, ExternalLink } from 'lucide-react';
+import { Loader2, Search, X, Truck, ExternalLink, AlertTriangle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
 import PedidoBorrador from './PedidoBorrador';
+import { pedidoPendienteDePrecio } from '../../utils/gastoPedido';
 import { api, ORDER_STATUS, RESPONSE_STATUS, fmtDate, fmtDateTime, fmtMoney, inputCls, btnGhost } from '../../services/avisosApi';
 
 const SENT = ['enviado', 'confirmado', 'entregado'];
@@ -10,13 +11,14 @@ const obraIdsOf = (o) => (o.obra_ids?.length ? o.obra_ids : [o.obra_id].filter(B
 const itemsText = (o) => (o.items || []).map((it) => [it.cantidad, it.unidad, it.material].filter(Boolean).join(' ')).join(', ');
 
 /** Pedidos ya enviados a proveedores, en lista; cada uno se abre para consultarlo. */
-export default function PedidosEnviados({ suppliers, onOpenNeed }) {
-  const { obras = [] } = useApp() || {};
+export default function PedidosEnviados({ suppliers, onOpenNeed, focusId = null, soloSinPrecio = false }) {
+  const { obras = [], facturasProveedores = [] } = useApp() || {};
   const showNotification = useNotify();
   const [orders, setOrders] = useState(null);
   const [obra, setObra] = useState('');
   const [q, setQ] = useState('');
-  const [openId, setOpenId] = useState(null);
+  const [openId, setOpenId] = useState(focusId);
+  useEffect(() => { if (focusId) setOpenId(focusId); }, [focusId]);
 
   useEffect(() => {
     api('/api/material-orders')
@@ -31,11 +33,13 @@ export default function PedidosEnviados({ suppliers, onOpenNeed }) {
     const text = q.trim().toLowerCase();
     return (orders || [])
       .filter((o) => !obra || obraIdsOf(o).includes(obra))
+      .filter((o) => !soloSinPrecio || pedidoPendienteDePrecio(o, facturasProveedores))
       .filter((o) => !text || [supplierName(o.supplier_id), o.subject, itemsText(o), o.to_email].join(' ').toLowerCase().includes(text))
       .sort((a, b) => (b.sent_at || b.created_at).localeCompare(a.sent_at || a.created_at));
-  }, [orders, obra, q, suppliers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orders, obra, q, suppliers, soloSinPrecio, facturasProveedores]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = (orders || []).find((o) => o.id === openId);
+  const sinPrecio = (orders || []).filter((o) => pedidoPendienteDePrecio(o, facturasProveedores));
   const today = new Date().toISOString().slice(0, 10);
 
   if (!orders) return <div className="py-10 flex justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin" /></div>;
@@ -54,8 +58,20 @@ export default function PedidosEnviados({ suppliers, onOpenNeed }) {
         <span className="text-xs text-slate-500 ml-auto">{shown.length} pedido{shown.length === 1 ? '' : 's'}</span>
       </div>
 
+      {sinPrecio.length > 0 && !soloSinPrecio && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            {sinPrecio.length === 1 ? '1 pedido entregado no tiene' : `${sinPrecio.length} pedidos entregados no tienen`} precio ni factura del proveedor: no se asignan a los gastos de la obra hasta que lo pongas.
+            {' '}{sinPrecio.slice(0, 3).map((o) => (
+              <button key={o.id} type="button" onClick={() => setOpenId(o.id)} className="underline font-semibold mr-2">{supplierName(o.supplier_id)}</button>
+            ))}
+          </span>
+        </div>
+      )}
+
       {shown.length === 0 ? (
-        <p className="text-center py-10 text-sm text-slate-500">No hay pedidos enviados.</p>
+        <p className="text-center py-10 text-sm text-slate-500">{soloSinPrecio ? 'Todos los pedidos entregados tienen precio.' : 'No hay pedidos enviados.'}</p>
       ) : (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm text-slate-300">
@@ -85,6 +101,7 @@ export default function PedidosEnviados({ suppliers, onOpenNeed }) {
                       <span className="flex flex-wrap gap-1">
                         <span className={`text-[10px] font-bold border rounded-full px-2 py-0.5 ${st.cls}`}>{st.label}</span>
                         {rs && o.response_status !== 'pendiente' && <span className={`text-[10px] font-bold border rounded-full px-2 py-0.5 ${rs.cls}`}>{rs.label}</span>}
+                        {pedidoPendienteDePrecio(o, facturasProveedores) && <span className="text-[10px] font-bold border rounded-full px-2 py-0.5 bg-amber-500/15 text-amber-300 border-amber-500/40">Falta precio</span>}
                       </span>
                     </td>
                     <td className={`py-2.5 px-3 whitespace-nowrap ${late ? 'text-rose-400 font-semibold' : ''}`}>{o.delivery_date ? `${fmtDate(o.delivery_date)}${late ? ' (retrasado)' : ''}` : '-'}</td>

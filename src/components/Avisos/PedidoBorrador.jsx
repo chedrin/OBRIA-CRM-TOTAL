@@ -98,7 +98,7 @@ export default function PedidoBorrador({ order, supplierName, onChange, defaultS
       </label>
 
       {['enviado', 'confirmado', 'entregado'].includes(order.status) && (
-        <RespuestaProveedor order={order} onChange={onChange} />
+        <RespuestaProveedor order={order} supplierName={supplierName} onChange={onChange} />
       )}
 
       {showMail ? (
