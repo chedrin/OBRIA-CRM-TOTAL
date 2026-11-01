@@ -39,6 +39,7 @@ import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 import NuevoPedidoModal from '../Avisos/NuevoPedidoModal';
 import ModalOverlay from '../Common/ModalOverlay';
 import BarraFacturacion from '../Facturas/BarraFacturacion';
+import GastosIngresosObra from './GastosIngresosObra';
 import { facturacionObra } from '../../utils/facturadoPresupuesto';
 import { AnimatePresence } from 'motion/react';
 
@@ -71,7 +72,7 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   } = useApp();
 
   const obra = obras.find(o => o.id === obraId);
-  const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, documentos, catalogo_precios, equipo
+  const [detailTab, setDetailTab] = useState('fases'); // fases, diario, materiales, economico, gastos_ingresos, documentos, catalogo_precios, equipo
   const [showCroquis, setShowCroquis] = useState(abrirCroquis);
   const [expandedFases, setExpandedFases] = useState({});
   const [editingFase, setEditingFase] = useState(null); // copia de la fase en edición
@@ -538,6 +539,7 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
           { id: 'documentos', label: 'Documentación de Obra', count: (obraPresupuesto ? 1 : 0) + obraFacturas.length + obraFacturasProveedores.length },
           { id: 'catalogo_precios', label: 'Catálogo de Precios Unitarios', count: catalogList.length },
           { id: 'economico', label: 'Presupuesto y Facturas', count: obraFacturas.length },
+          { id: 'gastos_ingresos', label: 'Gastos vs Ingresos', count: obraFacturasProveedores.length },
           { id: 'equipo', label: 'Equipo y Subcontratas', count: (obra.operariosIds || []).length }
         ].map(t => (
           <button
@@ -1372,6 +1374,9 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
           </div>
         </div>
       )}
+
+      {/* TAB: GASTOS EJECUTADOS VS INGRESOS */}
+      {detailTab === 'gastos_ingresos' && <GastosIngresosObra obra={obra} />}
 
       {/* TAB 5: EQUIPO Y SUBCONTRATAS */}
       {detailTab === 'equipo' && (
