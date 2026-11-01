@@ -4,9 +4,6 @@ import BotonVolver from '../Common/BotonVolver';
 import { useApp } from '../../context/AppContext';
 import {
   Sparkles,
-  Mic,
-  MicOff,
-  Send,
   ChevronDown,
   ChevronUp,
   Share2,
@@ -24,9 +21,7 @@ import {
 import EnvioClienteModal from './EnvioClienteModal';
 import CroquisEditorModal from '../Croquis/CroquisEditorModal';
 import VersionesPresupuesto from './VersionesPresupuesto';
-import confetti from 'canvas-confetti';
-import AiImprovementControl from '../Common/AiImprovementControl';
-import { recordAiCorrection, recordBudgetEditDebounced } from '../../services/backendAiService';
+import { recordBudgetEditDebounced } from '../../services/backendAiService';
 import { capitulosDe, estaAprobado, recalcularPartida, recalcularTotales } from '../../utils/presupuestoRevision';
 
 const BOTON_SECUNDARIO = 'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition whitespace-nowrap';
@@ -56,7 +51,6 @@ const CAMPOS_CABECERA = [
 export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar, estadoFacturacion = null }) {
   const {
     presupuestos,
-    refineQuoteWithVoiceCommand,
     editarPresupuesto,
     registrarNuevaAceptacion,
     nuevaVersionPresupuesto,
@@ -68,10 +62,6 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
 
   const quote = presupuestos.find(p => p.id === quoteId) || presupuestos[0];
 
-  // Voice Command & Floating Bar State
-  const [voiceCommand, setVoiceCommand] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [isApplyingVoice, setIsApplyingVoice] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showEnvioModal, setShowEnvioModal] = useState(false);
   const [collapsedChapters, setCollapsedChapters] = useState({});
@@ -86,14 +76,6 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
       </div>
     );
   }
-
-  // Predefined quick voice prompts
-  const QUICK_PROMPTS = [
-    'En electricidad sube los mecanismos a Schneider D-Life y añade 5% extra a la demolición por piso sin ascensor',
-    'Añade un 10% de margen a toda la albañilería',
-    'Recargo del 5% en desescombro por acceso difícil',
-    'Ajustar margen comercial al 35% global'
-  ];
 
   // Toggle chapter collapse
   const toggleChapter = (capId) => {
@@ -185,66 +167,6 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
     editarPresupuesto(quote.id, { [field]: field === 'validezDias' ? Math.max(0, Number(value) || 0) : value });
   };
 
-  // Run Voice / Conversational Command
-  const handleExecuteVoiceCommand = async (cmdToRun) => {
-    const text = (cmdToRun || voiceCommand).trim();
-    if (!text) return;
-
-    // Las órdenes que das a la IA también se recuerdan.
-    recordAiCorrection({ kind: 'presupuesto', context: 'Orden al refinar presupuesto', note: text });
-
-    setIsApplyingVoice(true);
-    try {
-      await refineQuoteWithVoiceCommand(quote.id, text);
-      setVoiceCommand('');
-      confetti({ particleCount: 30, spread: 50, origin: { y: 0.8 } });
-    } catch (err) {
-      console.error('Error applying voice command', err);
-      showNotification('Error al interpretar el comando de voz', 'error');
-    } finally {
-      setIsApplyingVoice(false);
-    }
-  };
-
-  // Web Speech API / Mic simulation
-  const toggleSpeechRecognition = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      // Fallback: cycle sample prompt
-      const sample = QUICK_PROMPTS[Math.floor(Math.random() * QUICK_PROMPTS.length)];
-      setVoiceCommand(sample);
-      showNotification('Reconocimiento por voz activo: frase dictada colocada en la barra.');
-      return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'es-ES';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    if (!isListening) {
-      setIsListening(true);
-      recognition.start();
-
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setVoiceCommand(transcript);
-        setIsListening(false);
-        showNotification(`Dictado recibido: "${transcript}"`);
-      };
-
-      recognition.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-    } else {
-      setIsListening(false);
-    }
-  };
-
   // Open PDF modal
   const handleOpenPdfModal = () => {
     setPdfModalData({
@@ -259,7 +181,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
   const estadoClave = ESTADO_PRESUPUESTO[quote.estado] ? quote.estado : 'borrador';
 
   return (
-    <div className="space-y-6 pb-28">
+    <div className="space-y-6 pb-8">
       
       {/* Cabecera: volver, identificación del presupuesto y acciones */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-sm">
@@ -452,7 +374,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
               Borrador técnico compilado por el Motor de IA a partir de la visita in situ
             </h4>
             <p className="text-[11px] text-slate-300">
-              Cruces realizados con la Base Oficial de Precios. Puedes ajustar celdas manualmente o <strong className="text-amber-400">hablarle a la IA</strong> en la barra inferior.
+              Cruces realizados con la Base Oficial de Precios. Puedes ajustar las celdas manualmente.
             </p>
           </div>
         </div>
@@ -695,92 +617,6 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
             <span className="text-xl font-black text-white font-mono">{quote.totalConIva?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
           </div>
         </div>
-      </div>
-
-      {/* FLOATING VOICE & TEXT COMMAND BAR */}
-      <div className="fixed bottom-4 left-4 right-4 max-w-4xl mx-auto z-40 bg-slate-950/90 backdrop-blur-xl border border-amber-500/50 p-3 sm:p-4 rounded-2xl shadow-2xl space-y-2.5">
-        
-        {/* Quick prompt chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] no-scrollbar">
-          <span className="text-amber-400 font-bold flex items-center gap-1 shrink-0">
-            <Sparkles className="w-3 h-3" />
-            <span>Sugerencias de voz:</span>
-          </span>
-          {QUICK_PROMPTS.map((prompt, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleExecuteVoiceCommand(prompt)}
-              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-lg shrink-0 transition truncate max-w-xs font-medium"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
-
-        {/* Input Bar with Mic */}
-        <div className="space-y-2">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleExecuteVoiceCommand();
-            }}
-            className="flex items-center gap-2"
-          >
-            {/* Speech Mic Button */}
-            <button
-              type="button"
-              onClick={toggleSpeechRecognition}
-              className={`p-2.5 rounded-xl transition flex items-center justify-center shrink-0 ${
-                isListening
-                  ? 'bg-rose-600 text-white animate-pulse shadow-lg shadow-rose-600/30'
-                  : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30'
-              }`}
-              title="Dictar ajuste por voz"
-            >
-              {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-            </button>
-
-            {/* Text Input */}
-            <input
-              type="text"
-              value={voiceCommand}
-              onChange={(e) => setVoiceCommand(e.target.value)}
-              placeholder="Habla o escribe un ajuste (ej: 'Sube los mecanismos a Schneider D-Life y añade 5% en demolición')..."
-              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
-            />
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isApplyingVoice || !voiceCommand.trim()}
-              className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center gap-1.5 shrink-0 transition active:scale-95 shadow-md shadow-amber-500/20"
-            >
-              {isApplyingVoice ? (
-                <>
-                  <Sparkles className="w-4 h-4 animate-spin" />
-                  <span className="hidden sm:inline">Calculando...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4 fill-slate-950" />
-                  <span>Aplicar Ajuste</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {voiceCommand && (
-            <AiImprovementControl
-              value={voiceCommand}
-              onAccept={(improved) => setVoiceCommand(improved)}
-              context="Ajuste o partida de presupuesto"
-              buttonLabel="Mejorar Instrucción con IA"
-              buttonSize="small"
-            />
-          )}
-        </div>
-
       </div>
 
       {/* Croquis 2D: se guarda en el presupuesto y pasa a la obra al aceptarlo */}
