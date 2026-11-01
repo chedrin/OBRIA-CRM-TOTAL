@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
+import Pestanas from '../Common/Pestanas';
 
 export default function GestionUsuarios() {
   const {
@@ -297,43 +298,17 @@ Guarda este enlace en tu móvil o pulsa en "Añadir a pantalla de inicio" para t
       </div>
 
       {/* Subtabs Navigation */}
-      <div className="flex gap-2 border-b border-slate-800">
-        <button
-          onClick={() => setActiveTab('obreros')}
-          className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 border-b-2 ${
-            activeTab === 'obreros'
-              ? 'border-amber-400 text-amber-400 bg-slate-900/80'
-              : 'border-transparent text-slate-400 hover:text-white'
-          }`}
-        >
-          <HardHat className="w-4 h-4" />
-          <span>Operarios & Obreros ({obrerosList.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('admins')}
-          className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 border-b-2 ${
-            activeTab === 'admins'
-              ? 'border-amber-400 text-amber-400 bg-slate-900/80'
-              : 'border-transparent text-slate-400 hover:text-white'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Administradores ({adminsList.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('mi_perfil')}
-          className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 border-b-2 ${
-            activeTab === 'mi_perfil'
-              ? 'border-amber-400 text-amber-400 bg-slate-900/80'
-              : 'border-transparent text-slate-400 hover:text-white'
-          }`}
-        >
-          <KeyRound className="w-4 h-4" />
-          <span>Cambiar Mi Contraseña</span>
-        </button>
-      </div>
+      <Pestanas
+        ariaLabel="Secciones de usuarios"
+        accent="amber"
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { id: 'obreros', label: 'Operarios & Obreros', icon: HardHat, count: obrerosList.length },
+          { id: 'admins', label: 'Administradores', icon: ShieldCheck, count: adminsList.length },
+          { id: 'mi_perfil', label: 'Cambiar Mi Contraseña', icon: KeyRound }
+          ]}
+      />
 
       {/* TAB 1: OPERARIOS / OBREROS */}
       {activeTab === 'obreros' && (

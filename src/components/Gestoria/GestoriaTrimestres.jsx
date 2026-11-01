@@ -13,6 +13,7 @@ import CampoProveedor from '../Common/CampoProveedor';
 import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 import { AnimatePresence } from 'motion/react';
 import { CATEGORIAS_GASTO } from '../../utils/gastosIngresosObra';
+import Pestanas from '../Common/Pestanas';
 
 export default function GestoriaTrimestres() {
   const {
@@ -215,26 +216,18 @@ export default function GestoriaTrimestres() {
       </div>
 
       {/* Tabs Menu inside Gestoría */}
-      <div className="flex gap-2 border-b border-slate-800 overflow-x-auto pb-1">
-        {[
+      <Pestanas
+        ariaLabel="Secciones de la gestoría"
+        accent="emerald"
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
           { id: 'resumen_fiscal', label: 'Modelos Tributarios (303, 130, 111)' },
-          { id: 'facturas_emitidas', label: `Libro Facturas Emitidas (${facturasEmitidasTrim.length})` },
-          { id: 'facturas_recibidas', label: `Libro Facturas Recibidas / Gastos (${facturasRecibidasTrim.length})` },
+          { id: 'facturas_emitidas', label: 'Libro Facturas Emitidas', count: facturasEmitidasTrim.length },
+          { id: 'facturas_recibidas', label: 'Libro Facturas Recibidas / Gastos', count: facturasRecibidasTrim.length },
           { id: 'enviar_email', label: 'Enviar Email a la Gestoría' }
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-semibold transition border-b-2 whitespace-nowrap ${
-              activeTab === t.id
-                ? 'border-emerald-400 text-emerald-400 bg-slate-900/60 font-bold'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+        ]}
+      />
 
       {/* TAB 1: MODELOS TRIBUTARIOS */}
       {activeTab === 'resumen_fiscal' && (

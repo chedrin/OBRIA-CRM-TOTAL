@@ -42,6 +42,7 @@ import BarraFacturacion from '../Facturas/BarraFacturacion';
 import GastosIngresosObra from './GastosIngresosObra';
 import { facturacionObra } from '../../utils/facturadoPresupuesto';
 import { AnimatePresence } from 'motion/react';
+import Pestanas from '../Common/Pestanas';
 
 export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   const {
@@ -496,8 +497,11 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
       </div>
 
       {/* Tabs Bar inside Obra */}
-      <div className="flex gap-2 border-b border-slate-800 overflow-x-auto pb-1">
-        {[
+      <Pestanas
+        ariaLabel="Secciones de la obra"
+        value={detailTab}
+        onChange={setDetailTab}
+        tabs={[
           { id: 'fases', label: 'Fases y Planificación', count: obra.fases?.length },
           { id: 'diario', label: 'Histórico diario' },
           { id: 'materiales', label: 'Necesidades y Materiales', count: obra.necesidadesMateriales?.length },
@@ -506,27 +510,8 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
           { id: 'economico', label: 'Presupuesto y Facturas', count: obraFacturas.length },
           { id: 'gastos_ingresos', label: 'Gastos vs Ingresos', count: obraFacturasProveedores.length },
           { id: 'equipo', label: 'Equipo y Subcontratas', count: (obra.operariosIds || []).length }
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setDetailTab(t.id)}
-            className={`px-4 py-2.5 rounded-t-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 border-b-2 whitespace-nowrap ${
-              detailTab === t.id
-                ? 'border-amber-400 text-amber-400 bg-slate-900/60'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-            }`}
-          >
-            <span>{t.label}</span>
-            {t.count !== undefined && (
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                detailTab === t.id ? 'bg-amber-400/20 text-amber-300' : 'bg-slate-800 text-slate-400'
-              }`}>
-                {t.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+        ]}
+      />
 
       {/* TAB 1: FASES Y PLANIFICACIÓN (SINGLE SOURCE OF TRUTH) */}
       {detailTab === 'fases' && (
