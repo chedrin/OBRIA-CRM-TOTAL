@@ -35,6 +35,7 @@ Pendiente:
 - Documentación de subcontratas (CAE/PRL) y ficha editable (doc `docs/documentacion-subcontratas.md`): Pedro debe ejecutar `supabase_migration_documentacion_subcontratas.sql`.
 - Crear registros desde los desplegables (`Common/QuickCreate.jsx`, `ComboCrear.jsx`, `CampoProveedor.jsx`): opciones "Crear nuevo proveedor/subcontrata/obra/operario" que abren el alta encima y vuelven al formulario con el registro elegido. Para añadirlo a otro `<select>`: `<OpcionesCrear tipos={[...]} />` y `onChange={conCrear(crear, setValor)}`. Sin SQL nuevo.
 - Histórico diario de cada obra (doc `docs/historial-obra.md`, pestaña "Histórico diario" en la obra): Pedro debe ejecutar `supabase_schema_historial_obra.sql`.
+- Inventario, maquinaria, flota, alquileres y centro de alertas (doc `docs/inventario-flota.md`, sección "Recursos"; código en `backend/flotaRoutes.js`, `src/components/Flota/`, `src/utils/flota.js`): Pedro debe ejecutar `supabase_schema_inventario_flota.sql` y configurar en Centro de alertas > Cuándo avisar el correo/WhatsApp. pg_cron opcional. Costes de flota y alquileres salen en Gastos vs Ingresos de la obra sin duplicarse en `facturas_proveedores`.
 Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.
 
 ## Diagnóstico sugerido del login, en orden

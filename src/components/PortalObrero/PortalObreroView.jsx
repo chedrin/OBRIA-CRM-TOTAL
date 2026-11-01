@@ -26,6 +26,7 @@ import TaskProgressSelector from './TaskProgressSelector';
 import AvisosTecnicosModal from './AvisosTecnicosModal';
 import PedirMaterialModal from './PedirMaterialModal';
 import MisTajos from './MisTajos';
+import MiVehiculo from './MiVehiculo';
 import ModalOverlay from '../Common/ModalOverlay';
 import { AnimatePresence } from 'motion/react';
 
@@ -600,6 +601,13 @@ export default function PortalObreroView() {
               obreroId={currentObrero?.id}
               isAdmin={!isObreroLoggedIn}
               onAvailable={setAvanceDisponible}
+            />
+
+            {/* Vehículo que conduce, herramientas a su cargo y repostajes */}
+            <MiVehiculo
+              obreroId={currentObrero?.id}
+              isAdmin={!isObreroLoggedIn}
+              obras={(obras || []).filter((o) => o.estado === 'en_curso')}
             />
 
             {/* Phases / Tasks List for this Worker */}

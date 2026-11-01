@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import BarraProgreso from './Common/BarraProgreso';
 import { useApp } from '../context/AppContext';
 import EmptyState from './Common/EmptyState';
+import { AlertasFlotaResumen } from './Flota/AlertasView';
 import {
   HardHat,
   Mic,
@@ -268,6 +269,8 @@ export default function Dashboard() {
 
         {/* Columna lateral: un acceso por módulo */}
         <motion.div variants={lista} initial="hidden" animate="show" className="space-y-4">
+
+          <AlertasFlotaResumen />
 
           <Widget icon={Clock} iconClass="bg-amber-500/20 text-amber-400" title="Planificación IA">
             {endingObra ? (
