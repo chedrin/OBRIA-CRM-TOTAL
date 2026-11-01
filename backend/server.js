@@ -19,6 +19,7 @@ import { handleUsageRoutes, recordAiUsage } from "./aiUsage.js";
 import { handleSubcontractorPublicRoutes, handleNotificationRoutes } from "./notificaciones.js";
 import { handleAvancePublicRoutes, handleAvanceRoutes } from "./avanceRoutes.js";
 import { handleSubcontratasDocsRoutes } from "./subcontratasDocsRoutes.js";
+import { handleHistorialRoutes } from "./historialRoutes.js";
 import { handleGastosObraRoutes } from "./gastosObraRoutes.js";
 import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
@@ -1199,6 +1200,8 @@ async function handleRequest(req, res) {
   if (await handleAvanceRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
   // Documentación de subcontratas (CAE / PRL) y control por obra
   if (await handleSubcontratasDocsRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
+  // Histórico diario de cada obra
+  if (await handleHistorialRoutes(req, res, pathname)) return;
   // Justificantes de los gastos de cada obra (facturas de material, licencias, combustible...)
   if (await handleGastosObraRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
   if (await handlePushRoutes(req, res, pathname)) return;

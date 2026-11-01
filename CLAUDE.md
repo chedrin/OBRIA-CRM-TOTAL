@@ -33,6 +33,7 @@ Pendiente:
 - Plantilla PDF de presupuestos y facturas (formato de Marchelo Reformas, Ajustes > Plantilla PDF; código en `src/utils/documentPdf.js`): Pedro debe rellenar teléfonos, web y textos en Ajustes > Plantilla PDF y ejecutar en el SQL Editor `memoria-ia-presupuestos.sql` (está en los archivos del proyecto, no en el repo porque lleva sus precios) para cargar en la Memoria de la IA cómo redactar presupuestos.
 - Gastos vs ingresos por obra (pestaña en la ficha de obra, `GastosIngresosObra.jsx`, cálculo en `src/utils/gastosIngresosObra.js`): los gastos se guardan en `facturas_proveedores` (app_records) con `obraId` y salen también en Gestoría; suma las facturas de subcontrata de Avance de obra. Justificantes en el bucket `subcontrata-docs`, carpeta `gastos/` (necesita `supabase_migration_documentos_subcontrata.sql`). Sin SQL nuevo.
 - Documentación de subcontratas (CAE/PRL) y ficha editable (doc `docs/documentacion-subcontratas.md`): Pedro debe ejecutar `supabase_migration_documentacion_subcontratas.sql`.
+- Histórico diario de cada obra (doc `docs/historial-obra.md`, pestaña "Histórico diario" en la obra): Pedro debe ejecutar `supabase_schema_historial_obra.sql`.
 Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.
 
 ## Diagnóstico sugerido del login, en orden

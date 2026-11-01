@@ -40,7 +40,9 @@ import {
   calculatePhaseWeightedProgress,
   repairAndSyncObrasWithBudgets
 } from '../services/obraBudgetSyncService';
-import { conRevision, datosNuevaAceptacion, presupuestoVigente } from '../utils/presupuestoRevision';
+import { conRevision, datosNuevaAceptacion, presupuestoVigente, capitulosDe } from '../utils/presupuestoRevision';
+import { cambiosObra, cambiosPresupuesto } from '../utils/historialObra';
+import { registrarSucesos, cambioDiferido } from '../services/historialService';
 import {
   INITIAL_REFERENCE_BUDGETS,
   SAMPLE_REFERENCE_BUDGET_IDS,
@@ -889,12 +891,33 @@ export function AppProvider({ children }) {
       catalogoPrecios: obraData.catalogoPrecios || JSON.parse(JSON.stringify(basePrecios))
     };
     setObras(prev => [newObra, ...prev]);
+    historial(newObra.id, [{ tipo: 'nota', titulo: `Obra dada de alta: ${newObra.titulo || newObra.codigo}`, detalle: newObra.fechaInicio ? `Inicio previsto ${newObra.fechaInicio}` : '' }]);
     showNotification(`Obra "${newObra.titulo}" creada correctamente`);
     return newObra;
   };
 
-  const updateObra = (id, updates) => {
+  // Histórico de la obra: solo lo escribe la administración (el servidor lo exige).
+  const puedeHistorial = () => currentUser?.role === 'admin';
+  const historial = (obraId, eventos) => { if (puedeHistorial()) registrarSucesos(obraId, eventos); };
+  const obraDePresupuesto = (pres) => pres && obras.find(o => o.id === pres.obraId || o.presupuestoId === pres.id);
+  const historialPresupuesto = (pres, updates) => {
+    const obra = obraDePresupuesto(pres);
+    if (!obra || !puedeHistorial() || !('partidas' in updates || 'capitulos' in updates)) return;
+    cambioDiferido(`pres:${pres.id}`, {
+      obraId: obra.id,
+      antes: capitulosDe(pres),
+      despues: capitulosDe({ ...pres, ...updates }),
+      calcular: (a, b) => cambiosPresupuesto(a, b, { numero: pres.numero })
+    });
+  };
+
+  // `opciones.historial === false`: el cambio ya queda registrado por otra vía (p. ej. certificación).
+  const updateObra = (id, updates, opciones = {}) => {
+    const antes = obras.find(o => o.id === id);
     setObras(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
+    if (antes && opciones.historial !== false && puedeHistorial()) {
+      cambioDiferido(`obra:${id}`, { obraId: id, antes, despues: { ...antes, ...updates }, calcular: cambiosObra });
+    }
     showNotification('Obra actualizada correctamente');
   };
 
@@ -996,10 +1019,13 @@ export function AppProvider({ children }) {
       }
       return o;
     }));
+    historial(obraId, cambiosObra({ necesidadesMateriales: [] }, { necesidadesMateriales: [newMat] }));
     showNotification(`Material "${newMat.concepto}" añadido a las necesidades`);
   };
 
   const updateMaterialStatus = (obraId, materialId, newStatus) => {
+    const mat = (obras.find(o => o.id === obraId)?.necesidadesMateriales || []).find(m => m.id === materialId);
+    if (mat) historial(obraId, cambiosObra({ necesidadesMateriales: [mat] }, { necesidadesMateriales: [{ ...mat, estado: newStatus }] }));
     setObras(prev => prev.map(o => {
       if (o.id === obraId) {
         return {
@@ -1079,6 +1105,13 @@ export function AppProvider({ children }) {
       obreroNombre: obreroNombre || currentUser?.fullName || 'Operario'
     });
 
+    historial(obraId, [{
+      tipo: 'avance',
+      titulo: `${targetTaskTitle || 'Etapa'}: ${progNum} %`,
+      detalle: `Obra al ${computedGlobalProg} %${obreroNombre ? ` · indicado por ${obreroNombre}` : ''}`,
+      datos: { faseId, partidaId: taskId || '', despues: progNum }
+    }]);
+
     addAuditLog('AVANCE_PARTIDA_OBRERO', `Obra: ${obraId} - ${targetTaskTitle ? `Partida: "${targetTaskTitle.substring(0, 30)}..."` : `Fase: ${faseId}`} al ${progNum}% (Obra Global: ${computedGlobalProg}%)`);
   };
 
@@ -1129,6 +1162,7 @@ export function AppProvider({ children }) {
       task: newTask
     });
 
+    historial(obraId, [{ tipo: 'asignacion', titulo: `Tarea nueva: ${newTask.nombre}${newTask.responsable ? ` · ${newTask.responsable}` : ''}`, detalle: newTask.dias ? `${newTask.dias} días` : '', datos: { faseId: newTask.id } }]);
     addAuditLog('TAREA_ADMIN_DISPATCHED', `Obra: ${obraId} - Tarea: ${newTask.nombre}`);
     showNotification(`Tarea "${newTask.nombre}" asignada y notificada en tiempo real al operario.`);
   };
@@ -1158,6 +1192,7 @@ export function AppProvider({ children }) {
       alert: newAlert
     });
 
+    if (targetObra) historial(targetObra.id, [{ tipo: 'incidencia', titulo: `Aviso a operarios: ${newAlert.titulo}`, detalle: newAlert.descripcion }]);
     addAuditLog('ALERTA_TECNICA_DISPATCHED', `Aviso: ${newAlert.titulo}`);
     showNotification(`Aviso técnico enviado al canal móvil de los operarios.`);
     return newAlert;
@@ -1272,6 +1307,18 @@ export function AppProvider({ children }) {
   };
 
   const updatePresupuesto = (id, updates) => {
+    const actual = presupuestos.find(p => p.id === id);
+    if (actual) {
+      if (!updates.estado) historialPresupuesto(actual, updates);
+      const obra = obraDePresupuesto(actual);
+      if (obra && updates.estado && updates.estado !== actual.estado) {
+        historial(obra.id, [{
+          tipo: 'presupuesto',
+          titulo: `Presupuesto ${actual.numero}: ${String(updates.estado).replace(/_/g, ' ')}`,
+          detalle: ['aceptado', 'firmado'].includes(updates.estado) ? 'Las etapas y partidas de la obra se actualizan con este presupuesto.' : ''
+        }]);
+      }
+    }
     setPresupuestos(prev => prev.map(p => {
       if (p.id === id) {
         const tocaContenido = !updates.estado && ('partidas' in updates || 'capitulos' in updates);
@@ -1331,6 +1378,8 @@ export function AppProvider({ children }) {
   // Edición de contenido (cabecera, capítulos, partidas). Sin aviso: se llama al escribir.
   // Si el presupuesto ya estaba aprobado queda "Revisado" y pendiente de nueva aceptación.
   const editarPresupuesto = (id, updates) => {
+    const actual = presupuestos.find(p => p.id === id);
+    if (actual) historialPresupuesto(actual, updates);
     setPresupuestos(prev => prev.map(p => (p.id === id ? { ...p, ...conRevision(p, updates) } : p)));
   };
 
@@ -1341,6 +1390,8 @@ export function AppProvider({ children }) {
     const aceptado = { ...pres, ...datosNuevaAceptacion(pres) };
     setPresupuestos(prev => prev.map(p => (p.id === id ? aceptado : p)));
     if (['aceptado', 'firmado', 'facturado'].includes(aceptado.estado)) syncObraConPresupuesto(aceptado);
+    const obraAceptada = obraDePresupuesto(pres);
+    if (obraAceptada) historial(obraAceptada.id, [{ tipo: 'presupuesto', titulo: `Presupuesto ${pres.numero}: nueva aceptación (revisión ${pres.revisionNumero || 1})`, detalle: `Aceptada por ${pres.cliente || 'el cliente'}` }]);
     addAuditLog('PRESUPUESTO_NUEVA_ACEPTACION', `Presupuesto ${pres.numero} (revisión ${pres.revisionNumero || 1}) aceptado de nuevo por ${pres.cliente}`);
     showNotification(`Nueva aceptación registrada: ${pres.numero} revisión ${pres.revisionNumero || 1}.`);
   };
