@@ -20,6 +20,7 @@ import { handleSubcontractorPublicRoutes, handleNotificationRoutes } from "./not
 import { handleAvancePublicRoutes, handleAvanceRoutes } from "./avanceRoutes.js";
 import { handleSubcontratasDocsRoutes } from "./subcontratasDocsRoutes.js";
 import { handleHistorialRoutes } from "./historialRoutes.js";
+import { handleGastosObraRoutes } from "./gastosObraRoutes.js";
 import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
 import { handleDocumentRoutes } from "./documentRoutes.js";
@@ -1201,6 +1202,8 @@ async function handleRequest(req, res) {
   if (await handleSubcontratasDocsRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
   // Histórico diario de cada obra
   if (await handleHistorialRoutes(req, res, pathname)) return;
+  // Justificantes de los gastos de cada obra (facturas de material, licencias, combustible...)
+  if (await handleGastosObraRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
   if (await handlePushRoutes(req, res, pathname)) return;
 
   // Memoria de la IA (instrucciones permanentes y correcciones)

@@ -51,6 +51,7 @@ import {
 } from '../services/referenceBudgetService';
 import { analyzeReferenceBudgetViaBackend, deleteAiInstruction, setClientAiKeys } from '../services/backendAiService';
 import { findPriceBaseMatch, nextPriceCode } from '../services/priceBaseService';
+import { trimestreDe } from '../utils/gastosIngresosObra';
 import {
   getFacturacion,
   listFacturasLegales,
@@ -1509,14 +1510,30 @@ export function AppProvider({ children }) {
     showNotification(`Factura marcada como ${estadoCobro}`);
   };
 
-  const addFacturaProveedor = (gasto) => {
+  const addFacturaProveedor = (gasto, { silent = false } = {}) => {
+    const fecha = gasto.fecha || new Date().toISOString().split('T')[0];
     const newGasto = {
+      ...trimestreDe(fecha),
       ...gasto,
-      id: `gasto-${Date.now()}`,
-      fecha: gasto.fecha || new Date().toISOString().split('T')[0]
+      id: `gasto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      fecha
     };
     setFacturasProveedores(prev => [newGasto, ...prev]);
-    showNotification('Factura de gasto/subcontrata añadida al libro de IVA soportado');
+    if (!silent) showNotification('Factura de gasto/subcontrata añadida al libro de IVA soportado');
+    return newGasto;
+  };
+
+  // Corrige un gasto (la fecha recalcula el trimestre del libro de IVA soportado).
+  const updateFacturaProveedor = (id, changes) => {
+    setFacturasProveedores(prev => prev.map(f => {
+      if (f.id !== id) return f;
+      const next = { ...f, ...changes };
+      return changes.fecha ? { ...next, ...trimestreDe(changes.fecha) } : next;
+    }));
+  };
+
+  const deleteFacturaProveedor = (id) => {
+    setFacturasProveedores(prev => prev.filter(f => f.id !== id));
   };
 
   const addReviewObrero = (obreroId, review) => {
@@ -2106,6 +2123,9 @@ export function AppProvider({ children }) {
       retencionIrpfPct: 0,
       cuotaRetencion: 0,
       totalFactura: totalCalc,
+      total: totalCalc,
+      obraId: newInv.obraId,
+      categoria: 'Subcontratas',
       estadoPago: newInv.estadoPago === 'pagado' ? 'pagada' : 'pendiente',
       deducibleIva: true,
       deducibleIrpf: true
@@ -2356,6 +2376,8 @@ export function AppProvider({ children }) {
       facturasProveedores,
       setFacturasProveedores,
       addFacturaProveedor,
+      updateFacturaProveedor,
+      deleteFacturaProveedor,
       mensajesInbox,
       setMensajesInbox,
       addMensajeInbox,
