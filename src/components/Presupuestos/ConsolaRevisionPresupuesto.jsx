@@ -210,6 +210,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
     });
   };
 
+  const puedeAceptarObra = Boolean(onAceptarObra) && !['aceptado', 'firmado', 'facturado'].includes(quote.estado);
   const estadoClave = ESTADO_PRESUPUESTO[quote.estado] ? quote.estado : 'borrador';
 
   return (
@@ -308,12 +309,21 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           </div>
 
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
-            {onAceptarObra && !['aceptado', 'firmado', 'facturado'].includes(quote.estado) && (
+            <button
+              type="button"
+              onClick={() => setShowEnvioModal(true)}
+              title="Revisar y enviar el presupuesto al cliente por correo o WhatsApp"
+              className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition active:scale-95 whitespace-nowrap"
+            >
+              <Share2 className="w-4 h-4 shrink-0" />
+              <span>Enviar a cliente</span>
+            </button>
+            {puedeAceptarObra && (
               <button
                 type="button"
                 onClick={() => onAceptarObra(quote)}
                 title="El cliente acepta: convertir el presupuesto en obra"
-                className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition active:scale-95 whitespace-nowrap"
+                className={`${onFacturar ? '' : 'col-span-2 sm:col-span-1 '}inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition active:scale-95 whitespace-nowrap`}
               >
                 <HardHat className="w-4 h-4 shrink-0" />
                 <span>Aceptar → Obra</span>
@@ -324,20 +334,12 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
                 type="button"
                 onClick={() => onFacturar(quote)}
                 title={estadoFacturacion?.completo ? 'Ya está facturado al 100 %: para facturar más hace falta una versión nueva firmada o una rectificativa' : 'Emitir una factura o certificación de este presupuesto'}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
+                className={`${puedeAceptarObra ? '' : 'col-span-2 sm:col-span-1 '}inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap`}
               >
                 <Receipt className="w-4 h-4 shrink-0" />
                 <span>{estadoFacturacion?.completo ? 'Facturado' : 'Pasar a factura'}</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setShowEnvioModal(true)}
-              className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition active:scale-95 whitespace-nowrap ${onFacturar ? '' : 'col-span-2'}`}
-            >
-              <Share2 className="w-4 h-4 shrink-0" />
-              <span>Aprobar y enviar</span>
-            </button>
           </div>
         </div>
       </div>
