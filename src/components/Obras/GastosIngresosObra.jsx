@@ -69,6 +69,7 @@ export default function GastosIngresosObra({ obra }) {
   } = useApp();
 
   const [subDocs, setSubDocs] = useState([]);
+  const [flotaCostes, setFlotaCostes] = useState([]);
   const [filtro, setFiltro] = useState('todas');
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -83,9 +84,18 @@ export default function GastosIngresosObra({ obra }) {
     return () => { vivo = false; };
   }, [obra.id]);
 
+  // Gasoil, taller y alquileres imputados a la obra en Inventario y flota.
+  useEffect(() => {
+    let vivo = true;
+    api(`/api/flota/costes?obra=${encodeURIComponent(obra.id)}`)
+      .then((data) => { if (vivo) setFlotaCostes(Array.isArray(data) ? data : []); })
+      .catch(() => { if (vivo) setFlotaCostes([]); });
+    return () => { vivo = false; };
+  }, [obra.id]);
+
   const r = useMemo(
-    () => resumenObra({ obra, presupuestos, facturas, facturasProveedores, subDocs }),
-    [obra, presupuestos, facturas, facturasProveedores, subDocs]
+    () => resumenObra({ obra, presupuestos, facturas, facturasProveedores, subDocs, flotaCostes }),
+    [obra, presupuestos, facturas, facturasProveedores, subDocs, flotaCostes]
   );
   const gastosVisibles = filtro === 'todas' ? r.gastos : r.gastos.filter((g) => g.categoria === filtro);
   const maxBarra = Math.max(r.ingresosBase, r.gastosBase, 1);
@@ -186,6 +196,8 @@ export default function GastosIngresosObra({ obra }) {
     try {
       const { url } = g.origen === 'subcontrata'
         ? await api(`/api/avance/docs/${g.adjunto.docId}/file`)
+        : g.origen === 'flota'
+        ? await api(`/api/flota/archivo?path=${encodeURIComponent(g.adjunto.flotaPath)}`)
         : await api(`/api/obras/gastos/adjunto?path=${encodeURIComponent(g.adjunto.path)}`);
       window.open(url, '_blank', 'noopener');
     } catch (err) {
@@ -306,6 +318,11 @@ export default function GastosIngresosObra({ obra }) {
                       <span className="font-semibold text-white truncate">{g.proveedor}</span>
                       {g.numero && <span className="font-mono text-slate-400">{g.numero}</span>}
                       {g.origen === 'subcontrata' && <span className="text-[10px] text-violet-300">· desde Avance de obra</span>}
+                      {g.origen === 'flota' && (
+                        <button type="button" onClick={() => setActiveTab?.(g.registro.origen === 'alquiler' ? 'alquileres' : 'flota')} className="text-[10px] text-sky-300 hover:underline">
+                          · desde {g.registro.origen === 'alquiler' ? 'Alquileres' : 'Flota'}{g.registro.origen === 'alquiler' && /en curso/.test(g.concepto) ? ' (hasta hoy)' : ''}
+                        </button>
+                      )}
                     </div>
                     <p className="text-slate-400 mt-0.5 truncate">{g.fecha ? fmtDate(g.fecha) : 'Sin fecha'}{g.concepto ? ` · ${g.concepto}` : ''}</p>
                   </div>

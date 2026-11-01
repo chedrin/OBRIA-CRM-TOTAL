@@ -12,7 +12,12 @@ import {
   BellRing,
   Wallet,
   UsersRound,
-  Settings
+  Settings,
+  Boxes,
+  Truck,
+  CalendarClock,
+  ShieldAlert,
+  Warehouse
 } from 'lucide-react';
 
 // Menú principal: cada módulo tiene su icono y su color para reconocerlo de un vistazo.
@@ -64,7 +69,9 @@ export const NAV_TONES = {
     tile: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
     tileActive: 'bg-orange-500 text-white border-orange-500 shadow-orange-500/30',
     bar: 'bg-orange-500',
-    ring: 'ring-orange-500/30'
+    ring: 'ring-orange-500/30',
+    block: 'border-orange-500/25 bg-orange-500/[0.04]',
+    blockOpen: 'border-orange-500/50 bg-orange-500/[0.07] shadow-sm'
   },
   rose: {
     tile: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
@@ -118,6 +125,18 @@ export const NAV_SECTIONS = [
       { id: 'presupuestos', label: 'Presupuestos IA', desc: 'Asistente y partidas', icon: Calculator, tone: 'indigo' },
       { id: 'facturas', label: 'Facturación', desc: 'Emitidas y certificaciones', icon: Receipt, tone: 'emerald' },
       { id: 'gestoria', label: 'Gestoría & Trimestres', desc: 'Modelos 303 / 130', icon: FileSpreadsheet, tone: 'teal' }
+    ]
+  },
+  {
+    id: 'recursos',
+    title: 'Recursos',
+    icon: Warehouse,
+    tone: 'orange',
+    items: [
+      { id: 'inventario', label: 'Inventario y maquinaria', desc: 'Herramientas, material y máquinas', icon: Boxes, tone: 'amber' },
+      { id: 'flota', label: 'Flota de vehículos', desc: 'ITV, seguros, combustible y taller', icon: Truck, tone: 'sky' },
+      { id: 'alquileres', label: 'Alquileres', desc: 'Devoluciones y coste por obra', icon: CalendarClock, tone: 'orange' },
+      { id: 'alertas_flota', label: 'Centro de alertas', desc: 'Caducidades y revisiones', icon: ShieldAlert, tone: 'red' }
     ]
   },
   {

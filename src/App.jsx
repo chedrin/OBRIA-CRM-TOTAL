@@ -15,6 +15,10 @@ import SubcontratasList from './components/Subcontratas/SubcontratasList';
 import PortalObreroView from './components/PortalObrero/PortalObreroView';
 import EmpresaConfig from './components/Configuracion/EmpresaConfig';
 import AvisosCenter from './components/Avisos/AvisosCenter';
+import InventarioView from './components/Flota/InventarioView';
+import FlotaView from './components/Flota/FlotaView';
+import AlquileresView from './components/Flota/AlquileresView';
+import AlertasView from './components/Flota/AlertasView';
 import PdfModal from './components/Common/PdfModal';
 import LoginObreroView from './components/Auth/LoginObreroView';
 import LoginAdminModal from './components/Auth/LoginAdminModal';
@@ -188,6 +192,10 @@ function MainLayout() {
           {activeTab === 'gestoria' && <GestoriaTrimestres />}
           {activeTab === 'obreros' && <ObrerosList />}
           {activeTab === 'subcontratas' && <SubcontratasList />}
+          {activeTab === 'inventario' && <InventarioView />}
+          {activeTab === 'flota' && <FlotaView />}
+          {activeTab === 'alquileres' && <AlquileresView />}
+          {activeTab === 'alertas_flota' && <AlertasView />}
           {activeTab === 'portal_obrero' && <PortalObreroView />}
           {activeTab === 'empresa_config' && <EmpresaConfig />}
         </main>

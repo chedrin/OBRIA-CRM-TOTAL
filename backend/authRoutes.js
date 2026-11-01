@@ -31,7 +31,9 @@ const WORKER_ALLOWED_PATHS = new Set([
   "/api/ai/memory/corrections",
   "/api/needs",
   "/api/avance/mis-tajos",
-  "/api/avance/report"
+  "/api/avance/report",
+  "/api/flota/mio",
+  "/api/flota/repostaje"
 ]);
 
 // ---------------------------------------------------------------------------

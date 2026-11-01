@@ -7,6 +7,8 @@
  * proveedores, licencias, combustible...) y facturas de subcontrata subidas en Avance de obra
  * (tabla subcontract_documents, kind = 'factura'). Si una factura de subcontrata ya está
  * apuntada como gasto (mismo número y misma base) no se cuenta dos veces.
+ * También los costes de flota con obra (vista fleet_costes: gasoil, taller, alquileres de
+ * maquinaria), con la misma regla para no contar dos veces una factura ya apuntada.
  *
  * Ingresos: facturas emitidas al cliente de la obra, sin anuladas ni borradores; las
  * rectificativas se aplican sobre su original (ver basesVigentes).
@@ -14,6 +16,7 @@
  * La comparación se hace sin IVA (base imponible): el IVA no es beneficio ni coste.
  */
 import { basesVigentes, facturacionObra } from './facturadoPresupuesto.js';
+import { gastosFlota } from './flota.js';
 
 const r2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 
@@ -22,7 +25,7 @@ export const CATEGORIAS_GASTO = [
   { id: 'Proveedores', label: 'Proveedores y servicios' },
   { id: 'Subcontratas', label: 'Subcontratas' },
   { id: 'Mano de obra', label: 'Mano de obra / personal' },
-  { id: 'Maquinaria', label: 'Alquiler de maquinaria' },
+  { id: 'Maquinaria', label: 'Maquinaria (alquiler y taller)' },
   { id: 'Licencias', label: 'Licencias, tasas y permisos' },
   { id: 'Combustible', label: 'Gasolina y gasóleo' },
   { id: 'Transporte', label: 'Transporte y residuos' },
@@ -73,7 +76,7 @@ const normNum = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const totalDe = (f) => Number(f.total ?? f.totalFactura ?? (Number(f.baseImponible || 0) + Number(f.cuotaIva || 0)));
 
 /** Gastos ejecutados de la obra, de más reciente a más antiguo. */
-export function gastosObra(obraId, facturasProveedores = [], subDocs = []) {
+export function gastosObra(obraId, facturasProveedores = [], subDocs = [], flotaCostes = []) {
   const manuales = facturasProveedores
     .filter((f) => f && f.obraId === obraId)
     .map((f) => ({
@@ -108,7 +111,9 @@ export function gastosObra(obraId, facturasProveedores = [], subDocs = []) {
       adjunto: d.file_path ? { docId: d.id, name: d.file_name } : null,
       registro: d
     }));
-  return [...manuales, ...deSubcontrata].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const deFlota = gastosFlota(obraId, flotaCostes)
+    .filter((g) => !(g.numero && vistos.has(`${normNum(g.numero)}|${g.base}`)));
+  return [...manuales, ...deSubcontrata, ...deFlota].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
 }
 
 /** Facturas emitidas vigentes de la obra (base ya rectificada), de más reciente a más antigua. */
@@ -140,8 +145,8 @@ export function ingresosObra(obraId, facturas = []) {
 }
 
 /** Resumen gastos frente a ingresos de la obra. */
-export function resumenObra({ obra, presupuestos = [], facturas = [], facturasProveedores = [], subDocs = [] }) {
-  const gastos = gastosObra(obra?.id, facturasProveedores, subDocs);
+export function resumenObra({ obra, presupuestos = [], facturas = [], facturasProveedores = [], subDocs = [], flotaCostes = [] }) {
+  const gastos = gastosObra(obra?.id, facturasProveedores, subDocs, flotaCostes);
   const ingresos = ingresosObra(obra?.id, facturas);
   const gastosBase = r2(gastos.reduce((s, g) => s + g.base, 0));
   const ingresosBase = r2(ingresos.reduce((s, i) => s + i.base, 0));

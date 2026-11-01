@@ -21,6 +21,7 @@ import { handleAvancePublicRoutes, handleAvanceRoutes } from "./avanceRoutes.js"
 import { handleSubcontratasDocsRoutes } from "./subcontratasDocsRoutes.js";
 import { handleHistorialRoutes } from "./historialRoutes.js";
 import { handleGastosObraRoutes } from "./gastosObraRoutes.js";
+import { handleFlotaRoutes, startFlotaAlertas } from "./flotaRoutes.js";
 import { handlePushRoutes } from "./webPush.js";
 import { handleFacturacionRoutes } from "./facturacionRoutes.js";
 import { handleDocumentRoutes } from "./documentRoutes.js";
@@ -1204,6 +1205,8 @@ async function handleRequest(req, res) {
   if (await handleHistorialRoutes(req, res, pathname)) return;
   // Justificantes de los gastos de cada obra (facturas de material, licencias, combustible...)
   if (await handleGastosObraRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
+  // Inventario, maquinaria, flota de vehículos, alquileres y alertas de caducidad
+  if (await handleFlotaRoutes(req, res, pathname, parsedUrl.searchParams, { parseMultipart: parseMultipartBuffer })) return;
   if (await handlePushRoutes(req, res, pathname)) return;
 
   // Memoria de la IA (instrucciones permanentes y correcciones)
@@ -1961,6 +1964,7 @@ const server = http.createServer((req, res) => {
 server.headersTimeout = 30 * 1000;
 server.requestTimeout = 5 * 60 * 1000;
 server.listen(PORT, () => {
+  startFlotaAlertas();
   console.log(`====================================================`);
   console.log(`🚀 ObraMaster AI SaaS Server activo en puerto: ${PORT}`);
   console.log(`📡 CORS: ${process.env.CORS_ORIGIN || "solo el mismo dominio"}`);
