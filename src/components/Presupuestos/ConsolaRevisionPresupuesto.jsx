@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
 import CroquisEditorModal from '../Croquis/CroquisEditorModal';
+import VersionesPresupuesto from './VersionesPresupuesto';
 import confetti from 'canvas-confetti';
 import AiImprovementControl from '../Common/AiImprovementControl';
 import { recordAiCorrection, recordBudgetEditDebounced } from '../../services/backendAiService';
@@ -50,6 +51,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
     refineQuoteWithVoiceCommand,
     editarPresupuesto,
     registrarNuevaAceptacion,
+    nuevaVersionPresupuesto,
     guardarCroquisPresupuesto,
     setPdfModalData,
     showNotification,
@@ -296,8 +298,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           {onFacturar && (
             <button
               onClick={() => onFacturar(quote)}
-              disabled={Boolean(estadoFacturacion?.completo)}
-              title={estadoFacturacion?.completo ? 'Ya está facturado al 100 %' : 'Emitir una factura o certificación de este presupuesto'}
+              title={estadoFacturacion?.completo ? 'Ya está facturado al 100 %: para facturar más hace falta una versión nueva firmada o una rectificativa' : 'Emitir una factura o certificación de este presupuesto'}
               className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
               <Receipt className="w-3.5 h-3.5" />
@@ -375,6 +376,15 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
           <span>Presupuesto aprobado. Si lo modificas quedará marcado como <strong className="text-violet-400">Revisado</strong> y necesitará una nueva aceptación del cliente.</span>
         </div>
       )}
+
+      {/* Versiones: la actual y las anteriores guardadas, con su PDF */}
+      <VersionesPresupuesto
+        pres={quote}
+        onPdf={(data) => setPdfModalData({ type: 'presupuesto', data: { ...data, empresa: empresaConfig } })}
+        onNuevaVersion={(p) => {
+          if (window.confirm(`¿Crear la versión ${(p.version || 1) + 1} de ${p.numero}? La versión ${p.version || 1} queda guardada${aprobado ? ' y la obra sigue con ella hasta que el cliente firme la nueva' : ''}.`)) nuevaVersionPresupuesto(p.id);
+        }}
+      />
 
       {/* Datos del presupuesto: obra, cliente y condiciones */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">

@@ -41,7 +41,8 @@ import { verificarCadena } from "./verifactu/huella.js";
 import { estadoCertificado, guardarCertificado, MAX_PFX_BYTES } from "./verifactu/certificados.js";
 import { datosProductor, declaracionResponsable } from "./verifactu/sistema.js";
 import { getAppRecord } from "./notificaciones.js";
-import { baseFacturadaPorPresupuesto, estadoFacturacion, MARGEN_LIMITE } from "../src/utils/facturadoPresupuesto.js";
+import { baseFacturadaPorPresupuesto, baseFacturable, estadoFacturacion, MARGEN_LIMITE } from "../src/utils/facturadoPresupuesto.js";
+import { presupuestoVigente } from "../src/utils/presupuestoRevision.js";
 import { siguienteCertificacion, etiquetaCertificacion } from "../src/utils/certificaciones.js";
 import { enviarPendientesEmpresa } from "./verifactu/envio.js";
 import { calcularFiscalidadObra } from "./verifactu/fiscalidadObra.js";
@@ -366,17 +367,22 @@ async function comprobarLimitePresupuesto(company, presupuestoId, nueva, baseEnv
   // Lo que rebaja lo facturado (rectificativas a la baja) siempre se puede emitir.
   if (despues <= antes + MARGEN_LIMITE / 2) return;
   const presupuesto = await getAppRecord("presupuestos", presupuestoId).catch(() => null);
-  const base = Number(presupuesto?.baseImponible ?? baseEnviada);
+  // Cuenta la versión firmada por el cliente: una versión nueva sin firmar todavía no se puede facturar.
+  const base = presupuesto?.baseImponible != null ? baseFacturable(presupuesto) : Number(baseEnviada);
   if (!Number.isFinite(base) || base <= 0) {
     throw httpError(400, "No se encuentra el importe del presupuesto: guarda el presupuesto y vuelve a intentarlo.");
   }
   if (despues > base + MARGEN_LIMITE) {
     const estado = estadoFacturacion(base, antes);
+    const exceso = Math.round((despues - base) * 100) / 100;
+    const pendienteFirma = presupuesto?.pendienteNuevaAceptacion
+      ? ` La versión ${presupuesto.version || 2} (${eur(Number(presupuesto.baseImponible || 0))} € de base) aún no está firmada por el cliente: registra su aceptación y podrás facturarla.`
+      : "";
     throw httpError(409,
-      `Este presupuesto ya tiene facturado ${eur(estado.facturado)} € de ${eur(base)} € de base (${estado.pct} %). ` +
-      (estado.pendiente > 0
-        ? `Solo quedan ${eur(estado.pendiente)} € por facturar.`
-        : "Ya está facturado entero: para cambiar el importe emite una rectificativa."));
+      `Supera el presupuesto firmado en ${eur(exceso)} €. Ya hay facturado ${eur(estado.facturado)} € de ${eur(base)} € de base (${estado.pct} %)` +
+      (estado.pendiente > 0 ? ` y solo quedan ${eur(estado.pendiente)} € por facturar.` : ".") +
+      pendienteFirma +
+      " Para facturar más, el cliente tiene que firmar una versión nueva del presupuesto; si una factura anterior está mal, corrígela con una rectificativa.");
   }
 }
 
@@ -387,10 +393,11 @@ async function comprobarLimitePresupuesto(company, presupuestoId, nueva, baseEnv
  * última es lo que quede pendiente. Devuelve el texto con el que empieza el concepto.
  */
 async function certificacionPresupuesto(company, presupuestoId, body, base) {
-  const guardado = await getAppRecord("presupuestos", presupuestoId).catch(() => null);
+  const leido = await getAppRecord("presupuestos", presupuestoId).catch(() => null);
+  const guardado = leido ? presupuestoVigente(leido) : null;
   const presupuesto = {
     id: presupuestoId,
-    baseImponible: Number(guardado?.baseImponible ?? body.presupuestoBase ?? 0),
+    baseImponible: guardado?.baseImponible != null ? baseFacturable(leido) : Number(body.presupuestoBase ?? 0),
     condicionesPago: guardado ? guardado.condicionesPago : body.condicionesPago
   };
   const rows = await run(getAdminClient().from("invoices").select("*")

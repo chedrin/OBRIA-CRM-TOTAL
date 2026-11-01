@@ -103,8 +103,7 @@ function Acciones({ pres, size = 'full', handlers, nowrap = false }) {
       {handlers.onFacturar && (
         <button
           onClick={() => handlers.onFacturar(pres)}
-          disabled={facturadoEntero}
-          title={facturadoEntero ? 'Ya está facturado al 100 %' : 'Pasar a factura'}
+          title={facturadoEntero ? 'Ya está facturado al 100 %: para facturar más hace falta una versión nueva firmada o una rectificativa' : 'Pasar a factura'}
           className={`${base} bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed`}
         >
           <Receipt className="w-3.5 h-3.5" />

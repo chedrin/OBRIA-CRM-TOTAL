@@ -44,6 +44,9 @@ import GastosIngresosObra from './GastosIngresosObra';
 import { facturacionObra } from '../../utils/facturadoPresupuesto';
 import { AnimatePresence } from 'motion/react';
 import Pestanas from '../Common/Pestanas';
+import VersionesPresupuesto from '../Presupuestos/VersionesPresupuesto';
+import { contemplaEnPresupuestos, partidasQueCubren, cambiosAnadirNecesidad } from '../../utils/necesidadPresupuesto';
+import { estaAprobado } from '../../utils/presupuestoRevision';
 
 export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   const {
@@ -51,6 +54,8 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
     updateObra,
     addMaterialToObra,
     updateMaterialStatus,
+    editarPresupuesto,
+    showNotification,
     obreros,
     employees,
     users,
@@ -185,6 +190,7 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
 
   // Related Data
   const obraPresupuesto = presupuestos.find(p => p.id === obra.presupuestoId);
+  const presupuestosObra = presupuestos.filter(p => p.id === obra.presupuestoId || (p.obraId && p.obraId === obra.id));
   const croquisCabecera = {
     numero: obraPresupuesto?.numero || '',
     fecha: obraPresupuesto?.fecha || '',
@@ -249,18 +255,38 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
   };
 
 
+  // ¿La necesidad está en el presupuesto firmado de la obra? (o en su versión nueva sin firmar)
+  const coberturaMaterial = (() => {
+    if (!presupuestosObra.length || palabrasCortas(materialForm.concepto)) return null;
+    const r = contemplaEnPresupuestos(materialForm.concepto, presupuestosObra);
+    if (r.contemplado) return r;
+    const enVersionNueva = presupuestosObra.find(p => p.pendienteNuevaAceptacion
+      && partidasQueCubren(materialForm.concepto, { ...p, pendienteNuevaAceptacion: false }).length);
+    return enVersionNueva ? { contemplado: false, pendienteFirma: true, presupuesto: enVersionNueva, partidas: [] } : r;
+  })();
+
   const handleSaveMaterial = (e) => {
     e.preventDefault();
     if (!materialForm.concepto) return;
-
-    addMaterialToObra(obra.id, {
+    const necesidad = {
       concepto: materialForm.concepto,
       cantidad: Number(materialForm.cantidad),
       unidad: materialForm.unidad,
       costeEstimado: Number(materialForm.costeEstimado),
       proveedor: materialForm.proveedor,
       estado: 'pendiente'
-    });
+    };
+    const alPresupuesto = e.nativeEvent?.submitter?.value === 'presupuesto' && coberturaMaterial?.presupuesto;
+    if (alPresupuesto) {
+      const pres = coberturaMaterial.presupuesto;
+      const { cambios } = cambiosAnadirNecesidad(pres, necesidad);
+      editarPresupuesto(pres.id, cambios);
+      showNotification(estaAprobado(pres)
+        ? `"${necesidad.concepto}" añadido a ${pres.numero} como versión nueva: el cliente tiene que firmarla. La versión anterior queda guardada.`
+        : `"${necesidad.concepto}" añadido como partida a ${pres.numero}.`);
+      necesidad.enPresupuesto = pres.id;
+    }
+    addMaterialToObra(obra.id, necesidad);
 
     setShowNewMaterialModal(false);
     setMaterialForm({
@@ -1218,6 +1244,15 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
             )}
           </div>
 
+          {/* Versiones de los presupuestos de la obra: las anteriores quedan guardadas con su PDF */}
+          {presupuestosObra.map(p => (
+            <VersionesPresupuesto
+              key={p.id}
+              pres={p}
+              onPdf={(data) => setPdfModalData({ type: 'presupuesto', data })}
+            />
+          ))}
+
           {/* Facturas Emitidas de la Obra */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
             <div className="flex items-center justify-between">
@@ -1364,6 +1399,8 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
                 />
               </div>
 
+              {coberturaMaterial && <AvisoCobertura cobertura={coberturaMaterial} />}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-slate-400 block mb-1">Cantidad</label>
@@ -1416,12 +1453,23 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
                 >
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl"
-                >
-                  Añadir Material
-                </button>
+                {coberturaMaterial && !coberturaMaterial.contemplado && !coberturaMaterial.pendienteFirma ? (
+                  <>
+                    <button type="submit" value="solo" className="px-4 py-2 bg-slate-800 text-slate-200 rounded-xl hover:bg-slate-700 font-semibold" title="Se pide el material pero no se cobra al cliente">
+                      Solo a necesidades
+                    </button>
+                    <button type="submit" value="presupuesto" className="px-4 py-2 bg-violet-500 hover:bg-violet-400 text-white font-bold rounded-xl">
+                      {estaAprobado(coberturaMaterial.presupuesto) ? 'Añadir y generar versión nueva del presupuesto' : 'Añadir también al presupuesto'}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl"
+                  >
+                    Añadir Material
+                  </button>
+                )}
               </div>
             </form>
           </div>
@@ -1620,5 +1668,37 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
         />
       )}
     </div>
+  );
+}
+
+// Un concepto de menos de 3 letras todavía no se compara con el presupuesto.
+function palabrasCortas(texto) {
+  return String(texto || '').trim().length < 3;
+}
+
+// Aviso al apuntar una necesidad: si está o no en el presupuesto firmado de la obra.
+function AvisoCobertura({ cobertura }) {
+  const { presupuesto, partidas } = cobertura;
+  if (cobertura.contemplado) {
+    return (
+      <p className="text-[11px] rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 px-3 py-2">
+        Contemplado en el presupuesto {presupuesto.numero}: «{partidas[0].concepto}»{partidas.length > 1 ? ` y ${partidas.length - 1} partida(s) más` : ''}.
+      </p>
+    );
+  }
+  if (cobertura.pendienteFirma) {
+    return (
+      <p className="text-[11px] rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200 px-3 py-2">
+        Está en la versión {presupuesto.version || 2} de {presupuesto.numero}, que aún no ha firmado el cliente.
+      </p>
+    );
+  }
+  return (
+    <p role="alert" className="text-[11px] rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-100 px-3 py-2">
+      <strong>No está contemplado en el presupuesto {presupuesto.numero}.</strong>{' '}
+      {estaAprobado(presupuesto)
+        ? 'Puedes añadirlo como partida: se genera una versión nueva del presupuesto para que la firme el cliente (la actual queda guardada). Si no, se apunta solo como necesidad y no se cobra.'
+        : 'Puedes añadirlo también como partida del presupuesto o apuntarlo solo como necesidad.'}
+    </p>
   );
 }

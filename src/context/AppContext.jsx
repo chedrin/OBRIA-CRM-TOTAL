@@ -40,7 +40,7 @@ import {
   calculatePhaseWeightedProgress,
   repairAndSyncObrasWithBudgets
 } from '../services/obraBudgetSyncService';
-import { conRevision, datosNuevaAceptacion, presupuestoVigente, capitulosDe } from '../utils/presupuestoRevision';
+import { conRevision, datosNuevaAceptacion, datosNuevaVersion, presupuestoVigente, capitulosDe } from '../utils/presupuestoRevision';
 import { cambiosObra, cambiosPresupuesto } from '../utils/historialObra';
 import { registrarSucesos, cambioDiferido } from '../services/historialService';
 import {
@@ -1399,11 +1399,32 @@ export function AppProvider({ children }) {
     showNotification(`Nueva aceptación registrada: ${pres.numero} revisión ${pres.revisionNumero || 1}.`);
   };
 
+  // Nueva versión del mismo presupuesto (misma obra): la actual se guarda en el historial y,
+  // si estaba aprobada, la obra y la facturación siguen con ella hasta que el cliente firme la nueva.
+  const nuevaVersionPresupuesto = (id) => {
+    const pres = presupuestos.find(p => p.id === id);
+    const marcas = datosNuevaVersion(pres);
+    if (!marcas) {
+      if (pres) showNotification(`${pres.numero} ya tiene una versión nueva pendiente de firma: edítala y registra la aceptación del cliente.`, 'error');
+      return null;
+    }
+    const nueva = { ...pres, ...marcas };
+    setPresupuestos(prev => prev.map(p => (p.id === id ? nueva : p)));
+    const obra = obraDePresupuesto(pres);
+    if (obra) historial(obra.id, [{ tipo: 'presupuesto', titulo: `Presupuesto ${pres.numero}: versión ${nueva.version} creada`, detalle: `La versión ${pres.version || 1} queda guardada${marcas.pendienteNuevaAceptacion ? '; la nueva necesita la firma del cliente' : ''}.` }]);
+    addAuditLog('PRESUPUESTO_NUEVA_VERSION', `Presupuesto ${pres.numero}: versión ${nueva.version} (la ${pres.version || 1} queda en el historial)`);
+    showNotification(`Versión ${nueva.version} de ${pres.numero} creada. La versión ${pres.version || 1} queda guardada.`);
+    return nueva;
+  };
+
   // Con la facturación activada, toda factura se emite en el servidor (número + VeriFactu).
   // `datos` trae lo que confirma el usuario en el modal de emisión: cliente completo e IVA de la obra.
   const convertPresupuestoToFactura = async (presupuestoId, tipoFactura = 'Certificación 1 (Anticipo 40%)', porcentaje = 40, datos = {}) => {
-    const pres = presupuestos.find(p => p.id === presupuestoId);
-    if (!pres) return null;
+    const guardado = presupuestos.find(p => p.id === presupuestoId);
+    if (!guardado) return null;
+    // Se factura la versión que firmó el cliente (una versión nueva sin firmar no cuenta).
+    const pres = presupuestoVigente(guardado);
+    const obraPres = obraDePresupuesto(guardado);
     if (!facturacionActivada) {
       showNotification('La facturación está desactivada. Actívala en Ajustes > Facturación (VeriFactu).', 'error');
       return null;
@@ -1419,7 +1440,7 @@ export function AppProvider({ children }) {
       clienteMunicipio: datos.clienteMunicipio,
       clienteProvincia: datos.clienteProvincia,
       descripcion: datos.descripcion || `${tipoFactura} · ${pres.obraTitulo || pres.numero}`,
-      obraId: pres.obraId || null,
+      obraId: pres.obraId || obraPres?.id || null,
       presupuestoId: pres.id,
       presupuestoBase: Number(pres.baseImponible || 0),
       condicionesPago: pres.condicionesPago || '',
@@ -1451,7 +1472,7 @@ export function AppProvider({ children }) {
   const rectificarFactura = async (facturaId, datos) => {
     const original = facturasLegales.find(f => f.id === facturaId);
     const pres = original?.presupuestoId ? presupuestos.find(p => p.id === original.presupuestoId) : null;
-    const result = await rectificarFacturaApi(facturaId, { ...datos, presupuestoBase: pres ? Number(pres.baseImponible || 0) : undefined });
+    const result = await rectificarFacturaApi(facturaId, { ...datos, presupuestoBase: pres ? Number(presupuestoVigente(pres).baseImponible || 0) : undefined });
     if (!result.ok) {
       showNotification(`No se emitió la rectificativa: ${result.error}`, 'error');
       return null;
@@ -2365,6 +2386,7 @@ export function AppProvider({ children }) {
       guardarCroquisObra,
       editarPresupuesto,
       registrarNuevaAceptacion,
+      nuevaVersionPresupuesto,
       convertPresupuestoToFactura,
       rectificarFactura,
       anularFactura,
