@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import BarraFacturacion from '../Facturas/BarraFacturacion';
 import BotonVolver from '../Common/BotonVolver';
 import { useApp } from '../../context/AppContext';
@@ -70,6 +70,23 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
   const croquisObra = (obras || []).find(o => o.id === quote?.obraId || o.presupuestoId === quote?.id)?.croquis;
   const croquisVisible = quote?.croquis?.plan?.rooms?.length ? quote.croquis : croquisObra?.plan?.rooms?.length ? croquisObra : null;
   const planCroquis = croquisVisible ? normalizarCroquis(croquisVisible.plan) : null;
+
+  // Al abrir un presupuesto, la página empieza arriba con la cabecera a la vista
+  // (la lista anterior podía dejar el scroll a media página).
+  const raizRef = useRef(null);
+  useLayoutEffect(() => {
+    const subir = () => {
+      try { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); } catch (e) { window.scrollTo(0, 0); }
+      if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+      for (let el = raizRef.current?.parentElement; el; el = el.parentElement) {
+        if (el.scrollTop) el.scrollTop = 0;
+      }
+    };
+    subir();
+    // Otra vez tras pintar, por si el contenido largo (capítulos, croquis) movió la posición.
+    const id = requestAnimationFrame(subir);
+    return () => cancelAnimationFrame(id);
+  }, [quoteId]);
 
   const [showHistory, setShowHistory] = useState(false);
   const [showEnvioModal, setShowEnvioModal] = useState(false);
@@ -195,7 +212,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
   const estadoClave = ESTADO_PRESUPUESTO[quote.estado] ? quote.estado : 'borrador';
 
   return (
-    <div className="space-y-6 pb-8">
+    <div ref={raizRef} className="space-y-6 pb-8">
       
       {/* Cabecera: volver, identificación del presupuesto y acciones */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-sm">
