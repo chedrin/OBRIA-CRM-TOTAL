@@ -28,6 +28,7 @@ import { handleDocumentRoutes } from "./documentRoutes.js";
 import { handleEmailRoutes } from "./emailRoutes.js";
 import { applySecurityHeaders, applyCors, readBodyLimited } from "./security.js";
 import { iniciarColaVerifactu } from "./verifactu/envio.js";
+import { startLimpiezaStorage } from "./storageLimpieza.js";
 import { CROQUIS_SYSTEM_PROMPT, buildCroquisUserPrompt } from "./croquisPrompt.js";
 import { normalizarCroquis } from "../src/utils/croquisPlano.js";
 
@@ -1965,6 +1966,7 @@ server.headersTimeout = 30 * 1000;
 server.requestTimeout = 5 * 60 * 1000;
 server.listen(PORT, () => {
   startFlotaAlertas();
+  startLimpiezaStorage();
   console.log(`====================================================`);
   console.log(`🚀 ObraMaster AI SaaS Server activo en puerto: ${PORT}`);
   console.log(`📡 CORS: ${process.env.CORS_ORIGIN || "solo el mismo dominio"}`);

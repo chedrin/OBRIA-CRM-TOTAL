@@ -37,6 +37,7 @@ import AiImprovementControl from '../Common/AiImprovementControl';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 import NuevoPedidoModal from '../Avisos/NuevoPedidoModal';
 import HistorialObra from './HistorialObra';
+import ArchivosObra from './ArchivosObra';
 import ModalOverlay from '../Common/ModalOverlay';
 import BarraFacturacion from '../Facturas/BarraFacturacion';
 import GastosIngresosObra from './GastosIngresosObra';
@@ -1010,6 +1011,9 @@ export default function ObraDetail({ obraId, onBack, abrirCroquis = false }) {
               <p className="text-xs text-slate-400">Sin croquis. Se copia aquí al aceptar un presupuesto que lo tenga, o puedes crearlo desde las medidas.</p>
             )}
           </div>
+
+          {/* Archivos de la obra en Supabase Storage (fotos, planos, LiDAR, documentación) */}
+          <ArchivosObra obra={obra} />
 
           {/* Document Section 1: Presupuesto y Contrato */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
