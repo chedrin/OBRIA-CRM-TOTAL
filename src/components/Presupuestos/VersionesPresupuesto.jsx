@@ -1,6 +1,6 @@
 import React from 'react';
 import { History, FileText, FilePlus2 } from 'lucide-react';
-import { versionesDe, cambiosEntreVersiones } from '../../utils/presupuestoRevision';
+import { versionesDe, cambiosEntreVersiones, datosVersionGuardada } from '../../utils/presupuestoRevision';
 
 const eur = (n) => Number(n || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
 
@@ -13,10 +13,8 @@ const ESTADO = {
   facturado: 'Firmada'
 };
 
-// Datos de una versión guardada para verla en PDF (el número lleva la versión).
-export function datosVersionPdf(pres, v) {
-  return { ...pres, ...v.contenido, numero: `${pres.numero} v${v.version}`, version: v.version, pendienteNuevaAceptacion: false, versionAceptada: null };
-}
+// Datos de una versión guardada para verla en PDF: los suyos, sin nada de la revisión actual.
+export const datosVersionPdf = datosVersionGuardada;
 
 /**
  * Versiones de un presupuesto: la actual y las anteriores, que se guardan siempre

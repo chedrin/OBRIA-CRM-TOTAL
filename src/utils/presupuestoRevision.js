@@ -25,6 +25,15 @@ const copiaContenido = (p) => JSON.parse(JSON.stringify(
   Object.fromEntries(CAMPOS_CONTENIDO.filter(k => p[k] !== undefined).map(k => [k, p[k]]))
 ));
 
+// Campos de historial que no forman parte de una versión (evita copias anidadas).
+const CAMPOS_HISTORIAL = ['versiones', 'versionAceptada', 'historialAceptaciones'];
+
+// Copia íntegra del presupuesto tal y como está: todos sus datos, para que el PDF de una
+// versión anterior salga exactamente igual que antes de la revisión.
+export const copiaCompleta = (p) => JSON.parse(JSON.stringify(
+  Object.fromEntries(Object.entries(p || {}).filter(([k]) => !CAMPOS_HISTORIAL.includes(k)))
+));
+
 // Copia completa de la versión actual para el historial de versiones (no se borra nunca).
 export function fotoVersion(pres) {
   return {
@@ -35,7 +44,8 @@ export function fotoVersion(pres) {
     guardadaEl: ahora(),
     baseImponible: Number(pres.baseImponible || 0),
     totalConIva: Number(pres.totalConIva || 0),
-    contenido: copiaContenido(pres)
+    completa: true,
+    contenido: copiaCompleta(pres)
   };
 }
 
@@ -200,4 +210,25 @@ export function cambiosEntreVersiones(antes = {}, despues = {}) {
     cambios.push(`Total con IVA: ${eur(antes.totalConIva)} → ${eur(despues.totalConIva)}`);
   }
   return cambios;
+}
+
+// Datos con los que se dibuja el PDF de una versión guardada: solo los suyos, nunca los de la
+// revisión actual. Las versiones guardadas antes de copiar todo se completan con el presupuesto
+// sin sus campos de contenido ni de revisión (que serían los de la versión nueva).
+const CAMPOS_REVISION = ['revisado', 'fechaRevision', 'revisionNumero', 'pendienteNuevaAceptacion', 'fechaNuevaAceptacion', 'version', 'estado'];
+export function datosVersionGuardada(pres, v) {
+  let datos;
+  if (v.completa) {
+    datos = JSON.parse(JSON.stringify(v.contenido));
+  } else {
+    const base = Object.fromEntries(Object.entries(pres).filter(([k]) => !CAMPOS_CONTENIDO.includes(k) && !CAMPOS_REVISION.includes(k) && !CAMPOS_HISTORIAL.includes(k)));
+    datos = { ...base, ...JSON.parse(JSON.stringify(v.contenido || {})), estado: v.estado };
+  }
+  return {
+    ...datos,
+    id: pres.id,
+    numero: `${pres.numero} v${v.version}`,
+    version: v.version,
+    versionSustituida: { version: v.version, fecha: v.sustituidaEl || v.guardadaEl || '' }
+  };
 }

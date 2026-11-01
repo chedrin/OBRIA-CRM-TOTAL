@@ -101,3 +101,36 @@ test("al firmar la revisión, la versión anterior queda como modificada con fec
   assert.ok(antigua.cambios.some(c => c.startsWith("Total con IVA")));
   assert.deepEqual(cambiosEntreVersiones(v1, v1), []);
 });
+
+import { datosVersionGuardada } from "../src/utils/presupuestoRevision.js";
+
+test("el PDF de la versión anterior conserva todos sus datos, no los de la revisión", () => {
+  const v1 = { ...firmado, observaciones: "Plazo 3 semanas", condicionesPago: "50/50", partidas: [{ id: "a", concepto: "Solado", total: 300 }] };
+  const rev = { ...v1, ...datosNuevaVersion(v1) };
+  const editada = { ...rev, ...conRevision(rev, {
+    capitulos: [{ id: "c", nombre: "Nuevo", partidas: [{ id: "z", concepto: "Tabique", total: 900 }] }],
+    observaciones: "Plazo 5 semanas", condicionesPago: "30/70", totalConIva: 99
+  }) };
+  const pdf = datosVersionGuardada(editada, editada.versiones[0]);
+  assert.equal(pdf.observaciones, "Plazo 3 semanas");
+  assert.equal(pdf.condicionesPago, "50/50");
+  assert.equal(pdf.capitulos, undefined, "no hereda los capítulos de la revisión");
+  assert.equal(pdf.partidas[0].concepto, "Solado");
+  assert.equal(pdf.totalConIva, 11000);
+  assert.equal(pdf.pendienteNuevaAceptacion, undefined);
+  assert.equal(pdf.numero, "PRES-1 v1");
+  assert.ok(pdf.versionSustituida);
+  // La versión guardada no cambia aunque se siga editando la revisión.
+  const otraVez = { ...editada, ...conRevision(editada, { observaciones: "Plazo 6 semanas" }) };
+  assert.equal(datosVersionGuardada(otraVez, otraVez.versiones[0]).observaciones, "Plazo 3 semanas");
+});
+
+test("versiones antiguas (sin copia completa) no mezclan datos de la revisión", () => {
+  const actual = { ...firmado, version: 2, revisado: true, revisionNumero: 1, pendienteNuevaAceptacion: true,
+    capitulos: [{ id: "c", nombre: "Nuevo", partidas: [] }], partidas: [], baseImponible: 15000 };
+  const antigua = { version: 1, estado: "aceptado", guardadaEl: "2026-11-01 20:00", contenido: { partidas: [{ id: "a", concepto: "Solado" }], baseImponible: 10000 } };
+  const pdf = datosVersionGuardada(actual, antigua);
+  assert.equal(pdf.capitulos, undefined);
+  assert.equal(pdf.baseImponible, 10000);
+  assert.equal(pdf.revisado, undefined);
+});
