@@ -66,15 +66,17 @@ export function avisoReenvio(link) {
 /**
  * Ventana para reenviar el enlace de una asignación (Avance de Obra).
  * Reutiliza el último enlace vigente o crea uno si la asignación no tenía.
+ * `partidaId` centra el enlace en esa partida cuando la asignación es de la fase entera;
+ * `tarea` es el nombre de la fase o partida que se muestra en la cabecera.
  */
-export function EnlaceAsignacionModal({ assignment, onClose }) {
+export function EnlaceAsignacionModal({ assignment, partidaId = '', tarea = '', onClose }) {
   const notify = useNotify();
   const [link, setLink] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let alive = true;
-    api(`/api/sub-tokens/assignment/${assignment.id}`, { method: 'POST', body: {} })
+    api(`/api/sub-tokens/assignment/${assignment.id}`, { method: 'POST', body: partidaId ? { partida_id: partidaId } : {} })
       .then((data) => {
         if (!alive) return;
         setLink(data);
@@ -83,7 +85,7 @@ export function EnlaceAsignacionModal({ assignment, onClose }) {
       })
       .catch((err) => alive && setError(err.message));
     return () => { alive = false; };
-  }, [assignment.id, notify]);
+  }, [assignment.id, partidaId, notify]);
 
   return (
     <div className="fixed inset-0 z-[60] bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3" onClick={onClose}>
@@ -96,6 +98,7 @@ export function EnlaceAsignacionModal({ assignment, onClose }) {
           : !link ? <p className="text-sm text-slate-400 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Preparando el enlace…</p>
           : (
             <>
+              {tarea && <p className="text-sm text-slate-200">Para avisar del avance y del fin de: <strong className="text-white">{tarea}</strong></p>}
               <p className="text-xs text-slate-400">Caduca el {fmtDate(link.expires_at)}. Puedes reenviarlo hasta que el trabajo esté certificado al 100 %.</p>
               <EnlaceEnvio link={link} />
             </>

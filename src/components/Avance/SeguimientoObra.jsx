@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLlenadoAnimado, RELLENO_ANIMADO } from '../Common/BarraProgreso';
 import {
-  ChevronDown, Loader2, UserPlus, ShieldCheck, History, AlertTriangle, Package, Building2, X, Trash2, RefreshCw, Flag, Link2, FileText
+  ChevronDown, Loader2, UserPlus, ShieldCheck, History, AlertTriangle, Package, Building2, X, Trash2, RefreshCw, Flag, FileText, Send
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useNotifications } from '../../context/NotificationsContext';
@@ -59,6 +59,26 @@ function AssigneeBadge({ a, obreros }) {
   );
 }
 
+/**
+ * Ejecutor con, si es una subcontrata y el trabajo no está certificado al 100 %, el botón
+ * para enviarle su enlace directo (avisar del avance o del fin de esa fase o partida).
+ */
+function EjecutorConEnlace({ a, obreros, done, onEnlace }) {
+  const conEnlace = a.assignee_type === 'subcontrata' && !done;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <AssigneeBadge a={a} obreros={obreros} />
+      {conEnlace && (
+        <button type="button" onClick={(e) => { e.stopPropagation(); onEnlace(a); }}
+          className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold"
+          title={`Enviar a ${a.assignee_name} su enlace para avisar del avance o del fin del trabajo`}>
+          <Send className="w-3 h-3" /> Enviar enlace
+        </button>
+      )}
+    </span>
+  );
+}
+
 function Kpi({ label, value, tone }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3">
@@ -83,6 +103,7 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
   const [assigning, setAssigning] = useState(null);
   const [detailKey, setDetailKey] = useState(null);
   const [docsFase, setDocsFase] = useState(null); // fase cuya ventana de presupuesto/factura está abierta
+  const [enlace, setEnlace] = useState(null); // { assignment, partidaId, tarea }: enlace de subcontrata a enviar
   const reloadTimer = useRef(null);
 
   useEffect(() => {
@@ -238,7 +259,10 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                         <span className="font-bold text-white text-sm truncate">{fase.nombre}</span>
                         {fase.blocked > 0 && <span className="text-[10px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 rounded px-1.5">{fase.blocked} en alerta</span>}
                         {fase.pendingValidation > 0 && <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 border border-sky-500/30 rounded px-1.5">{fase.pendingValidation} por validar</span>}
-                        {(single ? fase.partidas[0].assignees : faseAssignees(fase.id)).map((a) => <AssigneeBadge key={a.id} a={a} obreros={obreros} />)}
+                        {(single ? fase.partidas[0].assignees : faseAssignees(fase.id)).map((a) => (
+                          <EjecutorConEnlace key={a.id} a={a} obreros={obreros} done={fase.certified >= 100}
+                            onEnlace={(x) => setEnlace({ assignment: x, partidaId: single ? fase.partidas[0].id : '', tarea: fase.nombre })} />
+                        ))}
                         {!single && faseAssignees(fase.id).length > 0 && (() => {
                           const propias = fase.partidas.filter((p) => p.assignees.some((a) => !a.heredada)).length;
                           return propias > 0 ? <span className="text-[10px] text-slate-400">{propias} partida(s) con ejecutor propio</span> : null;
@@ -268,7 +292,9 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                         const alerted = p.status === 'bloqueada' || p.alert;
                         return (
                           <div key={p.key} className={`px-3 py-2.5 pl-10 flex flex-wrap sm:flex-nowrap items-center gap-3 ${alerted ? 'bg-rose-500/5' : ''}`}>
-                            <button onClick={() => setDetailKey(p.key)} className="flex-1 min-w-0 text-left space-y-1">
+                            <div role="button" tabIndex={0} onClick={() => setDetailKey(p.key)}
+                              onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setDetailKey(p.key); } }}
+                              className="flex-1 min-w-0 text-left space-y-1 cursor-pointer">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="text-[10px] font-mono font-bold text-amber-400">{p.codigo}</span>
                                 <span className="text-xs font-semibold text-white truncate max-w-[22rem]">{p.titulo}</span>
@@ -279,11 +305,14 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
                               </div>
                               <div className="flex flex-wrap gap-1">
                                 {p.assignees.length
-                                  ? p.assignees.map((a) => <AssigneeBadge key={`${a.id}-${p.key}`} a={a} obreros={obreros} />)
+                                  ? p.assignees.map((a) => (
+                                    <EjecutorConEnlace key={`${a.id}-${p.key}`} a={a} obreros={obreros} done={p.certified >= 100}
+                                      onEnlace={(x) => setEnlace({ assignment: x, partidaId: p.id, tarea: `${p.codigo} ${p.titulo}` })} />
+                                  ))
                                   : <span className="text-[10px] text-slate-500">Sin asignar</span>}
                               </div>
                               <ProgressBars reported={p.reported} certified={p.certified} planned={p.planned} />
-                            </button>
+                            </div>
                             <div className="text-right shrink-0 w-24">
                               <span className="block text-sm font-black text-emerald-400 tabular-nums">{p.certified}%</span>
                               <span className="block text-[10px] text-slate-400 tabular-nums">rep. {p.reported}%{p.planned != null ? ` · plan ${p.planned}%` : ''}</span>
@@ -332,6 +361,8 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
       {assigning && obra && (
         <AsignacionRapida obra={obra} preset={assigning} onClose={() => setAssigning(null)} onSaved={() => { notify('Asignación guardada'); load(); }} />
       )}
+
+      {enlace && <EnlaceAsignacionModal {...enlace} onClose={() => setEnlace(null)} />}
 
       {docsFase && (
         <DocumentosFaseModal
@@ -462,7 +493,7 @@ function PartidaDetalle({ obraId, partida, needs, docs, margin, docsReady, obrer
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {a.assignee_type === 'subcontrata' && partida.certified < 100 && (
-                  <button onClick={() => setLinkFor(a)} className={`${btnGhost} !py-1 !text-xs`} title="Copiar o reenviar su enlace directo"><Link2 className="w-3.5 h-3.5" /> Enlace</button>
+                  <button onClick={() => setLinkFor(a)} className={`${btnGhost} !py-1 !text-xs`} title="Enviar su enlace para avisar del avance o del fin de esta partida"><Send className="w-3.5 h-3.5" /> Enviar enlace</button>
                 )}
                 {!a.heredada && <button onClick={() => removeAssignment(a)} className="text-slate-500 hover:text-rose-400" aria-label="Quitar"><Trash2 className="w-4 h-4" /></button>}
               </div>
@@ -482,7 +513,7 @@ function PartidaDetalle({ obraId, partida, needs, docs, margin, docsReady, obrer
           />
         </section>
 
-        {linkFor && <EnlaceAsignacionModal assignment={linkFor} onClose={() => setLinkFor(null)} />}
+        {linkFor && <EnlaceAsignacionModal assignment={linkFor} partidaId={partida.id} tarea={partida.faseCompleta ? partida.titulo : `${partida.codigo} ${partida.titulo}`} onClose={() => setLinkFor(null)} />}
 
         <section className="space-y-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-3">
           <h4 className="text-xs font-bold text-emerald-300 flex items-center gap-1.5"><ShieldCheck className="w-4 h-4" /> Validar como avance certificado</h4>

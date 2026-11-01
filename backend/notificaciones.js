@@ -590,17 +590,27 @@ async function handleResendToken(req, res, id) {
   sendJson(res, 200, await resendToken(req, data, body.days));
 }
 
-/** Enlace de una asignación de Avance de Obra: reenvía el último vigente o crea uno. */
+/**
+ * Enlace de una asignación de Avance de Obra: reenvía el último vigente o crea uno.
+ * Con `partida_id` en el cuerpo y una asignación de fase completa, el enlace se centra
+ * en esa partida (la subcontrata la ve abierta y puede darla por terminada).
+ */
 async function handleAssignmentLink(req, res, assignmentId) {
   const body = await readJson(req).catch(() => ({}));
   const admin = getAdminClient();
   const { data: a, error } = await admin.from("work_assignments").select("*").eq("id", assignmentId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!a || a.assignee_type !== "subcontrata") throw httpError(404, "Asignación de subcontrata no encontrada.");
+  const obra = await getObra(a.obra_id);
+  const plan = obra ? flattenPlan(obra) : null;
+  const wanted = clip(body.partida_id, 100);
+  // Solo se puede centrar en una partida de la propia fase si la asignación es de la fase entera.
+  const partidaId = !a.partida_id && wanted && plan && findPartida(plan, a.fase_id, wanted) ? wanted : (a.partida_id || WHOLE_PHASE);
   const { data: existing, error: tokenError } = await admin
     .from("subcontractor_tokens")
     .select("*")
     .eq("assignment_id", assignmentId)
+    .eq("partida_id", partidaId)
     .is("revoked_at", null)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -609,22 +619,23 @@ async function handleAssignmentLink(req, res, assignmentId) {
     sendJson(res, 200, await resendToken(req, existing[0], body.days));
     return;
   }
-  const obra = await getObra(a.obra_id);
-  const found = obra ? findPartida(flattenPlan(obra), a.fase_id, a.partida_id) : null;
+  const isFase = !partidaId;
+  // Una fase con partidas no tiene partida '' en el plan: basta con que exista la fase.
+  const fase = plan?.fases.find((f) => f.id === String(a.fase_id));
+  const found = isFase ? (fase ? { fase } : null) : plan ? findPartida(plan, a.fase_id, partidaId) : null;
   if (!found) throw httpError(404, "La fase o partida de esta asignación ya no existe en la obra.");
-  const isFase = !a.partida_id;
-  const [workPct] = (await tokensWorkPct([{ id: a.id, obra_id: a.obra_id, fase_id: a.fase_id, partida_id: a.partida_id }])).values();
+  const [workPct] = (await tokensWorkPct([{ id: a.id, obra_id: a.obra_id, fase_id: a.fase_id, partida_id: partidaId }])).values();
   if (workPct !== null && workPct >= 100) throw httpError(409, "El trabajo ya está finalizado (certificado al 100 %).");
   const link = await createSubToken({
     req,
     subcontractorId: a.subcontractor_id,
     name: a.assignee_name,
     obraId: String(a.obra_id),
-    taskRef: isFase ? `fase:${a.fase_id}` : `tarea:${a.partida_id}`,
+    taskRef: isFase ? `fase:${a.fase_id}` : `tarea:${partidaId}`,
     taskLabel: isFase ? found.fase.nombre : `${found.partida.codigo} ${found.partida.titulo}`,
     taskKind: isFase ? "fase" : "partida",
     faseId: a.fase_id,
-    partidaId: a.partida_id || WHOLE_PHASE,
+    partidaId,
     assignmentId: a.id,
     days: body.days
   });
