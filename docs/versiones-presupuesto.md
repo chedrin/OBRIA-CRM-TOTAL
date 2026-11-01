@@ -15,3 +15,9 @@
 ## Necesidades de la obra
 - Al apuntar una necesidad (ficha de obra > Necesidades y Materiales) se compara el concepto con las partidas del presupuesto firmado (`src/utils/necesidadPresupuesto.js`) y se avisa si está contemplada.
 - Si no lo está: "Solo a necesidades" (no se cobra) o "Añadir y generar versión nueva del presupuesto": se añade como partida en el capítulo "Ampliaciones de obra" (coste estimado + margen del presupuesto) y, si el presupuesto estaba aprobado, queda una versión nueva pendiente de firma.
+
+## Presupuestos aceptados o facturados: solo revisiones
+- Un presupuesto aceptado, firmado o facturado no se puede modificar (`estaBloqueado` en `src/utils/presupuestoRevision.js`): la consola lo muestra en solo lectura y el contexto rechaza cambios de contenido (edición, ajuste por voz, partidas desde la bandeja).
+- **Añadir revisión** crea la versión siguiente, que sustituye a la anterior y se puede editar. La anterior queda como "Modificado el <fecha>" con la lista de cambios (cabecera, partidas añadidas, quitadas o modificadas y total) de `cambiosEntreVersiones`. Al firmar la revisión, los cambios y la fecha se fijan en la versión anterior (`cambios`, `sustituidaEl`) y el presupuesto vuelve a bloquearse.
+- Hasta que el cliente firma la revisión, la obra y la facturación siguen con la versión firmada.
+- Las necesidades de obra que se añaden a un presupuesto bloqueado abren una revisión (`editarPresupuesto(id, cambios, { nuevaRevision: true })`).
