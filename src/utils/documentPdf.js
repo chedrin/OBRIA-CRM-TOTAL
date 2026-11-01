@@ -210,6 +210,9 @@ export function buildDocumentModel(info, empresaConfig = {}) {
   // Observaciones (recuadro junto al total).
   const observaciones = [];
   if (!isFactura) {
+    if (data.versionSustituida) {
+      observaciones.push({ texto: `VERSIÓN ${data.versionSustituida.version} SUSTITUIDA POR UNA REVISIÓN EL ${String(data.versionSustituida.fecha || '').slice(0, 10)}. Copia conservada con los datos que tenía.`, negrita: true, aviso: true });
+    }
     if (data.revisado) {
       observaciones.push({ texto: `Revisión ${data.revisionNumero || 1} del ${String(data.fechaRevision || '').slice(0, 10)}${data.pendienteNuevaAceptacion ? ' · pendiente de nueva aceptación' : data.fechaNuevaAceptacion ? ` · aceptada de nuevo el ${String(data.fechaNuevaAceptacion).slice(0, 10)}` : ''}.` });
     }
