@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import EnvioClienteModal from './EnvioClienteModal';
 import CroquisEditorModal from '../Croquis/CroquisEditorModal';
+import CroquisLienzo from '../Croquis/CroquisLienzo';
+import { normalizarCroquis } from '../../utils/croquisPlano';
 import VersionesPresupuesto from './VersionesPresupuesto';
 import { recordBudgetEditDebounced } from '../../services/backendAiService';
 import { capitulosDe, estaAprobado, estaBloqueado, recalcularPartida, recalcularTotales } from '../../utils/presupuestoRevision';
@@ -53,6 +55,7 @@ const CAMPOS_CABECERA = [
 export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar, estadoFacturacion = null }) {
   const {
     presupuestos,
+    obras,
     editarPresupuesto,
     registrarNuevaAceptacion,
     nuevaVersionPresupuesto,
@@ -63,6 +66,10 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
   } = useApp();
 
   const quote = presupuestos.find(p => p.id === quoteId) || presupuestos[0];
+  // Croquis del presupuesto o, si no tiene, el de su obra.
+  const croquisObra = (obras || []).find(o => o.id === quote?.obraId || o.presupuestoId === quote?.id)?.croquis;
+  const croquisVisible = quote?.croquis?.plan?.rooms?.length ? quote.croquis : croquisObra?.plan?.rooms?.length ? croquisObra : null;
+  const planCroquis = croquisVisible ? normalizarCroquis(croquisVisible.plan) : null;
 
   const [showHistory, setShowHistory] = useState(false);
   const [showEnvioModal, setShowEnvioModal] = useState(false);
@@ -192,7 +199,8 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
       
       {/* Cabecera: volver, identificación del presupuesto y acciones */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-sm">
-        <div className="p-4 sm:p-5 space-y-3">
+        <div className="p-4 sm:p-5 flex flex-col sm:flex-row gap-4">
+          <div className="flex-1 min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <BotonVolver onClick={onBack} className="!px-3 !py-1.5 text-xs">Volver</BotonVolver>
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -227,11 +235,39 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
               <BarraFacturacion estado={estadoFacturacion} className="mt-2 max-w-md" />
             )}
           </div>
+          </div>
+
+          {/* Croquis de la obra: miniatura que abre el editor */}
+          <button
+            type="button"
+            onClick={() => setShowCroquis(true)}
+            title={planCroquis ? 'Abrir el croquis en el editor' : 'Dibujar el croquis de la obra'}
+            aria-label={planCroquis ? `Abrir el croquis de ${quote.obraTitulo}` : 'Dibujar el croquis de la obra'}
+            className={`group relative w-full sm:w-72 lg:w-96 h-32 sm:h-36 shrink-0 rounded-xl overflow-hidden border transition-colors ${
+              planCroquis ? 'border-slate-700 hover:border-amber-500/60' : 'border-dashed border-slate-700 hover:border-amber-500/60 bg-slate-950/40'
+            }`}
+            style={planCroquis ? { background: '#ffffff' } : undefined}
+          >
+            {planCroquis ? (
+              <>
+                <CroquisLienzo plan={planCroquis} soloLectura mostrarCotas={false} alto="100%" ajustado />
+                <span className="absolute bottom-1.5 right-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-900/80 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                  <PencilRuler className="w-3 h-3" /> Editar croquis
+                </span>
+              </>
+            ) : (
+              <span className="flex flex-col items-center justify-center h-full gap-1.5 text-slate-400 group-hover:text-amber-400 transition-colors">
+                <PencilRuler className="w-6 h-6" />
+                <span className="text-sm font-semibold">Dibujar croquis</span>
+                <span className="text-xs text-slate-500">Plano 2D a partir de las mediciones</span>
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Acciones: herramientas a la izquierda, pasos del flujo a la derecha */}
         <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2 px-4 sm:px-5 py-3 border-t border-slate-800 bg-slate-950/40 rounded-b-2xl">
-          <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5">
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5">
             <button
               type="button"
               onClick={handleOpenPdfModal}
@@ -240,15 +276,6 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
             >
               <Download className="w-4 h-4 shrink-0" />
               <span>PDF</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCroquis(true)}
-              className={BOTON_SECUNDARIO}
-              title="Croquis 2D de la vivienda a partir de las mediciones y fotos"
-            >
-              <PencilRuler className="w-4 h-4 shrink-0" />
-              <span>Croquis</span>
             </button>
             <button
               type="button"
@@ -651,7 +678,7 @@ export default function ConsolaRevisionPresupuesto({ quoteId, onBack, onFacturar
       {showCroquis && (
         <CroquisEditorModal
           titulo={`Croquis 2D · ${quote.numero}`}
-          croquis={quote.croquis}
+          croquis={quote.croquis || croquisVisible}
           contexto={{
             medidasNotas: quote.medidasNotas || '',
             obraTitulo: quote.obraTitulo,
