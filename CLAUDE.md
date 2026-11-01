@@ -32,6 +32,7 @@ Pendiente:
 - Facturación legal (plan por fases hasta julio de 2027): fases 1 y 2 hechas (doc `docs/verifactu.md`: anulación, rectificativas, subsanación, envío SOAP con certificado cifrado, IVA por tipo de obra, Facturae sin firmar, libro registro CSV). Pedro debe ejecutar `supabase_schema_facturacion.sql` en Supabase, poner `CERT_ENCRYPTION_KEY` y `VERIFACTU_*` en `.env`/Render, subir su certificado y probar contra la AEAT en pruebas. Faltan: clientes extranjeros (`IDOtro`), firma de Facturae y asientos contables. Hasta pasar a producción, Factusol sigue emitiendo las facturas reales.
 - Plantilla PDF de presupuestos y facturas (formato de Marchelo Reformas, Ajustes > Plantilla PDF; código en `src/utils/documentPdf.js`): Pedro debe rellenar teléfonos, web y textos en Ajustes > Plantilla PDF y ejecutar en el SQL Editor `memoria-ia-presupuestos.sql` (está en los archivos del proyecto, no en el repo porque lleva sus precios) para cargar en la Memoria de la IA cómo redactar presupuestos.
 - Documentación de subcontratas (CAE/PRL) y ficha editable (doc `docs/documentacion-subcontratas.md`): Pedro debe ejecutar `supabase_migration_documentacion_subcontratas.sql`.
+- Histórico diario de cada obra (doc `docs/historial-obra.md`, pestaña "Histórico diario" en la obra): Pedro debe ejecutar `supabase_schema_historial_obra.sql`.
 Entorno del usuario: Windows, PowerShell; carpeta `C:\Users\chedrin\OBRIA-CRM-TOTAL`.
 
 ## Diagnóstico sugerido del login, en orden

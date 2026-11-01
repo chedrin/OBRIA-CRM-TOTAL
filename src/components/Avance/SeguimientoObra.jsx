@@ -151,7 +151,7 @@ export default function SeguimientoObra({ obraId: obraIdProp, embebido = false, 
       const res = await api('/api/avance/certify', { method: 'POST', body: { obra_id: obraId, items, force } });
       // El avance certificado pasa a la obra: es el que ven facturación, el portal y el panel general.
       const map = new Map(res.certified.map((c) => [c.key, c.pct]));
-      if (obra && updateObra) updateObra(obra.id, applyCertifiedToObra(obra, map));
+      if (obra && updateObra) updateObra(obra.id, applyCertifiedToObra(obra, map), { historial: false });
       notify(`${res.certified.length} partida(s) validada(s)`);
       load();
       return true;

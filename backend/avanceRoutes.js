@@ -706,14 +706,45 @@ export async function handleAvanceRoutes(req, res, pathname, query, { parseMulti
     [new RegExp(`^/api/avance/assignments/(${UUID})$`), {
       PATCH: async (id) => {
         requireAdmin(req);
-        const { data, error } = await getAdminClient().from("work_assignments").update(assignmentFields(await readJson(req))).eq("id", id).select().single();
+        const admin = getAdminClient();
+        const { data: antes } = await admin.from("work_assignments").select("start_date, end_date").eq("id", id).maybeSingle();
+        const { data, error } = await admin.from("work_assignments").update(assignmentFields(await readJson(req))).eq("id", id).select().single();
         if (error) throw httpError(404, "Asignación no encontrada.");
+        // Cambio de fechas del ejecutor: queda en el histórico de la obra.
+        if (antes && (antes.start_date !== data.start_date || antes.end_date !== data.end_date)) {
+          await admin.from("execution_logs").insert({
+            obra_id: data.obra_id,
+            fase_id: data.fase_id,
+            partida_id: data.partida_id,
+            kind: "asignacion",
+            notes: `Fechas de ${data.assignee_name}: ${data.start_date ? `del ${data.start_date}` : "sin inicio"} ${data.end_date ? `al ${data.end_date}` : "sin fin"}`,
+            author_type: "admin",
+            author_name: clip(req.user?.full_name, 200) || "Administración",
+            author_user: req.user?.id || null,
+            assignment_id: data.id
+          });
+        }
         sendJson(res, 200, data);
       },
       DELETE: async (id) => {
         requireAdmin(req);
-        const { error } = await getAdminClient().from("work_assignments").update({ is_active: false }).eq("id", id);
+        const admin = getAdminClient();
+        const { data: quitada, error } = await admin.from("work_assignments").update({ is_active: false }).eq("id", id).select().maybeSingle();
         if (error) throw new Error(error.message);
+        // Queda en el histórico de la obra.
+        if (quitada) {
+          await admin.from("execution_logs").insert({
+            obra_id: quitada.obra_id,
+            fase_id: quitada.fase_id,
+            partida_id: quitada.partida_id,
+            kind: "asignacion",
+            notes: `Retirada la asignación de ${quitada.assignee_name}${quitada.assignee_type === "subcontrata" ? " (subcontrata)" : ""}`,
+            author_type: "admin",
+            author_name: clip(req.user?.full_name, 200) || "Administración",
+            author_user: req.user?.id || null,
+            assignment_id: quitada.id
+          });
+        }
         sendJson(res, 200, { ok: true });
       }
     }],
