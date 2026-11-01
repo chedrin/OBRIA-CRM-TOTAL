@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Receipt, AlertTriangle, FileCheck2 } from 'lucide-react';
+import { Receipt, AlertTriangle, FileCheck2, FilePlus2, FileX2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { calcularIvaObra, getObraFiscal, guardarObraFiscal } from '../../services/facturacionService';
 import ModalOverlay from '../Common/ModalOverlay';
 import BarraFacturacion from './BarraFacturacion';
 import { facturacionPresupuestos, MARGEN_LIMITE } from '../../utils/facturadoPresupuesto';
 import { siguienteCertificacion, etiquetaCertificacion } from '../../utils/certificaciones';
+import { presupuestoVigente } from '../../utils/presupuestoRevision';
 
 const inputClass = 'w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white text-xs sm:text-sm focus:outline-none focus:border-emerald-400';
 
@@ -24,11 +25,14 @@ const eur = (v) => Number(v || 0).toLocaleString('es-ES', { minimumFractionDigit
  * Emitir una factura (o certificación) desde un presupuesto: datos completos del
  * cliente, IVA según el tipo de obra (con su motivo legal) y vista previa de importes.
  */
-export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = null, onClose, onEmitida }) {
-  const { convertPresupuestoToFactura, facturacion, facturas = [] } = useApp();
+export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = null, onClose, onEmitida, onAbrirPresupuesto }) {
+  const { convertPresupuestoToFactura, nuevaVersionPresupuesto, setActiveTab, facturacion, facturas = [] } = useApp();
   const empresa = facturacion?.empresa;
   const [presId, setPresId] = useState(presupuestoInicial?.id || presupuestos[0]?.id || '');
-  const pres = presupuestos.find(p => p.id === presId) || null;
+  const presGuardado = presupuestos.find(p => p.id === presId) || null;
+  // Se factura la versión firmada por el cliente; una versión nueva sin firmar aún no cuenta.
+  const pres = useMemo(() => (presGuardado ? presupuestoVigente(presGuardado) : null), [presGuardado]);
+  const versionSinFirmar = Boolean(presGuardado?.pendienteNuevaAceptacion && presGuardado.versionAceptada);
   // Lo ya facturado de cada presupuesto (facturas vigentes, con rectificativas y sin anuladas).
   const estados = useMemo(() => facturacionPresupuestos(presupuestos, facturas), [presupuestos, facturas]);
   const estado = pres ? estados.get(pres.id) : null;
@@ -174,10 +178,33 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
         {estado && (
           <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
             <BarraFacturacion estado={estado} titulo={`Facturación del presupuesto ${pres.numero} (base ${eur(estado.total)} €)`} />
-            {yaFacturado && (
-              <p className="text-xs text-emerald-300">Este presupuesto ya está facturado entero. Para cambiar un importe, emite una rectificativa desde la factura.</p>
+            {versionSinFirmar && (
+              <p className="text-xs text-violet-300">
+                La versión {presGuardado.version || 2} ({eur(presGuardado.baseImponible)} € de base) está pendiente de la firma del cliente.
+                Hasta entonces se factura sobre la versión firmada ({eur(estado.total)} €).
+              </p>
             )}
           </div>
+        )}
+
+        {estado && (excede || yaFacturado) && (
+          <SuperaPresupuesto
+            pres={presGuardado}
+            estado={estado}
+            exceso={yaFacturado && !excede ? 0 : Math.round((importes.base - estado.pendiente) * 100) / 100}
+            versionSinFirmar={versionSinFirmar}
+            onNuevaVersion={() => {
+              const nueva = versionSinFirmar ? presGuardado : nuevaVersionPresupuesto(presGuardado.id);
+              if (!nueva) return;
+              onClose?.();
+              if (onAbrirPresupuesto) onAbrirPresupuesto(nueva);
+              else setActiveTab('presupuestos');
+            }}
+            onRectificar={() => {
+              onClose?.();
+              setActiveTab('facturas');
+            }}
+          />
         )}
 
         <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -231,7 +258,7 @@ export default function EmitirFacturaModal({ presupuestos, presupuestoInicial = 
             />
             {importeFijo && <p className="text-[11px] text-slate-500 mt-1">{unica ? 'La factura única es el 100 % del presupuesto.' : sig?.ultima ? 'Última certificación: lo que queda pendiente.' : 'Importe fijado por las condiciones de pago del presupuesto.'}</p>}
             {excede && (
-              <p className="text-[11px] text-rose-300 mt-1">Supera lo pendiente de facturar: como máximo {pendientePct.toLocaleString('es-ES')} % ({eur(estado.pendiente)} € de base).</p>
+              <p className="text-[11px] text-rose-300 mt-1">Supera el presupuesto firmado: como máximo {pendientePct.toLocaleString('es-ES')} % ({eur(estado.pendiente)} € de base). Mira arriba qué hacer.</p>
             )}
           </div>
           <div>
@@ -464,6 +491,49 @@ function VistaPreviaFactura({ empresa, pres, cliente, concepto, pct, importes, i
       <div className="flex items-center gap-3 border-t border-slate-200 pt-3">
         <div className="w-14 h-14 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-[9px] text-slate-400 text-center shrink-0">QR al emitir</div>
         <p className="text-[10px] text-slate-500">Factura verificable en la sede electrónica de la AEAT (VERI*FACTU). El número, la huella y el QR se asignan al emitir.</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Factura por encima del presupuesto firmado: no se emite. Para facturar más, el cliente
+ * firma una versión nueva del presupuesto (la anterior queda guardada) o, si una factura
+ * anterior está mal, se corrige con una rectificativa.
+ */
+function SuperaPresupuesto({ pres, estado, exceso, versionSinFirmar, onNuevaVersion, onRectificar }) {
+  return (
+    <div role="alert" className="bg-rose-500/10 border border-rose-500/40 rounded-xl p-3 space-y-3">
+      <div className="flex items-start gap-2 text-xs text-rose-100">
+        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-300" />
+        <div className="space-y-1">
+          <p className="font-bold text-white">
+            {exceso > 0
+              ? `Esta factura supera el presupuesto firmado en ${eur(exceso)} € de base.`
+              : `El presupuesto ${pres?.numero || ''} ya está facturado entero (${eur(estado.total)} € de base).`}
+          </p>
+          <p>No se puede facturar por encima de lo que ha firmado el cliente. Elige cómo seguir:</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <button type="button" onClick={onNuevaVersion} className="text-left rounded-xl border border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20 p-3 transition">
+          <span className="flex items-center gap-2 text-xs font-bold text-violet-200">
+            <FilePlus2 className="w-4 h-4" />
+            {versionSinFirmar ? `Ir a la versión ${pres?.version || 2} sin firmar` : 'Nuevo presupuesto para que lo firme el cliente'}
+          </span>
+          <span className="block text-[11px] text-slate-300 mt-1">
+            {versionSinFirmar
+              ? 'Ya hay una versión nueva: complétala, envíala y registra la aceptación del cliente.'
+              : `Crea la versión ${(pres?.version || 1) + 1} de este presupuesto en la misma obra. La versión actual queda guardada.`}
+          </span>
+        </button>
+        <button type="button" onClick={onRectificar} className="text-left rounded-xl border border-slate-700 bg-slate-950 hover:bg-slate-800 p-3 transition">
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-100">
+            <FileX2 className="w-4 h-4" />
+            Hacer una rectificativa
+          </span>
+          <span className="block text-[11px] text-slate-400 mt-1">Si una factura anterior se emitió con un importe equivocado, corrígela desde Facturación.</span>
+        </button>
       </div>
     </div>
   );

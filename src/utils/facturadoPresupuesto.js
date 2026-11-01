@@ -12,6 +12,8 @@
  * baseImponible, rectificaId, tipoRectificativa ('S' | 'I'), anulada.
  */
 
+import { presupuestoVigente } from './presupuestoRevision.js';
+
 const redondear = (n) => Math.round(Number(n || 0) * 100) / 100;
 
 /** Base vigente de cada factura original (las rectificativas se aplican sobre su original). */
@@ -60,10 +62,18 @@ export function estadoFacturacion(baseTotal, facturado) {
   return { total, facturado: hecho, pendiente, pct, completo: total > 0 && pendiente <= 0.009 };
 }
 
+/**
+ * Base que se puede facturar de un presupuesto: la de la versión que firmó el cliente.
+ * Si hay una versión nueva pendiente de firma, todavía no cuenta.
+ */
+export function baseFacturable(presupuesto) {
+  return redondear(presupuestoVigente(presupuesto)?.baseImponible);
+}
+
 /** Estado de facturación de cada presupuesto: { presupuestoId -> estadoFacturacion }. */
 export function facturacionPresupuestos(presupuestos = [], facturas = []) {
   const facturado = baseFacturadaPorPresupuesto(facturas);
-  return new Map(presupuestos.map(p => [p.id, estadoFacturacion(p.baseImponible, facturado.get(p.id) || 0)]));
+  return new Map(presupuestos.map(p => [p.id, estadoFacturacion(baseFacturable(p), facturado.get(p.id) || 0)]));
 }
 
 /** Suma de los presupuestos de una obra (los vinculados por obraId y el presupuesto de la obra). */
