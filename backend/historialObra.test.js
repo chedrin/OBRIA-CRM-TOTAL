@@ -82,3 +82,14 @@ test("logs de avance y necesidades de maquinaria", () => {
   const need = eventoDesdeNecesidad({ id: 2, created_at: "2026-10-01T08:00:00Z", category: "maquinaria", description: "Hace falta mini", items: [] });
   assert.equal(need.tipo, "maquinaria");
 });
+
+test("sucesos repetidos: se quitan los idénticos y el resto lleva clave única", async () => {
+  const { unificarEventos } = await import("../src/utils/historialObra.js");
+  const parte = { id: "diario:d-1", fecha: "2026-11-01", tipo: "parte", titulo: "Parte diario", detalle: "ElectroSur" };
+  const otro = { ...parte, detalle: "Otro parte con el mismo id" };
+  const maq = { id: "m1", fecha: "2026-11-01T10:00:00Z", tipo: "maquinaria", titulo: "Maquinaria: mini" };
+  const out = unificarEventos([parte, { ...parte }, otro, maq]);
+  assert.equal(out.length, 3);
+  assert.deepEqual(out.map((e) => e.clave), ["diario:d-1", "diario:d-1#1", "m1"]);
+  assert.equal(new Set(out.map((e) => e.clave)).size, out.length);
+});

@@ -23,7 +23,8 @@ import {
   eventosDesdePedido,
   eventoDesdeParteSubcontrata,
   eventoDesdeDiario,
-  ordenarEventos
+  ordenarEventos,
+  unificarEventos
 } from "../src/utils/historialObra.js";
 
 const UUID = "[0-9a-fA-F-]{36}";
@@ -119,14 +120,14 @@ async function handleList(res, obraId) {
     return plan.fases.find((f) => f.id === String(faseId))?.nombre || "";
   };
 
-  const eventos = ordenarEventos([
+  const eventos = unificarEventos(ordenarEventos([
     ...propios.map(eventoDesdeFila),
     ...logs.map((l) => eventoDesdeLog(l, etiqueta)),
     ...porId(needs, needsMulti).map(eventoDesdeNecesidad),
     ...porId(orders, ordersMulti).flatMap(eventosDesdePedido),
     ...reports.map(eventoDesdeParteSubcontrata),
     ...(Array.isArray(obra.diario) ? obra.diario : []).map(eventoDesdeDiario)
-  ].filter((e) => e.fecha));
+  ].filter((e) => e.fecha)));
 
   sendJson(res, 200, { eventos, faltan: [...faltan], listo: !faltan.has(MIGRATION) });
 }
