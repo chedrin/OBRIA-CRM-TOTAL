@@ -19,6 +19,7 @@ import PdfModal from './components/Common/PdfModal';
 import LoginObreroView from './components/Auth/LoginObreroView';
 import LoginAdminModal from './components/Auth/LoginAdminModal';
 import GlobalOverlays from './components/Common/GlobalOverlays';
+import { QuickCreateProvider } from './components/Common/QuickCreate';
 import DeclaracionResponsableModal from './components/Common/DeclaracionResponsable';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 
@@ -222,7 +223,9 @@ export default function App() {
     <AppProvider>
       <UiPreferencesProvider>
         <NotificationsProvider>
-          <MainLayout />
+          <QuickCreateProvider>
+            <MainLayout />
+          </QuickCreateProvider>
         </NotificationsProvider>
       </UiPreferencesProvider>
     </AppProvider>

@@ -9,6 +9,8 @@ import {
   PackageCheck
 } from 'lucide-react';
 import ModalOverlay from '../Common/ModalOverlay';
+import CampoProveedor from '../Common/CampoProveedor';
+import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 import { AnimatePresence } from 'motion/react';
 import { CATEGORIAS_GASTO } from '../../utils/gastosIngresosObra';
 
@@ -20,6 +22,7 @@ export default function GestoriaTrimestres() {
     obras = [],
     showNotification
   } = useApp();
+  const { crear } = useQuickCreate();
 
   const [trimestreSeleccionado, setTrimestreSeleccionado] = useState('4T');
   const [activeTab, setActiveTab] = useState('resumen_fiscal'); // resumen_fiscal, facturas_emitidas, facturas_recibidas, enviar_email
@@ -611,12 +614,12 @@ export default function GestoriaTrimestres() {
             <form onSubmit={handleSaveGasto} className="space-y-3 text-xs sm:text-sm">
               <div>
                 <label className="text-slate-400 block mb-1">Nombre Proveedor / Subcontrata *</label>
-                <input
-                  type="text"
+                <CampoProveedor
                   required
                   placeholder="Ej: Obramat, Saltoki, ElectroSur..."
                   value={gastoForm.proveedor}
-                  onChange={(e) => setGastoForm({ ...gastoForm, proveedor: e.target.value })}
+                  onChange={(v) => setGastoForm((f) => ({ ...f, proveedor: v }))}
+                  onElegir={({ proveedor, cif }) => setGastoForm((f) => ({ ...f, proveedor, cif: cif || f.cif }))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                 />
               </div>
@@ -659,11 +662,12 @@ export default function GestoriaTrimestres() {
                 <label className="text-slate-400 block mb-1">Obra (para el control de gastos de la obra)</label>
                 <select
                   value={gastoForm.obraId}
-                  onChange={(e) => setGastoForm({ ...gastoForm, obraId: e.target.value })}
+                  onChange={conCrear(crear, (v) => setGastoForm((f) => ({ ...f, obraId: v })))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-white"
                 >
                   <option value="">Gasto general (sin obra)</option>
                   {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo ? `${o.codigo} · ` : ''}{o.titulo}</option>)}
+                  <OpcionesCrear tipos={['obra']} />
                 </select>
               </div>
 

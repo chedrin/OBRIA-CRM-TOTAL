@@ -28,6 +28,8 @@ import { extractPricesViaBackend } from '../../services/backendAiService';
 import { buildGremioQuote } from '../../services/priceBaseService';
 import PartidaPrecioModal from '../Common/PartidaPrecioModal';
 import ModalOverlay from '../Common/ModalOverlay';
+import ComboCrear from '../Common/ComboCrear';
+import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 import { AnimatePresence } from 'motion/react';
 import FichaSubcontrataForm from './FichaSubcontrataForm';
 import DocumentosFicha from './DocumentosFicha';
@@ -55,6 +57,7 @@ export default function SubcontratasList() {
     applySubcontrataPresupuesto,
     showNotification
   } = useApp();
+  const { crear } = useQuickCreate();
 
   // Main Tabs: 'directorio', 'presupuestos_comparador', 'facturas_desviaciones', 'base_precios'
   const [activeTab, setActiveTab] = useState('directorio');
@@ -615,19 +618,25 @@ export default function SubcontratasList() {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Subcontrata</label>
-                <input
-                  list="subcontratas-nombres"
+                <ComboCrear
                   value={importForm.subcontrata}
-                  onChange={(e) => {
-                    const sub = subcontractors.find(s => s.razonSocial === e.target.value);
-                    setImportForm(f => ({ ...f, subcontrata: e.target.value, gremio: sub ? sub.gremio : f.gremio }));
+                  onChange={(v) => {
+                    const sub = subcontractors.find(s => s.razonSocial === v);
+                    setImportForm(f => ({ ...f, subcontrata: v, gremio: sub ? sub.gremio : f.gremio }));
                   }}
+                  sugerencias={subcontractors.map(sub => ({ key: sub.id, valor: sub.razonSocial, detalle: sub.gremio, gremio: sub.gremio }))}
+                  onElegir={(s) => setImportForm(f => ({ ...f, subcontrata: s.valor, gremio: s.gremio || f.gremio }))}
+                  acciones={[{
+                    key: 'subcontrata',
+                    label: 'Crear nueva subcontrata',
+                    onClick: async (texto) => {
+                      const sub = await crear('subcontrata', { razonSocial: texto || '' });
+                      if (sub) setImportForm(f => ({ ...f, subcontrata: sub.razonSocial, gremio: sub.gremio || f.gremio }));
+                    }
+                  }]}
                   placeholder="La IA la detecta si se deja vacío"
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
-                <datalist id="subcontratas-nombres">
-                  {subcontractors.map(sub => <option key={sub.id} value={sub.razonSocial} />)}
-                </datalist>
               </div>
               <div>
                 <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Gremio</label>
@@ -1498,12 +1507,13 @@ export default function SubcontratasList() {
                 <label className="text-slate-400 block mb-1">Obra</label>
                 <select
                   value={budgetForm.obraId}
-                  onChange={(e) => setBudgetForm({ ...budgetForm, obraId: e.target.value })}
+                  onChange={conCrear(crear, (v) => setBudgetForm((f) => ({ ...f, obraId: v })))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                 >
                   {obras.map(o => (
                     <option key={o.id} value={o.id}>{o.titulo}</option>
                   ))}
+                  <OpcionesCrear tipos={['obra']} />
                 </select>
               </div>
 
@@ -1564,12 +1574,13 @@ export default function SubcontratasList() {
                 <label className="text-slate-400 block mb-1">Obra</label>
                 <select
                   value={invoiceForm.obraId}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, obraId: e.target.value })}
+                  onChange={conCrear(crear, (v) => setInvoiceForm((f) => ({ ...f, obraId: v })))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                 >
                   {obras.map(o => (
                     <option key={o.id} value={o.id}>{o.titulo}</option>
                   ))}
+                  <OpcionesCrear tipos={['obra']} />
                 </select>
               </div>
 

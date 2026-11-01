@@ -6,6 +6,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { api, fmtDate, fmtMoney, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import ModalOverlay from '../Common/ModalOverlay';
+import CampoProveedor from '../Common/CampoProveedor';
 import { CATEGORIAS_GASTO, labelCategoria, importesGasto, resumenObra } from '../../utils/gastosIngresosObra';
 
 // Gastos ejecutados de la obra (facturas de material, proveedores, subcontratas, licencias,
@@ -62,7 +63,7 @@ function Tarjeta({ titulo, valor, detalle, tono = 'neutro' }) {
 
 export default function GastosIngresosObra({ obra }) {
   const {
-    facturas = [], facturasProveedores = [], presupuestos = [], subcontractors = [],
+    facturas = [], facturasProveedores = [], presupuestos = [],
     addFacturaProveedor, updateFacturaProveedor, deleteFacturaProveedor,
     setPdfModalData, setActiveTab, showNotification
   } = useApp();
@@ -88,12 +89,6 @@ export default function GastosIngresosObra({ obra }) {
   );
   const gastosVisibles = filtro === 'todas' ? r.gastos : r.gastos.filter((g) => g.categoria === filtro);
   const maxBarra = Math.max(r.ingresosBase, r.gastosBase, 1);
-  const proveedoresConocidos = useMemo(() => {
-    const set = new Set();
-    facturasProveedores.forEach((f) => f.proveedor && set.add(f.proveedor));
-    subcontractors.forEach((s) => (s.razonSocial || s.nombreComercial) && set.add(s.razonSocial || s.nombreComercial));
-    return [...set].sort((a, b) => a.localeCompare(b, 'es'));
-  }, [facturasProveedores, subcontractors]);
 
   const avisar = (msg, tipo) => (showNotification ? showNotification(msg, tipo) : window.alert(msg));
 
@@ -400,8 +395,20 @@ export default function GastosIngresosObra({ obra }) {
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_9rem] gap-2">
                   <label className="block text-slate-400">Proveedor / a quién se paga *
-                    <input list="gasto-proveedores" value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value })} className={`${inputCls} mt-1`} placeholder="Ej: Almacén de materiales, gasolinera, Ayuntamiento" />
-                    <datalist id="gasto-proveedores">{proveedoresConocidos.map((p) => <option key={p} value={p} />)}</datalist>
+                    <div className="mt-1">
+                      <CampoProveedor
+                        value={form.proveedor}
+                        onChange={(v) => setForm((f) => ({ ...f, proveedor: v }))}
+                        onElegir={({ proveedor, cif, origen }) => setForm((f) => ({
+                          ...f,
+                          proveedor,
+                          cif: cif || f.cif,
+                          categoria: origen === 'subcontrata' ? 'Subcontratas' : f.categoria
+                        }))}
+                        className={inputCls}
+                        placeholder="Ej: Almacén de materiales, gasolinera, Ayuntamiento"
+                      />
+                    </div>
                   </label>
                   <label className="block text-slate-400">CIF/NIF
                     <input value={form.cif} onChange={(e) => setForm({ ...form, cif: e.target.value })} className={`${inputCls} mt-1`} />

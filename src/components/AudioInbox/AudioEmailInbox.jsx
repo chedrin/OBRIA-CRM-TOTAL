@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import ModalOverlay from '../Common/ModalOverlay';
+import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 import { AnimatePresence } from 'motion/react';
 
 // Pantalla única: nueva entrada (audio o texto) + contexto → resultado de la IA, y debajo la bandeja.
@@ -66,6 +67,7 @@ export default function AudioEmailInbox() {
     setActiveTab,
     setSelectedPresupuestoId
   } = useApp();
+  const { crear } = useQuickCreate();
 
   const captureRef = useRef(null);
 
@@ -338,11 +340,12 @@ export default function AudioEmailInbox() {
             </label>
             <label className="block">
               <span className="text-slate-400 block mb-1">Obra</span>
-              <select value={targetProjectId} onChange={(e) => setTargetProjectId(e.target.value)} className={inputCls}>
+              <select value={targetProjectId} onChange={conCrear(crear, setTargetProjectId)} className={inputCls}>
                 <option value="">Sin obra</option>
                 {obras.map(o => (
                   <option key={o.id} value={o.id}>{o.titulo}</option>
                 ))}
+                <OpcionesCrear tipos={['obra']} />
               </select>
             </label>
             <label className="block">

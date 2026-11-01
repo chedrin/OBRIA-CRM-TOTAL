@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link2, Loader2, Ban, Send, ChevronUp, CheckCircle2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 import useNotify from './useNotify';
 import EnlaceEnvio, { avisoReenvio } from './EnlaceEnvio';
 import { api, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
@@ -10,6 +11,7 @@ import { api, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../..
 export default function EnlacesPanel() {
   const { obras = [], subcontractors = [] } = useApp() || {};
   const showNotification = useNotify();
+  const { crear } = useQuickCreate();
   const [form, setForm] = useState({ subcontractor_id: '', obra_id: '', task: '', phone: '', days: 60 });
   const [result, setResult] = useState(null);
   const [tokens, setTokens] = useState([]);
@@ -90,14 +92,16 @@ export default function EnlacesPanel() {
         <h3 className="font-bold text-white">Nuevo enlace para una subcontrata</h3>
         <p className="text-xs text-slate-400">Sin usuario ni contraseña: con el enlace pueden marcar el trabajo terminado o avisar de una necesidad, con fotos.</p>
         <div className="grid sm:grid-cols-2 gap-2">
-          <select required value={form.subcontractor_id} onChange={(e) => setForm({ ...form, subcontractor_id: e.target.value, phone: '' })} className={inputCls}>
+          <select required value={form.subcontractor_id} onChange={conCrear(crear, (v) => setForm((f) => ({ ...f, subcontractor_id: v, phone: '' })))} className={inputCls}>
             <option value="">Subcontrata…</option>
             {subcontractors.map((s) => <option key={s.id} value={s.id}>{s.nombreComercial || s.razonSocial}</option>)}
+            <OpcionesCrear tipos={['subcontrata']} />
           </select>
           <input value={form.phone || sub?.telefono || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Móvil para WhatsApp" className={inputCls} />
-          <select value={form.obra_id} onChange={(e) => setForm({ ...form, obra_id: e.target.value, task: '' })} className={inputCls}>
+          <select value={form.obra_id} onChange={conCrear(crear, (v) => setForm((f) => ({ ...f, obra_id: v, task: '' })))} className={inputCls}>
             <option value="">Obra…</option>
             {obras.map((o) => <option key={o.id} value={o.id}>{[o.codigo, o.titulo].filter(Boolean).join(' - ')}</option>)}
+            <OpcionesCrear tipos={['obra']} />
           </select>
           <select value={form.task} onChange={(e) => setForm({ ...form, task: e.target.value })} disabled={!tasks.length} className={inputCls}>
             <option value="">Fase o tarea (opcional)…</option>

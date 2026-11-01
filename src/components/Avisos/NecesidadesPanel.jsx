@@ -3,6 +3,7 @@ import BotonVolver from '../Common/BotonVolver';
 import { Plus, Trash2, FileText, Loader2, Phone, CalendarClock, Send, Image as ImageIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import useNotify from './useNotify';
+import { OpcionesCrear, conCrear, useQuickCreate, useAlCrear } from '../Common/QuickCreate';
 import { api, NEED_CATEGORIES, NEED_STATUS, fmtDate, fmtDateTime, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import PedidoBorrador from './PedidoBorrador';
 import PedidosEnviados from './PedidosEnviados';
@@ -41,7 +42,12 @@ function sortSuppliers(suppliers, { category, text }) {
 }
 
 function SupplierPicker({ suppliers, selected, setSelected, kind, setKind }) {
+  const { crear } = useQuickCreate();
   const toggle = (id) => setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  const nuevoProveedor = async () => {
+    const p = await crear('proveedor');
+    if (p) setSelected([...selected, p.id]);
+  };
   return (
     <div className="flex flex-wrap gap-2 items-center">
       <select value={kind} onChange={(e) => setKind(e.target.value)} className={`${inputCls} !w-auto`}>
@@ -49,13 +55,14 @@ function SupplierPicker({ suppliers, selected, setSelected, kind, setKind }) {
         <option value="solicitud_presupuesto">Pedir precio (comparar)</option>
       </select>
       <span className="text-xs text-slate-400">Proveedores:</span>
-      {suppliers.length === 0 && <span className="text-xs text-slate-500">No hay proveedores: añádelos en la pestaña Proveedores.</span>}
+      {suppliers.length === 0 && <span className="text-xs text-slate-500">Aún no hay proveedores.</span>}
       {suppliers.map((s) => (
         <button type="button" key={s.id} onClick={() => toggle(s.id)} title={s.email || 'Sin correo'}
           className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${selected.includes(s.id) ? 'bg-amber-500 text-slate-950 border-amber-500' : 'border-slate-700 text-slate-300'}`}>
           {s.name}{!s.email && ' (sin correo)'}
         </button>
       ))}
+      <button type="button" onClick={nuevoProveedor} className="px-3 py-1.5 rounded-xl text-xs font-bold border border-dashed border-amber-500/60 text-amber-400 hover:bg-amber-500/10">➕ Crear nuevo proveedor</button>
     </div>
   );
 }
@@ -79,6 +86,7 @@ function reportSend(errors, send, showNotification) {
 
 function NuevaNecesidad({ suppliers, onCreated, onCancel }) {
   const { obras = [] } = useApp() || {};
+  const { crear } = useQuickCreate();
   const showNotification = useNotify();
   const [form, setForm] = useState({ obra_id: '', tajo: '', category: 'material', urgency: 'normal', description: '', needed_by: '', site_contact_name: '', site_contact_phone: '' });
   const [items, setItems] = useState([emptyItem()]);
@@ -125,9 +133,10 @@ function NuevaNecesidad({ suppliers, onCreated, onCancel }) {
     <form onSubmit={submit} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
       <h3 className="font-bold text-white">Nueva necesidad de obra</h3>
       <div className="grid sm:grid-cols-2 gap-2">
-        <select value={form.obra_id} onChange={set('obra_id')} className={inputCls}>
+        <select value={form.obra_id} onChange={conCrear(crear, (v) => setForm((f) => ({ ...f, obra_id: v })))} className={inputCls}>
           <option value="">Obra…</option>
           {obras.map((o) => <option key={o.id} value={o.id}>{[o.codigo, o.titulo].filter(Boolean).join(' - ')}</option>)}
+          <OpcionesCrear tipos={['obra']} />
         </select>
         <input value={form.tajo} onChange={set('tajo')} placeholder="Tajo / zona (ej. Baño 1)" className={inputCls} />
         <select value={form.category} onChange={set('category')} className={inputCls}>
@@ -290,6 +299,7 @@ export default function NecesidadesPanel({ focusId }) {
   const showNotification = useNotify();
   const [needs, setNeeds] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  useAlCrear('proveedor', (p) => setSuppliers((prev) => (prev.some((s) => s.id === p.id) ? prev : [...prev, p])));
   const [filter, setFilter] = useState('abiertas'); // abiertas | todas | enviados
   const [openId, setOpenId] = useState(focusId || null);
   const [creating, setCreating] = useState(false);

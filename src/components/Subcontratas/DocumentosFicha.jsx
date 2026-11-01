@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Upload, Loader2, ExternalLink, Trash2, Edit2, FileText, Plus, AlertTriangle } from 'lucide-react';
 import { api, fmtDate, inputCls, btnPrimary, btnGhost } from '../../services/avisosApi';
 import useNotify from '../Avisos/useNotify';
+import { OpcionesCrear, conCrear, useQuickCreate } from '../Common/QuickCreate';
 import {
   DOC_TYPES,
   docType,
@@ -57,6 +58,7 @@ const today = () => new Date().toISOString().slice(0, 10);
  */
 export function DocumentoForm({ subcontractorId, obras = [], initial = {}, onSaved, onCancel }) {
   const notify = useNotify();
+  const { crear } = useQuickCreate();
   const editing = Boolean(initial.id);
   const [form, setForm] = useState({
     doc_type: initial.doc_type || 'rc_seguro',
@@ -111,9 +113,10 @@ export function DocumentoForm({ subcontractorId, obras = [], initial = {}, onSav
         </select>
       </label>
       <label className="block text-[11px] text-slate-400">Obra {type.scope === 'obra' ? '*' : '(déjalo en blanco si vale para todas)'}
-        <select value={form.obra_id} onChange={set('obra_id')} className={`${inputCls} mt-1`}>
+        <select value={form.obra_id} onChange={conCrear(crear, (v) => setForm((f) => ({ ...f, obra_id: v })))} className={`${inputCls} mt-1`}>
           <option value="">{type.scope === 'obra' ? 'Elige la obra…' : 'Todas las obras'}</option>
           {obras.map((o) => <option key={o.id} value={o.id}>{[o.codigo, o.titulo].filter(Boolean).join(' - ') || o.id}</option>)}
+          <OpcionesCrear tipos={['obra']} />
         </select>
       </label>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

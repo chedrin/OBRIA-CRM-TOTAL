@@ -39,9 +39,9 @@ const fromSub = (sub) => ({
  * Alta o edición completa de la ficha de una subcontrata.
  * onSave(datos) recibe la ficha lista para addSubcontractor / updateSubcontractor.
  */
-export default function FichaSubcontrataForm({ subcontractor = null, onSave, onDelete, onClose }) {
+export default function FichaSubcontrataForm({ subcontractor = null, inicial = null, zIndex, onSave, onDelete, onClose }) {
   const editing = Boolean(subcontractor);
-  const [form, setForm] = useState(() => (editing ? fromSub(subcontractor) : EMPTY));
+  const [form, setForm] = useState(() => (editing ? fromSub(subcontractor) : { ...EMPTY, ...(inicial || {}) }));
   const [error, setError] = useState('');
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
@@ -72,7 +72,7 @@ export default function FichaSubcontrataForm({ subcontractor = null, onSave, onD
   };
 
   return (
-    <ModalOverlay className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <ModalOverlay style={zIndex ? { zIndex } : undefined} className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-6 shadow-2xl space-y-4 my-8">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
