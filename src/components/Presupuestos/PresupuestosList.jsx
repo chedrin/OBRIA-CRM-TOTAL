@@ -39,11 +39,8 @@ export default function PresupuestosList() {
   }
 
   // Sin la facturación activada el botón Facturar se ve igual, pero explica qué falta y lleva a Ajustes.
+  // Si ya está facturado entero, el modal explica qué hacer: nueva versión firmada o rectificativa.
   const facturar = (pres) => {
-    if (facturacionActivada && estadosFacturacion.get(pres.id)?.completo) {
-      showNotification(`El presupuesto ${pres.numero} ya está facturado al 100 %. Para cambiar un importe, emite una rectificativa desde la factura.`, 'error');
-      return;
-    }
     if (facturacionActivada) {
       setShowConvertModal(pres);
       return;
@@ -57,6 +54,11 @@ export default function PresupuestosList() {
       presupuestos={presupuestos}
       presupuestoInicial={showConvertModal}
       onClose={() => setShowConvertModal(null)}
+      onAbrirPresupuesto={(pres) => {
+        setShowConvertModal(null);
+        setSelectedQuoteId(pres.id);
+        setViewMode('revision_consola');
+      }}
       onEmitida={() => {
         setShowConvertModal(null);
         setActiveTab('facturas');

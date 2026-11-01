@@ -21,17 +21,58 @@ const copiaContenido = (p) => JSON.parse(JSON.stringify(
   Object.fromEntries(CAMPOS_CONTENIDO.filter(k => p[k] !== undefined).map(k => [k, p[k]]))
 ));
 
+// Copia completa de la versión actual para el historial de versiones (no se borra nunca).
+export function fotoVersion(pres) {
+  return {
+    version: pres.version || 1,
+    estado: pres.estado || 'borrador',
+    fecha: pres.fecha || '',
+    firmadaEl: pres.fechaNuevaAceptacion || pres.fechaAceptacion || '',
+    guardadaEl: ahora(),
+    baseImponible: Number(pres.baseImponible || 0),
+    totalConIva: Number(pres.totalConIva || 0),
+    contenido: copiaContenido(pres)
+  };
+}
+
+// Versiones anteriores guardadas (de la más antigua a la más reciente).
+export const versionesDe = (p) => (Array.isArray(p?.versiones) ? p.versiones : []);
+
+// Marcas de una versión nueva: la actual pasa al historial y, si estaba aprobada,
+// la nueva queda pendiente de que el cliente la firme.
+function marcasVersionNueva(pres) {
+  const marcas = {
+    version: (pres.version || 1) + 1,
+    versiones: [...versionesDe(pres), fotoVersion(pres)]
+  };
+  if (estaAprobado(pres)) {
+    Object.assign(marcas, {
+      revisado: true,
+      fechaRevision: ahora(),
+      pendienteNuevaAceptacion: true,
+      revisionNumero: (pres.revisionNumero || 0) + 1,
+      versionAceptada: copiaContenido(pres)
+    });
+  }
+  return marcas;
+}
+
 // Añade a `updates` las marcas de revisión si el presupuesto ya estaba aprobado.
 export function conRevision(pres, updates) {
   if (!estaAprobado(pres)) return updates;
-  const marcas = { revisado: true, fechaRevision: ahora(), pendienteNuevaAceptacion: true };
-  if (!pres.pendienteNuevaAceptacion) {
-    // Primera modificación tras la aprobación: nueva revisión y copia de lo aceptado.
-    marcas.revisionNumero = (pres.revisionNumero || 0) + 1;
-    marcas.version = (pres.version || 1) + 1;
-    marcas.versionAceptada = copiaContenido(pres);
+  if (pres.pendienteNuevaAceptacion) {
+    // Se sigue editando la versión nueva que aún no ha firmado el cliente.
+    return { ...updates, revisado: true, fechaRevision: ahora(), pendienteNuevaAceptacion: true };
   }
-  return { ...updates, ...marcas };
+  // Primera modificación tras la aprobación: nueva versión y copia de lo aceptado.
+  return { ...updates, ...marcasVersionNueva(pres) };
+}
+
+// "Nueva versión" a mano: guarda la actual y abre otra del mismo presupuesto (misma obra).
+// Si ya hay una versión nueva sin firmar, no se crea otra (devuelve null).
+export function datosNuevaVersion(pres) {
+  if (!pres || pres.pendienteNuevaAceptacion) return null;
+  return marcasVersionNueva(pres);
 }
 
 // El cliente acepta la versión revisada.
